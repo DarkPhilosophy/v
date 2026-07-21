@@ -1,47 +1,50 @@
 # vencord-custom
 
-Personal custom [Vencord](https://github.com/Vendicated/Vencord) build: our plugins + our patches, installed with one command. No fork, no CI, no leftovers.
+Personal custom [Vencord](https://github.com/Vendicated/Vencord): our plugins + our patches, layered on top of upstream — with Vencord's own updater taught to keep our overlay. No fork, no CI, no prebuilt releases.
 
 ## What it contains
 
 - **PlatformSpoofer** — spoof client platform (Desktop/Mobile/Web/Console). *(new plugin → `userplugins/`)*
 - **QuestCompleter** — complete Discord Quests without the game (video + play/stream via heartbeat spoof). *(new plugin → `userplugins/`)*
 - **Translate** — immersive / automatic incoming translation. *(patch over the upstream Translate plugin → `patches/translate.patch`)*
+- **Integrated updater** — Vencord's own Updater reapplies our overlay after each upstream pull, and shows a note explaining the custom source. *(patch over the upstream updater → `patches/update.patch`)*
 
 The repo holds **only our code** — upstream Vencord is never committed here.
 
-## Install / update
+## Install
 
 ```sh
 sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
 ```
 
-Same command installs and updates — just run it again to update.
+Sets up an upstream Vencord checkout at `~/.config/Vencord`, bakes in our overlay, builds, and points Discord at `~/.config/Vencord/dist`.
 
-## How it works
+## How it works — `upstream + ours = your Vencord`
 
 ```mermaid
 graph TD
-  T["/tmp (temporary)"] --> C["fetch upstream Vencord + our overlay"]
-  C --> P["apply translate.patch + copy userplugins"]
-  P --> B["pnpm i + build   (node_modules here, in /tmp)"]
-  B --> D["copy dist -> ~/.config/Vencord/dist  (~few MB)"]
-  D --> A["patch Discord app.asar -> load that dist"]
-  A --> X["rm -rf /tmp   (node_modules + source gone)"]
+  X["upstream Vencord (git checkout)"] --> B["build"]
+  Y["our overlay: userplugins/ + custom-patches/"] --> B
+  B --> D["~/.config/Vencord/dist"]
+  D --> DC["Discord loads it (app.asar patched once)"]
+  DC -->|"Vencord ▸ Updater ▸ Check for updates"| GP["git pull upstream (local)"]
+  GP --> RA["update.patch reapplies translate + userplugins"]
+  RA --> B
 ```
 
-Everything is built **live, in a temp dir**, which is deleted on exit — including `node_modules` (~300 MB) and the Vencord source. The build compiles `upstream + our patches + our plugins` into `dist/`, copies that (~few MB) to `~/.config/Vencord/dist`, and points Discord at it.
+Nothing is prebuilt or forked. The build happens **locally**: upstream + our patches + our plugins → `dist`. Discord's `app.asar` is patched **once** to load `~/.config/Vencord/dist`.
 
-**On disk afterwards — nothing extra:**
-- `~/.config/Vencord/dist` — the built bundle Discord loads (required)
-- `~/.config/Vencord/settings/` — your Vencord settings
-- Discord's patched `app.asar`
+**Updating** uses Vencord's own Updater (Settings → Vencord → Updater → *Check for updates*): it `git pull`s the latest upstream **locally**, and `update.patch` makes it reapply our patches + userplugins before rebuilding — so you always get *latest upstream + our overlay*, never a plain reset. The Updater tab also shows a note explaining this. No prebuilt download, no CI.
 
-No `node_modules`, no source checkout, no symlinks, no `~/.local/share`. To update, re-run the command (it rebuilds live and replaces the bundle).
+## Footprint (the honest cost)
 
-> Requires `git`, `node`, `pnpm` (or `corepack enable`), `curl`, `tar`. On a system flatpak Discord the app.asar patch needs `sudo`.
+Because the in-app updater rebuilds **locally**, the checkout + build toolchain stay under `~/.config/Vencord`:
 
-## Structure
+- `~/.config/Vencord/` — upstream source + `src/userplugins/` (ours) + `custom-patches/` (ours) + `node_modules` (build toolchain, ~300 MB) + `dist/` (what Discord loads) + `settings/`.
+
+That `node_modules` is what lets *Check for updates* recompile with our patches — the same as any Vencord dev install. No symlinks, no `~/.local/share`, one location. (Want it tiny instead, at the cost of the in-app button? Then you'd rebuild from scratch on each update instead — ask and we can switch models.)
+
+## Structure (this repo)
 
 ```
 vencord-custom/
@@ -49,14 +52,16 @@ vencord-custom/
 │  ├─ _shared/author.ts     # our author metadata (no fork of constants.ts)
 │  ├─ platformSpoofer/
 │  └─ questCompleter/
-├─ patches/translate.patch  # our only change over upstream code
-└─ install.sh               # build-live installer (curl | sh)
+├─ patches/
+│  ├─ translate.patch       # immersive/auto Translate (over upstream plugin)
+│  └─ update.patch          # integrated updater: reapply overlay + info note
+└─ install.sh               # local-build installer (curl | sh)
 ```
 
-## Updating when upstream changes the Translate plugin
+## When upstream changes the patched files
 
-If a Vencord update changes `src/plugins/translate` enough that `translate.patch` no longer applies, fix a local checkout's `src/plugins/translate` by hand once and regenerate the patch with `git diff src/plugins/translate > patches/translate.patch`.
+If a Vencord update changes `src/plugins/translate` or `src/main/updater` enough that a patch no longer applies, fix the file in `~/.config/Vencord` by hand once and regenerate: `git -C ~/.config/Vencord diff <path> > patches/<name>.patch`.
 
 ## License & attribution
 
-GPL-3.0-or-later. This package derives from and links against [Vencord](https://github.com/Vendicated/Vencord) (GPL-3.0-or-later), so it is distributed under the same terms. See [`LICENSE`](../LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+GPL-3.0-or-later. Derives from and links against [Vencord](https://github.com/Vendicated/Vencord) (GPL-3.0-or-later). See [`LICENSE`](../LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

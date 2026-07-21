@@ -1,0 +1,63 @@
+diff --git a/src/components/settings/tabs/updater/index.tsx b/src/components/settings/tabs/updater/index.tsx
+index 30191cb9..03236212 100644
+--- a/src/components/settings/tabs/updater/index.tsx
++++ b/src/components/settings/tabs/updater/index.tsx
+@@ -81,6 +81,22 @@ function Updater() {
+         <SettingsTab>
+             <VesktopSection />
+ 
++            <Flex className={Margins.bottom20} flexDirection="column" gap="1em">
++                <Card variant="info">
++                    <HeadingSecondary>Custom build — vencord-custom</HeadingSecondary>
++                    <Paragraph>
++                        This is a customized Vencord: our plugins (PlatformSpoofer, QuestCompleter) and a
++                        Translate patch, from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>,
++                        layered on top of upstream Vencord.
++                    </Paragraph>
++                    <Paragraph className={Margins.top8}>
++                        Checking for updates pulls the latest upstream and automatically re-applies our
++                        patches before rebuilding — you always get latest Vencord + our customizations,
++                        never a plain reset.
++                    </Paragraph>
++                </Card>
++            </Flex>
++
+             <FormSwitch
+                 title="Automatically update"
+                 description="Automatically update Vencord without confirmation prompt"
+diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
+index 1955f7dc..51185d53 100644
+--- a/src/main/updater/git.ts
++++ b/src/main/updater/git.ts
+@@ -67,13 +67,31 @@ async function calculateGitChanges() {
+ }
+ 
+ async function pull() {
++    // custom: discard our applied overlay patches so upstream pulls cleanly;
++    // build() reapplies them afterwards. userplugins are gitignored and persist.
++    await git("checkout", "--", ".");
+     const res = await git("pull");
+     return res.stdout.includes("Fast-forward");
+ }
+ 
++// custom: our overlay patches live in <checkout>/custom-patches; userplugins persist in src/userplugins.
++async function reapplyCustomOverlay() {
++    const patchesDir = join(VENCORD_SRC_DIR, "custom-patches");
++    for (const patch of ["translate.patch", "update.patch"]) {
++        try {
++            await git("apply", join(patchesDir, patch));
++        } catch {
++            // already applied, or upstream drifted; leave it to save-patch maintenance
++        }
++    }
++}
++
+ async function build() {
+     const opts = { cwd: VENCORD_SRC_DIR };
+ 
++    // custom: re-integrate our patches into the freshly pulled upstream before building
++    await reapplyCustomOverlay();
++
+     const command = isFlatpak ? "flatpak-spawn" : "node";
+     const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
+ 
