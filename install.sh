@@ -62,7 +62,7 @@ say "Installing build deps + building (heavy, temporary)"
     export VENCORD_HASH="${VENCORD_HASH:-custom}"
     export VENCORD_REMOTE="${VENCORD_REMOTE:-Vendicated/Vencord}"
     pnpm i --frozen-lockfile
-    pnpm build
+    pnpm build --standalone --disable-updater
 )
 
 # 5) install ONLY the compiled bundle to its permanent home

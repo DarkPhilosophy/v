@@ -65,7 +65,7 @@ cmd_build() {
     sync_userplugins
     apply_patches
     log "Building"
-    ( cd "${VENCORD}" && pnpm build )
+    ( cd "${VENCORD}" && pnpm build --standalone --disable-updater )
     log "Build done: ${VENCORD}/dist"
 }
 
