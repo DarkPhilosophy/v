@@ -1,69 +1,47 @@
 # vencord-custom
 
-Personal custom [Vencord](https://github.com/Vendicated/Vencord) plugins, packaged for one-line install.
+Personal custom [Vencord](https://github.com/Vendicated/Vencord) build: our plugins + our patches, installed with one command. No fork, no CI, no leftovers.
 
-## Principle — upstream stays upstream
-
-This repo contains **only our own code**. It never contains a copy of Vencord and never modifies the upstream tree in place.
-
-| Layer | What | Where |
-|-------|------|-------|
-| **upstream** | real Vencord, fetched from Vendicated/Vencord | `Vencord/` (gitignored, cloned by the installer) |
-| **our new plugins** | code that does not exist upstream | `userplugins/` |
-| **our patches over upstream** | tweaks to an existing upstream plugin | `patches/` |
-
-Upstream is cloned pristine into `Vencord/` (gitignored, never committed here). Our new plugins live in `userplugins/`; our changes to upstream files live as patches in `patches/`, applied on top. No fork, no mixing.
-
-## How it works
-
-Everything is an **overlay on a pristine upstream Vencord** — nothing is forked.
-
-```mermaid
-graph TD
-  U["Upstream Vencord<br/>pristine git checkout"] --> B["build"]
-  P["patches/<br/>translate.patch + update.patch"] --> B
-  UP["userplugins/<br/>PlatformSpoofer, QuestCompleter"] --> B
-  B --> D["dist/ → ~/.config/Vencord/dist"]
-  D --> DC["Discord loads our build"]
-  DC -->|"Check for updates"| GP["update.patch:<br/>git pull upstream"]
-  GP --> RA["reapply patches<br/>+ userplugins"]
-  RA --> B
-```
-
-- **Build** — upstream + our patches + our userplugins, compiled into `dist/`. The upstream tree is never committed or forked; patches apply on top, at build time.
-- **Load** — Discord's `app.asar` is patched to `require` our `dist/patcher.js` on every launch.
-- **Auto-update** — Discord's built-in *Check for updates* runs `git pull` on the upstream checkout; `update.patch` hooks its build step to reapply our patches + userplugins first. So every update stays *latest upstream + our overlay*, and it re-patches the updater itself — self-perpetuating, never a version of our own.
-
-## Plugins
+## What it contains
 
 - **PlatformSpoofer** — spoof client platform (Desktop/Mobile/Web/Console). *(new plugin → `userplugins/`)*
-- **QuestCompleter** — complete Discord Quests without the game installed (video + play/stream via heartbeat spoof). *(new plugin → `userplugins/`)*
+- **QuestCompleter** — complete Discord Quests without the game (video + play/stream via heartbeat spoof). *(new plugin → `userplugins/`)*
 - **Translate** — immersive / automatic incoming translation. *(patch over the upstream Translate plugin → `patches/translate.patch`)*
-- **Integrated auto-update** — teaches Vencord's own updater to reapply our overlay after each upstream pull. *(patch over the upstream updater → `patches/update.patch`)*
 
-## Install
+The repo holds **only our code** — upstream Vencord is never committed here.
+
+## Install / update
 
 ```sh
 sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
 ```
 
-The installer clones a pristine upstream Vencord into the package, applies our patches, builds, injects into Discord, and (on flatpak) grants the portal permission the built-in updater needs. This is the **integrated** model: the checkout + toolchain stay so Discord's own "Check for updates" can pull upstream and rebuild with our patches.
+Same command installs and updates — just run it again to update.
 
-> Needs `git`, `node`, `pnpm`, `curl`, and working `git` access to GitHub (the built-in updater runs `git pull`). Override the source with `VENCORD_CUSTOM_REPO=<git url>`.
+## How it works
 
-## Usage
-
-```sh
-./vencord.sh install     # clone upstream + apply patches + build + inject
-./vencord.sh build       # apply patches + build only
-./vencord.sh update      # revert → git pull upstream → reapply patches → rebuild
-./vencord.sh save-patch  # regenerate patches/*.patch from the current tree
-./vencord.sh revert      # restore pristine upstream files
+```mermaid
+graph TD
+  T["/tmp (temporary)"] --> C["fetch upstream Vencord + our overlay"]
+  C --> P["apply translate.patch + copy userplugins"]
+  P --> B["pnpm i + build   (node_modules here, in /tmp)"]
+  B --> D["copy dist -> ~/.config/Vencord/dist  (~few MB)"]
+  D --> A["patch Discord app.asar -> load that dist"]
+  A --> X["rm -rf /tmp   (node_modules + source gone)"]
 ```
 
-## Layout & footprint
+Everything is built **live, in a temp dir**, which is deleted on exit — including `node_modules` (~300 MB) and the Vencord source. The build compiles `upstream + our patches + our plugins` into `dist/`, copies that (~few MB) to `~/.config/Vencord/dist`, and points Discord at it.
 
-The **repository** holds only our code — upstream Vencord is never committed:
+**On disk afterwards — nothing extra:**
+- `~/.config/Vencord/dist` — the built bundle Discord loads (required)
+- `~/.config/Vencord/settings/` — your Vencord settings
+- Discord's patched `app.asar`
+
+No `node_modules`, no source checkout, no symlinks, no `~/.local/share`. To update, re-run the command (it rebuilds live and replaces the bundle).
+
+> Requires `git`, `node`, `pnpm` (or `corepack enable`), `curl`, `tar`. On a system flatpak Discord the app.asar patch needs `sudo`.
+
+## Structure
 
 ```
 vencord-custom/
@@ -71,20 +49,13 @@ vencord-custom/
 │  ├─ _shared/author.ts     # our author metadata (no fork of constants.ts)
 │  ├─ platformSpoofer/
 │  └─ questCompleter/
-├─ patches/
-│  ├─ translate.patch       # immersive/auto Translate (over upstream plugin)
-│  └─ update.patch          # integrated auto-update (over upstream updater)
-├─ install.sh               # installer (curl | sh)
-└─ vencord.sh               # build / inject / update
+├─ patches/translate.patch  # our only change over upstream code
+└─ install.sh               # build-live installer (curl | sh)
 ```
 
-On any machine a persistent `Vencord/` git checkout lives inside the package (gitignored); Discord loads from `Vencord/dist` (via `~/.config/Vencord/dist`), and the built-in updater keeps it current — pulling upstream and reapplying our patches. The checkout + toolchain stay on disk on purpose: that is what enables integrated updates.
+## Updating when upstream changes the Translate plugin
 
-## Updating Vencord
-
-Two ways, both preserve our overlay:
-- **In Discord:** Settings → Updater → Check for updates. `update.patch` makes the built-in updater reapply our patches after pulling upstream, then rebuild. On flatpak this needs the portal permission the installer grants plus working `git` access to GitHub.
-- **CLI:** `./vencord.sh update`. If upstream drifted so a patch no longer applies, fix the file once, then `./vencord.sh save-patch`.
+If a Vencord update changes `src/plugins/translate` enough that `translate.patch` no longer applies, fix a local checkout's `src/plugins/translate` by hand once and regenerate the patch with `git diff src/plugins/translate > patches/translate.patch`.
 
 ## License & attribution
 
