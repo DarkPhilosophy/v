@@ -1,0 +1,564 @@
+diff --git a/src/plugins/translate/TranslateModal.tsx b/src/plugins/translate/TranslateModal.tsx
+index a72f9bd..49a3e8f 100644
+--- a/src/plugins/translate/TranslateModal.tsx
++++ b/src/plugins/translate/TranslateModal.tsx
+@@ -19,8 +19,8 @@
+ import { Divider } from "@components/Divider";
+ import { FormSwitch } from "@components/FormSwitch";
+ import { Margins } from "@utils/margins";
+-import { RenderModalProps } from "@vencord/discord-types";
+-import { Forms, Modal,openModal, SearchableSelect, useMemo } from "@webpack/common";
++import type { RenderModalProps } from "@vencord/discord-types";
++import { Forms, Modal, openModal, SearchableSelect, useMemo } from "@webpack/common";
+ 
+ import { settings } from "./settings";
+ import { getLanguages } from "./utils";
+@@ -72,6 +72,32 @@ function AutoTranslateToggle() {
+     );
+ }
+ 
++function AutoTranslateReceivedToggle() {
++    const value = settings.use(["autoTranslateReceived"]).autoTranslateReceived;
++
++    return (
++        <FormSwitch
++            title="Auto Translate Incoming"
++            description={settings.def.autoTranslateReceived.description}
++            value={value}
++            onChange={v => settings.store.autoTranslateReceived = v}
++            hideBorder
++        />
++    );
++}
++function ImmersiveModeToggle() {
++    const value = settings.use(["immersiveMode"]).immersiveMode;
++
++    return (
++        <FormSwitch
++            title="Immersive Mode"
++            description={settings.def.immersiveMode.description}
++            value={value}
++            onChange={v => settings.store.immersiveMode = v}
++            hideBorder
++        />
++    );
++}
+ 
+ function TranslateModal({ rootProps }: { rootProps: RenderModalProps; }) {
+     return (
+@@ -90,6 +116,8 @@ function TranslateModal({ rootProps }: { rootProps: RenderModalProps; }) {
+             <Divider className={Margins.bottom16} />
+ 
+             <AutoTranslateToggle />
++            <AutoTranslateReceivedToggle />
++            <ImmersiveModeToggle />
+         </Modal>
+     );
+ }
+diff --git a/src/plugins/translate/TranslationAccessory.tsx b/src/plugins/translate/TranslationAccessory.tsx
+index 00e3568..4deef7a 100644
+--- a/src/plugins/translate/TranslationAccessory.tsx
++++ b/src/plugins/translate/TranslationAccessory.tsx
+@@ -16,16 +16,51 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+ 
+-import { Message } from "@vencord/discord-types";
+-import { Parser, useEffect, useState } from "@webpack/common";
++import { Logger } from "@utils/Logger";
++import type { Message } from "@vencord/discord-types";
++import { Parser, useEffect, UserStore,useState } from "@webpack/common";
+ 
++import { settings } from "./settings";
+ import { TranslateIcon } from "./TranslateIcon";
+-import { cl, TranslationValue } from "./utils";
++import { cl, getMessageContent, isPendingSentTranslation, sentOriginals, translate, type TranslationValue } from "./utils";
+ 
+ const TranslationSetters = new Map<string, (v: TranslationValue) => void>();
++const logger = new Logger("Translate");
++let accessoryMountedLogged = false;
++let requestStartedLogged = false;
++let requestSucceededLogged = false;
++let requestFailedLogged = false;
++
++// ── Auto-translate cache (survives virtual-list remounts) ──
++
++interface CachedEntry {
++    value: TranslationValue;
++    dismissed: boolean;
++}
++
++const translationCache = new Map<string, CachedEntry>();
++const inflightRequests = new Map<string, Promise<TranslationValue>>();
++const MAX_CACHE = 500;
++
++function computeCacheKey(message: Message, content: string): string {
++    return `${message.id}:${content}:${settings.store.service}:${settings.store.receivedInput}:${settings.store.receivedOutput}`;
++}
++
++function evictOldest(): void {
++    if (translationCache.size >= MAX_CACHE) {
++        const firstKey = translationCache.keys().next().value;
++        if (firstKey) translationCache.delete(firstKey);
++    }
++}
++
++// Type guard — avoids `as any` for the vencordEmbeddedBy runtime property
++function isVencordEmbedded(message: object): boolean {
++    if (!("vencordEmbeddedBy" in message)) return false;
++    return Boolean((message as Record<string, unknown>).vencordEmbeddedBy);
++}
+ 
+ export function handleTranslate(messageId: string, data: TranslationValue) {
+-    TranslationSetters.get(messageId)!(data);
++    TranslationSetters.get(messageId)?.(data);
+ }
+ 
+ function Dismiss({ onDismiss }: { onDismiss: () => void; }) {
+@@ -41,24 +76,168 @@ function Dismiss({ onDismiss }: { onDismiss: () => void; }) {
+ 
+ export function TranslationAccessory({ message }: { message: Message; }) {
+     const [translation, setTranslation] = useState<TranslationValue>();
++    const [showOriginal, setShowOriginal] = useState(false);
++    const [dismissedOutgoing, setDismissedOutgoing] = useState(false);
++    const {
++        autoTranslateReceived,
++        immersiveMode,
++        receivedInput,
++        receivedOutput,
++        service
++    } = settings.use(["autoTranslateReceived", "immersiveMode", "receivedInput", "receivedOutput", "service"]);
+ 
+     useEffect(() => {
++        if (!accessoryMountedLogged) {
++            accessoryMountedLogged = true;
++            logger.info("Accessory mounted; auto-received:", autoTranslateReceived);
++        }
+         // Ignore MessageLinkEmbeds messages
+-        if ((message as any).vencordEmbeddedBy) return;
++        if (isVencordEmbedded(message)) return;
++
++        let cancelled = false;
++
++        // Clear stale translation when message content changes (e.g., after edit)
++        setTranslation(undefined);
++        setShowOriginal(false);
++
++        // Typed wrapper — avoids Dispatch<SetStateAction<...>> vs Map function type mismatch
++        const setter: (v: TranslationValue) => void = v => setTranslation(v);
++        TranslationSetters.set(message.id, setter);
++
++        // Auto-translate incoming messages from other users.
++        // renderMessageAccessory only fires for rendered (visible/near-visible) messages,
++        // NOT for the entire channel history.
++        if (autoTranslateReceived) {
++            const currentUser = UserStore.getCurrentUser();
++            if (currentUser) {
++                const content = getMessageContent(message);
++                // Skip messages already translated on send — identified by exact markers:
++                // 1. Confirmed mapping (sentOriginals, set on non-optimistic MESSAGE_CREATE)
++                // 2. Pending sent translation (matches optimistic message content)
++                // Old own messages from previous sessions have no marker and WILL be
++                // translated — this may produce a back-translation (not the exact original)
++                // when outgoing autoTranslate was ON at send time. This is a known limitation;
++                // exact originals require persistent mapping (not implemented for privacy).
++                const isOwnMsg = currentUser.id === message.author.id;
++                const isAlreadyTranslated = sentOriginals.has(message.id)
++                    || (isOwnMsg && content ? isPendingSentTranslation(message.channel_id, content) : false);
++                if (content && !isAlreadyTranslated) {
++                    const cacheKey = computeCacheKey(message, content);
++
++                    // Restore from cache or join/start an in-flight request
++                    const cached = translationCache.get(cacheKey);
++                    if (cached?.value && !cached.dismissed) {
++                        setTranslation(cached.value);
++                    } else if (!cached?.dismissed) {
++                        const existing = inflightRequests.get(cacheKey);
++                        if (!requestStartedLogged) {
++                            requestStartedLogged = true;
++                            logger.info("Automatic translation request started");
++                        }
++                        const promise = existing ?? translate("received", content).then(trans => {
++                            evictOldest();
++                            translationCache.set(cacheKey, { value: trans, dismissed: false });
++                            return trans;
++                        });
++                        if (!existing) inflightRequests.set(cacheKey, promise);
++
++                        promise
++                            .then(trans => {
++                                if (!requestSucceededLogged) {
++                                    requestSucceededLogged = true;
++                                    logger.info("Automatic translation request succeeded");
++                                }
++                                if (!cancelled) setTranslation(trans);
++                            })
++                            .catch(() => {
++                                if (!requestFailedLogged) {
++                                    requestFailedLogged = true;
++                                    logger.info("Automatic translation request failed");
++                                }
++                            })
++                            .finally(() => { inflightRequests.delete(cacheKey); });
++                    }
++                }
++            }
++        }
++
++        return () => {
++            cancelled = true;
++            // Only remove the setter if it still belongs to this component instance
++            if (TranslationSetters.get(message.id) === setter) {
++                TranslationSetters.delete(message.id);
++            }
++        };
++    }, [autoTranslateReceived, message.author.id, message.channel_id, message.content, message.id, receivedInput, receivedOutput, service]);
++
++    const me = UserStore.getCurrentUser();
++    const isOwn = !!me && message.author.id === me.id;
++    const sentOriginal = sentOriginals.get(message.id);
++    const hasExactOutgoing = isOwn && !!sentOriginal;
++    // Own messages without exact mapping behave like incoming (auto-translated, not original)
++    const isOwnWithoutMapping = isOwn && !hasExactOutgoing;
++    const isIncomingLike = !isOwn || !hasExactOutgoing;
++    const hasOutgoingImmersive = immersiveMode && hasExactOutgoing;
+ 
+-        TranslationSetters.set(message.id, setTranslation);
++    // No translation and no outgoing immersive → nothing to render
++    if (!translation && !hasOutgoingImmersive) return null;
++    if (hasOutgoingImmersive && dismissedOutgoing) return null;
+ 
+-        return () => void TranslationSetters.delete(message.id);
+-    }, []);
++    const handleDismiss = () => {
++        if (hasOutgoingImmersive) {
++            setDismissedOutgoing(true);
++            return;
++        }
++        setTranslation(undefined);
++        // Mark as dismissed so it doesn't reappear from cache on remount
++        const content = getMessageContent(message);
++        if (content) {
++            const cacheKey = computeCacheKey(message, content);
++            const cached = translationCache.get(cacheKey);
++            if (cached) {
++                cached.dismissed = true;
++            } else if (translation) {
++                translationCache.set(cacheKey, { value: translation, dismissed: true });
++            }
++        }
++    };
++    // In immersive: ALWAYS hide Discord content for both incoming and outgoing.
++    // Origin is revealed inside the accessory (gray span), never in Discord's body.
++    const hideDiscordContent = immersiveMode && (isIncomingLike || hasOutgoingImmersive);
++    const isImmersiveToggle = immersiveMode && (isIncomingLike || hasOutgoingImmersive);
++    const expanded = isImmersiveToggle && showOriginal;
++    const iconEl = <TranslateIcon width={16} height={16} className={cl("accessory-icon")} />;
+ 
+-    if (!translation) return null;
++    // Primary text: incoming shows translation, outgoing shows user's original typed text
++    const accessoryText = translation?.text ?? sentOriginal?.original ?? "";
++    const labelLang = translation?.sourceLanguage ?? sentOriginal?.targetLanguage ?? "";
++    // Label: immersive = "Origin" (no language, Discord original could be any language)
++    const labelPrefix = isImmersiveToggle ? "Origin" : `translated from ${labelLang}`;
+ 
+     return (
+-        <span className={cl("accessory")}>
+-            <TranslateIcon width={16} height={16} className={cl("accessory-icon")} />
+-            {Parser.parse(translation.text)}
+-            <br />
+-            (translated from {translation.sourceLanguage} - <Dismiss onDismiss={() => setTranslation(undefined)} />)
++        <span className={cl("accessory", { "hide-original": hideDiscordContent, "immersive": hideDiscordContent })}>
++            {isImmersiveToggle ? (
++                <span className={cl("icon-clickable")} onClick={() => setShowOriginal(s => !s)} role="button">
++                    {iconEl}
++                </span>
++            ) : iconEl}
++            {Parser.parse(accessoryText)}
++            {/* Expanded immersive: reveal Discord's origin in accessory (gray), never in Discord body */}
++            {expanded && (
++                <>
++                    <br />
++                    <span className={cl("origin-text")}>
++                        {Parser.parse(hasOutgoingImmersive && sentOriginal ? sentOriginal.translated : getMessageContent(message))}
++                    </span>
++                </>
++            )}
++            {/* Label: outgoing immersive = "Origin", incoming immersive = "original {lang}", non-immersive = "translated from {lang}" */}
++            {(expanded || (!isImmersiveToggle && translation)) && (
++                <>
++                    <br />
++                    <span className={cl("origin-label")}>({labelPrefix} - <Dismiss onDismiss={handleDismiss} />)</span>
++                </>
++            )}
+         </span>
+     );
+ }
+diff --git a/src/plugins/translate/index.tsx b/src/plugins/translate/index.tsx
+index 68a3a6d..58becdf 100644
+--- a/src/plugins/translate/index.tsx
++++ b/src/plugins/translate/index.tsx
+@@ -19,15 +19,18 @@
+ import "./styles.css";
+ 
+ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/ContextMenu";
++import { addMessageAccessory, removeMessageAccessory } from "@api/MessageAccessories";
+ import { Devs } from "@utils/constants";
++import { Logger } from "@utils/Logger";
+ import definePlugin from "@utils/types";
+ import { Message } from "@vencord/discord-types";
+-import { ChannelStore, Menu } from "@webpack/common";
++import { ChannelStore, Menu, UserStore } from "@webpack/common";
+ 
+ import { settings } from "./settings";
+ import { setShouldShowTranslateEnabledTooltip, TranslateChatBarIcon, TranslateIcon } from "./TranslateIcon";
+ import { handleTranslate, TranslationAccessory } from "./TranslationAccessory";
+-import { translate } from "./utils";
++import { getMessageContent, getTargetLanguageName, pendingSent, QUEUE_TTL_MS, sentOriginals, translate } from "./utils";
++const logger = new Logger("Translate");
+ 
+ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { message: Message; }) => {
+     const content = getMessageContent(message);
+@@ -49,23 +52,15 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
+     ));
+ };
+ 
++let tooltipTimeout: ReturnType<typeof setTimeout>;
+ 
+-function getMessageContent(message: Message) {
+-    // Message snapshots is an array, which allows for nested snapshots, which Discord does not do yet.
+-    // no point collecting content or rewriting this to render in a certain way that makes sense
+-    // for something currently impossible.
+-    return message.content
+-        || message.messageSnapshots?.[0]?.message.content
+-        || message.embeds?.find(embed => embed.type === "auto_moderation_message")?.rawDescription || "";
+-}
+-
+-let tooltipTimeout: any;
+ 
+ export default definePlugin({
+     name: "Translate",
+     description: "Translate messages with Google Translate, DeepL or Kagi.",
+     tags: ["Chat", "Utility"],
+     authors: [Devs.Ven, Devs.AshtonMemer, Devs.koish1],
++    dependencies: ["MessageAccessoriesAPI"],
+     settings,
+     contextMenus: {
+         "message": messageCtxPatch
+@@ -73,7 +68,15 @@ export default definePlugin({
+     // not used, just here in case some other plugin wants it or w/e
+     translate,
+ 
+-    renderMessageAccessory: props => <TranslationAccessory message={props.message} />,
++    // Register accessory at position 0 so it appears before reactions/embeds
++    start() {
++        addMessageAccessory("Translate", props => <TranslationAccessory message={props.message} />, 0);
++        logger.info("Accessory registered; auto-received:", settings.store.autoTranslateReceived, "immersive:", settings.store.immersiveMode);
++    },
++
++    stop() {
++        removeMessageAccessory("Translate");
++    },
+ 
+     chatBarButton: {
+         icon: TranslateIcon,
+@@ -99,7 +102,36 @@ export default definePlugin({
+         }
+     },
+ 
+-    async onBeforeMessageSend(_, message) {
++    flux: {
++        MESSAGE_CREATE({ message, optimistic }: { message: Message; optimistic?: boolean; }) {
++            // Only correlate on server-confirmed messages to guarantee FIFO correctness.
++            // Ignoring optimistic avoids misattributing queue entries when multiple
++            // messages are in-flight. The original text appears after confirmation (~200ms),
++            // not on the optimistic preview — acceptable tradeoff for correctness.
++            if (optimistic) return;
++            const queue = pendingSent.get(message.channel_id);
++            if (!queue || queue.length === 0) return;
++            // Evict stale entries (failed sends, network drops) to prevent stuck queue
++            const now = Date.now();
++            while (queue.length > 0 && now - queue[0].ts > QUEUE_TTL_MS) queue.shift();
++            if (queue.length === 0) return;
++            const me = UserStore.getCurrentUser();
++            if (!me || message.author?.id !== me.id) return;
++            // FIFO with content guard: peek head, verify match before consuming.
++            // Prevents an intervening non-translated message from stealing the entry.
++            const entry = queue[0];
++            if (!entry || entry.translated !== message.content) return;
++            queue.shift();
++            sentOriginals.set(message.id, entry);
++            // Evict oldest if over capacity
++            if (sentOriginals.size > 500) {
++                const firstKey = sentOriginals.keys().next().value;
++                if (firstKey) sentOriginals.delete(firstKey);
++            }
++        }
++    },
++
++    async onBeforeMessageSend(channelId: string, message) {
+         if (!settings.store.autoTranslate) return;
+         if (!message.content) return;
+ 
+@@ -107,7 +139,25 @@ export default definePlugin({
+         clearTimeout(tooltipTimeout);
+         tooltipTimeout = setTimeout(() => setShouldShowTranslateEnabledTooltip?.(false), 2000);
+ 
+-        const trans = await translate("sent", message.content);
++        const original = message.content;
++        const trans = await translate("sent", original);
++        const targetLang = getTargetLanguageName("sent");
++        const entry = { original, translated: trans.text, targetLanguage: targetLang, ts: Date.now() };
++        const queue = pendingSent.get(channelId);
++        if (queue) queue.push(entry);
++        else pendingSent.set(channelId, [entry]);
++        message.content = trans.text;
++    },
++
++    async onBeforeMessageEdit(channelId: string, messageId: string, message) {
++        if (!settings.store.autoTranslate) return;
++        if (!message.content) return;
++
++        const original = message.content;
++        const trans = await translate("sent", original);
++        // Update the outgoing mapping so immersive mode shows the correct original
++        const targetLang = getTargetLanguageName("sent");
++        sentOriginals.set(messageId, { original, translated: trans.text, targetLanguage: targetLang });
+         message.content = trans.text;
+     }
+ });
+diff --git a/src/plugins/translate/settings.tsx b/src/plugins/translate/settings.tsx
+index 5c65c8d..8672b9f 100644
+--- a/src/plugins/translate/settings.tsx
++++ b/src/plugins/translate/settings.tsx
+@@ -75,6 +75,16 @@ export const settings = definePluginSettings({
+         description: "Automatically translate your messages before sending. You can also Shift+click or right-click the translate button to toggle this",
+         default: false
+     },
++    autoTranslateReceived: {
++        type: OptionType.BOOLEAN,
++        description: "Automatically translate incoming messages from other users in chat",
++        default: false
++    },
++    immersiveMode: {
++        type: OptionType.BOOLEAN,
++        description: "Hide original messages and show only the translation. Click the translate icon to reveal the original.",
++        default: false
++    },
+     showAutoTranslateTooltip: {
+         type: OptionType.BOOLEAN,
+         description: "Show a tooltip on the chat bar button when a message is auto-translated",
+diff --git a/src/plugins/translate/styles.css b/src/plugins/translate/styles.css
+index 2898706..713282d 100644
+--- a/src/plugins/translate/styles.css
++++ b/src/plugins/translate/styles.css
+@@ -27,4 +27,39 @@
+ 
+ .vc-trans-chat-button {
+     scale: 1.085;
++}
++
++/* ── Immersive mode ── */
++li[id^="chat-messages-"]:has(.vc-trans-hide-original) [id^="message-content-"] {
++    display: none;
++}
++
++.vc-trans-immersive {
++    color: var(--text-normal);
++    font-style: normal;
++    font-weight: 400;
++    line-height: 1.375rem;
++    margin-top: 0;
++}
++
++.vc-trans-origin-text {
++    color: var(--text-normal);
++    font-style: italic;
++}
++
++.vc-trans-origin-label {
++    color: var(--text-muted);
++    font-style: normal;
++}
++
++.vc-trans-icon-clickable {
++    cursor: pointer;
++    display: inline-flex;
++    align-items: center;
++    margin-right: 0.25em;
++    vertical-align: middle;
++}
++
++.vc-trans-icon-clickable:hover {
++    opacity: 0.7;
+ }
+\ No newline at end of file
+diff --git a/src/plugins/translate/utils.ts b/src/plugins/translate/utils.ts
+index 2c77db5..dc2b25f 100644
+--- a/src/plugins/translate/utils.ts
++++ b/src/plugins/translate/utils.ts
+@@ -19,12 +19,34 @@
+ import { classNameFactory } from "@utils/css";
+ import { onlyOnce } from "@utils/onlyOnce";
+ import { PluginNative } from "@utils/types";
++import type { Message } from "@vencord/discord-types";
+ import { showToast, Toasts } from "@webpack/common";
+ 
+ import { DeeplLanguages, deeplLanguageToGoogleLanguage, GoogleLanguages, KagiLanguages } from "./languages";
+ import { resetLanguageDefaults, settings } from "./settings";
+ 
+ export const cl = classNameFactory("vc-trans-");
++// Outgoing originals — stores what the user typed before auto-translate,
++// so immersive mode can display the original instead of the translation.
++export interface SentOriginal {
++    original: string;
++    translated: string;
++    targetLanguage: string;
++}
++export const sentOriginals = new Map<string, SentOriginal>();
++
++// Pending sent translations — per-channel FIFO queue for optimistic message correlation
++export const pendingSent = new Map<string, { original: string; translated: string; targetLanguage: string; ts: number }[]>();
++export const QUEUE_TTL_MS = 30_000;
++
++/** Check if a message's content matches a pending sent translation (optimistic phase). */
++export function isPendingSentTranslation(channelId: string, content: string): boolean {
++    const queue = pendingSent.get(channelId);
++    if (!queue) return false;
++    const now = Date.now();
++    return queue.some(e => now - e.ts <= QUEUE_TTL_MS && e.translated === content);
++}
++
+ 
+ const Native = VencordNative.pluginHelpers.Translate as PluginNative<typeof import("./native")>;
+ 
+@@ -52,6 +74,15 @@ export interface TranslationValue {
+     text: string;
+ }
+ 
++export function getMessageContent(message: Message): string {
++    // Message snapshots is an array, which allows for nested snapshots, which Discord does not do yet.
++    // no point collecting content or rewriting this to render in a certain way that makes sense
++    // for something currently impossible.
++    return message.content
++        || message.messageSnapshots?.[0]?.message.content
++        || message.embeds?.find(embed => embed.type === "auto_moderation_message")?.rawDescription || "";
++}
++
+ export const getLanguages = () => {
+     if (IS_WEB) {
+         return GoogleLanguages;
+@@ -66,6 +97,13 @@ export const getLanguages = () => {
+     }
+ };
+ 
++/** Resolve a target language code to a display name based on the active service. */
++export function getTargetLanguageName(direction: "sent" | "received"): string {
++    const code = direction === "sent" ? settings.store.sentOutput : settings.store.receivedOutput;
++    const languages = getLanguages() as Record<string, string>;
++    return languages[code] ?? code;
++}
++
+ export async function translate(kind: "received" | "sent", text: string): Promise<TranslationValue> {
+     const translate = IS_WEB ? googleTranslate : (() => {
+         switch (settings.store.service) {

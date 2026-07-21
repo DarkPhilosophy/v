@@ -1,0 +1,10 @@
+# Upstream Vencord is the TRUE source — fetched by the installer, never committed here.
+/Vencord/
+
+# Local backups of pre-cleanup cruft
+/.backup/
+
+# Node / build noise
+node_modules/
+dist/
+*.log

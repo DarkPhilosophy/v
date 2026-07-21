@@ -1,0 +1,43 @@
+.vc-plat-section {
+    border-top: 1px solid var(--background-modifier-accent);
+    margin-top: 8px;
+    padding: 8px 0 4px;
+}
+
+.vc-plat-header {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 0 8px 4px;
+    cursor: pointer;
+}
+
+.vc-plat-options {
+    display: flex;
+    flex-direction: column;
+}
+
+.vc-plat-option {
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin: 0 4px;
+    transition: background-color 0.1s ease;
+    color: var(--text-normal);
+    font-weight: 400;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vc-plat-option:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.vc-plat-active {
+    color: var(--text-brand);
+    font-weight: 600;
+}
+
