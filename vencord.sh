@@ -19,7 +19,10 @@ ensure_vencord() {
     need git
     if [[ ! -d "${VENCORD}/.git" ]]; then
         log "Cloning upstream Vencord -> ${VENCORD}"
-        git clone --depth=1 "${VENCORD_REPO}" "${VENCORD}"
+        # full clone (updater needs history for `git log HEAD...origin`); retry
+        # ignoring global git config to dodge insteadOf HTTPS->SSH rewrites.
+        git clone "${VENCORD_REPO}" "${VENCORD}" 2>/dev/null \
+            || GIT_CONFIG_GLOBAL=/dev/null git clone "${VENCORD_REPO}" "${VENCORD}"
     fi
     need node
     command -v pnpm >/dev/null 2>&1 || { corepack enable >/dev/null 2>&1 || true; }
@@ -43,20 +46,24 @@ sync_userplugins() {
 }
 
 apply_patches() {
-    [[ -f "${TRANSLATE_PATCH}" ]] || { log "No translate.patch, skipping"; return 0; }
-    if git -C "${VENCORD}" apply --reverse --check "${TRANSLATE_PATCH}" 2>/dev/null; then
-        log "translate.patch already applied"
-    elif git -C "${VENCORD}" apply --check "${TRANSLATE_PATCH}" 2>/dev/null; then
-        git -C "${VENCORD}" apply "${TRANSLATE_PATCH}"
-        log "translate.patch applied"
-    else
-        die "translate.patch does NOT apply cleanly (upstream drift). Regenerate it: ./vencord.sh save-patch after fixing translate."
-    fi
+    local patch name
+    for patch in "${ROOT}"/patches/*.patch; do
+        [[ -f "$patch" ]] || continue
+        name="$(basename "$patch")"
+        if git -C "${VENCORD}" apply --reverse --check "$patch" 2>/dev/null; then
+            log "${name} already applied"
+        elif git -C "${VENCORD}" apply --check "$patch" 2>/dev/null; then
+            git -C "${VENCORD}" apply "$patch"
+            log "${name} applied"
+        else
+            die "${name} does NOT apply cleanly (upstream drift). Fix the file, then ./vencord.sh save-patch."
+        fi
+    done
 }
 
 revert_upstream() {
     # restore pristine upstream files we patch (our plugins are untouched)
-    git -C "${VENCORD}" checkout -- src/plugins/translate src/utils/constants.ts 2>/dev/null || true
+    git -C "${VENCORD}" checkout -- src/plugins/translate src/main/updater/git.ts 2>/dev/null || true
     log "Upstream tree restored to pristine"
 }
 
@@ -65,7 +72,7 @@ cmd_build() {
     sync_userplugins
     apply_patches
     log "Building"
-    ( cd "${VENCORD}" && pnpm build --standalone --disable-updater )
+    ( cd "${VENCORD}" && pnpm build )
     log "Build done: ${VENCORD}/dist"
 }
 
@@ -98,6 +105,13 @@ cmd_inject() {
         "${tmp}" -install -location "${disc}"
     fi
     rm -f "${tmp}"
+    # Integrated updater runs `git`/`node` on the host via flatpak-spawn; the
+    # flatpak Discord needs permission to talk to the Flatpak portal for that.
+    if [[ "${disc}" == *flatpak* ]] && command -v flatpak >/dev/null 2>&1; then
+        flatpak override --user --talk-name=org.freedesktop.Flatpak com.discordapp.Discord 2>/dev/null \
+            && log "Granted flatpak portal permission (enables built-in updater)" \
+            || log "Could not grant flatpak permission; built-in updater may not run on flatpak"
+    fi
     log "Injected. Restart Discord (Ctrl+R or relaunch)."
 }
 
@@ -127,8 +141,9 @@ cmd_update() {
 
 cmd_save_patch() {
     ensure_vencord
-    git -C "${VENCORD}" diff src/plugins/translate > "${TRANSLATE_PATCH}"
-    log "Saved current translate mods -> patches/translate.patch ($(wc -l < "${TRANSLATE_PATCH}") lines)"
+    git -C "${VENCORD}" diff src/plugins/translate > "${ROOT}/patches/translate.patch"
+    git -C "${VENCORD}" diff src/main/updater/git.ts > "${ROOT}/patches/update.patch"
+    log "Saved translate.patch + update.patch from current tree"
 }
 
 usage() {
