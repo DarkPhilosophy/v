@@ -3,55 +3,67 @@
 #
 #   sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
 #
-# It builds everything in a TEMP dir and leaves behind ONLY the compiled bundle
-# that Discord must load on every launch:
+# Fetches everything over plain HTTPS tarballs (no `git clone`, so it is immune
+# to git `insteadOf` HTTPS->SSH rewrites), builds in a temp dir, and leaves on
+# disk ONLY the compiled bundle Discord loads on every launch:
 #
 #     $XDG_CONFIG_HOME/Vencord/dist   (~1-2 MB: patcher.js + renderer.js)
 #
-# The Vencord source checkout, node_modules, this package, and the build
-# toolchain are all discarded when the script exits. Nothing else is installed.
+# Vencord source, node_modules, and the toolchain are discarded on exit.
 set -eu
 
-REPO="${VENCORD_CUSTOM_REPO:-https://github.com/DarkPhilosophy/vencord-custom.git}"
-VENCORD_UPSTREAM="${VENCORD_UPSTREAM:-https://github.com/Vendicated/Vencord.git}"
+PKG_REF="${VENCORD_CUSTOM_REF:-main}"
+PKG_TARBALL="${VENCORD_CUSTOM_TARBALL:-https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/${PKG_REF}}"
+VC_TARBALL="${VENCORD_TARBALL:-https://codeload.github.com/Vendicated/Vencord/tar.gz/refs/heads/main}"
 DEST="${XDG_CONFIG_HOME:-$HOME/.config}/Vencord/dist"
 
 say() { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[install] %s\033[0m\n' "$*" >&2; exit 1; }
 
-for c in git node curl; do
+for c in curl tar node; do
     command -v "$c" >/dev/null 2>&1 || die "missing dependency: $c"
 done
 command -v pnpm >/dev/null 2>&1 || corepack enable >/dev/null 2>&1 || die "pnpm unavailable (enable corepack)"
 
-# Everything happens here and is deleted on exit — no persistent build tree.
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 say "Working in ${WORK} (auto-removed on exit)"
 
-# 1) our overlay (or the local checkout if run from inside it)
+# 1) our overlay: local checkout if run from inside it, else HTTPS tarball
 if [ -d "./userplugins" ] && [ -f "./patches/translate.patch" ]; then
     PKG="$(pwd)"; say "Using local package ${PKG}"
 else
-    say "Fetching package"
-    git clone --depth=1 "$REPO" "$WORK/pkg"
+    say "Fetching package (HTTPS tarball)"
+    mkdir -p "$WORK/pkg"
+    curl -fsSL "$PKG_TARBALL" | tar -xz --strip-components=1 -C "$WORK/pkg" \
+        || die "could not download package tarball: ${PKG_TARBALL}"
     PKG="$WORK/pkg"
 fi
 
-# 2) pristine upstream Vencord (into temp, never kept)
-say "Cloning pristine upstream Vencord"
-git clone --depth=1 "$VENCORD_UPSTREAM" "$WORK/vencord"
+# 2) pristine upstream Vencord (HTTPS tarball, into temp)
+say "Fetching pristine upstream Vencord (HTTPS tarball)"
+mkdir -p "$WORK/vencord"
+curl -fsSL "$VC_TARBALL" | tar -xz --strip-components=1 -C "$WORK/vencord" \
+    || die "could not download Vencord tarball"
 
 # 3) layer our plugins + patch onto the pristine tree
 mkdir -p "$WORK/vencord/src/userplugins"
 cp -r "$PKG/userplugins/." "$WORK/vencord/src/userplugins/"
 say "Applying translate.patch"
-git -C "$WORK/vencord" apply "$PKG/patches/translate.patch" \
-    || die "translate.patch failed to apply (upstream drift). Update the patch on the dev machine."
+if ! ( cd "$WORK/vencord" && git apply "$PKG/patches/translate.patch" 2>/dev/null ); then
+    ( cd "$WORK/vencord" && patch -p1 < "$PKG/patches/translate.patch" ) \
+        || die "translate.patch failed to apply (upstream drift; regenerate on the dev machine)"
+fi
 
-# 4) build
-say "Installing build deps + building (this is the heavy, temporary part)"
-( cd "$WORK/vencord" && pnpm i --frozen-lockfile && pnpm build )
+# 4) build (git is not a repo here, so feed the version via env)
+say "Installing build deps + building (heavy, temporary)"
+(
+    cd "$WORK/vencord"
+    export VENCORD_HASH="${VENCORD_HASH:-custom}"
+    export VENCORD_REMOTE="${VENCORD_REMOTE:-Vendicated/Vencord}"
+    pnpm i --frozen-lockfile
+    pnpm build
+)
 
 # 5) install ONLY the compiled bundle to its permanent home
 say "Installing bundle -> ${DEST}"
