@@ -2,7 +2,7 @@
 # Package a built Vencord runtime directory as a standalone app.asar.
 #
 # Usage: package-vencord-asar.sh <built-dist-dir> <output-asar>
-# The caller owns any atomic rename of <output-asar> into place.
+# The helper writes <output-asar> atomically via a sibling temporary file.
 set -eu
 
 if [ "$#" -ne 2 ]; then

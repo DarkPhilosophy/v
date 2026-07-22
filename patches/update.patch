@@ -35,7 +35,7 @@ index 1955f7d..fb6cccb 100644
  import { IpcEvents } from "@shared/IpcEvents";
  import { execFile as cpExecFile } from "child_process";
  import { ipcMain } from "electron";
-+import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";
++import { cp, mkdir, mkdtemp, rm } from "fs/promises";
 +import { homedir } from "os";
  import { join } from "path";
  import { promisify } from "util";
@@ -51,7 +51,7 @@ index 1955f7d..fb6cccb 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,58 +40,110 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,58 +40,84 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -132,40 +132,16 @@ index 1955f7d..fb6cccb 100644
 +}
  
 -    return !res.stderr.includes("Build failed");
-+async function replaceRuntime(candidate: string) {
-+    const parent = join(RUNTIME_ASAR, "..");
-+    await mkdir(parent, { recursive: true });
-+    const staging = `${RUNTIME_ASAR}.next-${process.pid}`;
-+    try {
-+        await copyFile(candidate, staging);
-+        await rename(staging, RUNTIME_ASAR);
-+    } finally {
-+        await rm(staging, { force: true });
-+    }
++async function packageRuntime(overlay: string, source: string) {
++    await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);
  }
  
-+async function waitForPackagedRuntime(candidate: string) {
-+    let lastSize = -1;
-+    for (let attempt = 0; attempt < 3000; attempt++) {
-+        try {
-+            const output = await stat(candidate);
-+            if (output.isFile() && output.size > 0 && output.size === lastSize) return;
-+            lastSize = output.size;
-+        } catch (error) {
-+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-+        }
-+        await new Promise(resolve => setTimeout(resolve, 100));
-+    }
-+    throw new Error("ASAR packager produced no stable output");
-+}
-+
 +async function build(userpluginsRoot?: string) {
 +    await mkdir(RUNTIME_DIR, { recursive: true });
 +    const work = await mkdtemp(join(RUNTIME_DIR, ".update-"));
 +    const overlay = join(work, "overlay");
 +    const source = join(work, "vencord");
 +    const overlayArchive = join(work, "overlay.tar.gz");
-+    const candidate = join(work, "app.asar");
 +    try {
 +        await downloadTarball(OVERLAY_TARBALL, overlayArchive);
 +        await extractTarball(overlayArchive, overlay);
@@ -180,9 +156,7 @@ index 1955f7d..fb6cccb 100644
 +        const args = ["scripts/build/build.mjs"];
 +        if (IS_DEV) args.push("--dev");
 +        await run("node", args, source);
-+        await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), candidate]);
-+        await waitForPackagedRuntime(candidate);
-+        await replaceRuntime(candidate);
++        await packageRuntime(overlay, source);
 +        return true;
 +    } finally {
 +        await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(error =>

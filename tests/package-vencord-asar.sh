@@ -115,14 +115,15 @@ assert patch.index(generator) < patch.index(build)
 assert 'join(source, "dist", "userPluginSeeds")' not in patch
 assert 'await run("git", ["clone", "--depth", "1", UPSTREAM_REPO, source]);' in patch
 assert "UPSTREAM_TARBALL" not in patch
-assert 'import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";' in patch
+assert 'import { cp, mkdir, mkdtemp, rm } from "fs/promises";' in patch
 assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });' in patch
 assert 'await run("cp"' not in patch
 assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
-assert "async function waitForPackagedRuntime(candidate: string)" in patch
-assert "for (let attempt = 0; attempt < 3000; attempt++)" in patch
-assert "await waitForPackagedRuntime(candidate);" in patch
+assert 'await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);' in patch
+assert "await packageRuntime(overlay, source);" in patch
+assert "waitForPackagedRuntime" not in patch
+assert "const candidate" not in patch
 PY
 
 [ "$(cat "$WORK/existing.asar")" = 'keep-old-asar' ]
