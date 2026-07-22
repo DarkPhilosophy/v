@@ -108,9 +108,14 @@ printf '%s\n' '{"name":"discord","version":"0.0.0"}' > "$loader/package.json"
 LOADER_ASAR="$WORK/loader.asar"
 "$HELPER" "$loader" "$LOADER_ASAR" || die "loader packaging failed"
 
-# Remove artifacts from older integrated installs, but retain settings/user data.
-for stale in dist src custom-patches node_modules .git; do
-    [ -e "$VENCORD/$stale" ] && rm -rf "$VENCORD/$stale"
+# Remove artifacts from older integrated installs, retaining only settings/user
+# data and the currently working runtime until its replacement is ready.
+for stale in "$VENCORD"/* "$VENCORD"/.[!.]* "$VENCORD"/..?*; do
+    [ -e "$stale" ] || continue
+    case "$stale" in
+        "$VENCORD/app.asar"|"$VENCORD/settings") continue ;;
+    esac
+    rm -rf "$stale"
 done
 
 SYSTEM_STAGE="$resources/.app.asar.vencord.$$"
