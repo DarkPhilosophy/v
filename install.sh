@@ -28,7 +28,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
 # 1) our overlay (local checkout if run from inside it, else HTTPS tarball -> temp)
-if [ -d "./userplugins" ] && [ -f "./patches/translate.patch" ]; then
+if [ -d "./userplugins" ] && [ -d "./core/src/main/userPluginManager" ] && [ -f "./patches/userplugin-manager.patch" ]; then
     PKG="$(pwd)"
 else
     say "Fetching overlay"
@@ -51,14 +51,15 @@ if [ ! -d "${VENCORD}/.git" ]; then
     git -C "${VENCORD}" checkout -f "${BR:-main}"
 fi
 
-# 4) seed our overlay into the checkout (persist: userplugins gitignored, custom-patches untracked)
+# 4) seed our overlay into the checkout (core manager files and userplugins are untracked;
+#    custom-patches are reapplied after every upstream pull)
 mkdir -p "${VENCORD}/src/userplugins" "${VENCORD}/custom-patches"
+cp -r "${PKG}/core/src/." "${VENCORD}/src/"
 cp -r "${PKG}/userplugins/." "${VENCORD}/src/userplugins/"
 cp -r "${PKG}/patches/." "${VENCORD}/custom-patches/"
-
 # 5) deps + apply patches + build (git-mode updater stays enabled)
 [ -d "${VENCORD}/node_modules" ] || { say "Installing deps"; ( cd "${VENCORD}" && pnpm i --frozen-lockfile ); }
-for p in translate.patch update.patch; do
+for p in translate.patch update.patch userplugin-manager.patch; do
     if git -C "${VENCORD}" apply --reverse --check "${VENCORD}/custom-patches/$p" 2>/dev/null; then :
     elif git -C "${VENCORD}" apply --check "${VENCORD}/custom-patches/$p" 2>/dev/null; then git -C "${VENCORD}" apply "${VENCORD}/custom-patches/$p"
     else die "$p does not apply cleanly (upstream drift)"; fi
