@@ -1,16 +1,18 @@
 # vencord-custom
 
-Personal custom [Vencord](https://github.com/Vendicated/Vencord): our plugins + our patches, layered on top of upstream — with Vencord's own updater taught to keep our overlay. No fork, no CI, no prebuilt releases.
+A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds against a fresh upstream checkout and installs one persistent compiled runtime: `~/.config/Vencord/app.asar`.
 
-## What it contains
+There is no Vencord fork, persistent upstream checkout, committed build output, CI artifact, or prebuilt release.
 
-- **PlatformSpoofer** — spoof client platform (Desktop/Mobile/Web/Console). *(new plugin → `userplugins/`)*
-- **QuestCompleter** — complete Discord Quests without the game (video + play/stream via heartbeat spoof). *(new plugin → `userplugins/`)*
-- **Translate** — immersive / automatic incoming translation. *(patch over the upstream Translate plugin → `patches/translate.patch`)*
-- **User Plugin Manager** — inspect, install, update, repair, adopt, and remove third-party plugins from Git, HTTP, or local sources through a transactional review/apply flow. *(core manager + patch over Vencord's Plugins settings → `core/` + `patches/userplugin-manager.patch`)*
-- **Integrated updater** — Vencord's own Updater reapplies our complete overlay after each upstream pull, and shows a note explaining the custom source. *(patch over the upstream updater → `patches/update.patch`)*
+## Included customizations
 
-The repo holds **only our code** — upstream Vencord is never committed here.
+- **PlatformSpoofer** — changes the client platform reported by Discord (Desktop, Mobile, Web, or Console).
+- **QuestCompleter** — automates supported Discord Quest tasks.
+- **SteamRichPresence** — detects Steam games running on the Linux host and publishes their Steam name, artwork, description, elapsed time, and store link as Discord Rich Presence. Inspired by [mbutsk/open-drpc](https://github.com/mbutsk/open-drpc), but implemented as a native Vencord plugin with no Python daemon or extra runtime dependencies.
+- **Translate patch** — immersive incoming-message translation and automatic translation behavior.
+- **User Plugin Manager** — inspects, stages, installs, updates, adopts, and removes user plugins from Vencord's Plugins settings. Changes are applied transactionally and rebuild the complete runtime.
+- **Updater integration** — Vencord's normal updater fetches fresh upstream and the current custom overlay, rebuilds in a temporary workspace, and atomically replaces `app.asar`.
+- **Flatpak restart** — after a manager rebuild, Discord relaunches through a delayed host command so Flatpak's single-instance lock can clear first.
 
 ## Install
 
@@ -18,60 +20,90 @@ The repo holds **only our code** — upstream Vencord is never committed here.
 sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
 ```
 
-Sets up an upstream Vencord checkout at `~/.config/Vencord`, bakes in our overlay, builds, and points Discord at `~/.config/Vencord/dist`.
+Requirements: `git`, `node`, `pnpm` (or Corepack), `curl`, `tar`, `python3`, and permission to update Discord's loader `app.asar`. The installer may request `sudo` only when the system Discord resources directory is not user-writable.
 
-## How it works — `upstream + ours = your Vencord`
+The installer:
 
-```mermaid
-graph TD
-  X["upstream Vencord (git checkout)"] --> B["build"]
-  Y["our overlay: core/ + userplugins/ + custom-patches/"] --> B
-  B --> D["~/.config/Vencord/dist"]
-  D --> DC["Discord loads it (app.asar patched once)"]
-  DC -->|"Vencord ▸ Updater ▸ Check for updates"| GP["git pull upstream (local)"]
-  GP --> RA["update.patch restores core + userplugins and reapplies all custom patches"]
-  RA --> B
+1. downloads this overlay when it is not run from a local checkout;
+2. clones a fresh upstream Vencord checkout into a temporary directory;
+3. overlays `core/src/` and `userplugins/`, then applies the custom patches;
+4. installs build dependencies and compiles only inside that temporary checkout;
+5. packages the compiled runtime as `~/.config/Vencord/app.asar`;
+6. installs a small loader into Discord's own `resources/app.asar`;
+7. removes temporary source, dependencies, patches, and build output.
+
+Existing Vencord settings are preserved. No persistent `dist/`, `node_modules/`, cloned Vencord source, or `userPluginSeeds/` directory is required.
+
+## Updating
+
+In Discord, open:
+
+**Settings → Vencord → Updater → Check for updates**
+
+The update path follows the same clean-build model as installation. Its workspace lives temporarily under `~/.config/Vencord/.update-*` and is removed after the build. The resulting `app.asar` is the only persistent compiled artifact.
+
+## Runtime layout
+
+```text
+~/.config/Vencord/
+├── app.asar     # complete compiled custom Vencord runtime
+└── settings/    # persistent Vencord/user settings
 ```
 
-Nothing is prebuilt or forked. The build happens **locally**: upstream + our patches + our plugins → `dist`. Discord's `app.asar` is patched **once** to load `~/.config/Vencord/dist`.
+For Flatpak Discord, the installer grants the app access to `~/.config/Vencord` so the loader can read the runtime.
 
-**Updating** uses Vencord's own Updater (Settings → Vencord → Updater → *Check for updates*): it `git pull`s the latest upstream **locally**, and `update.patch` restores the manager core and userplugins, then reapplies every custom patch before rebuilding — so you always get *latest upstream + our overlay*, never a plain reset. The Updater tab also shows a note explaining this. No prebuilt download, no CI.
-
-## User Plugin Manager
-
-Open **Settings → Vencord → Plugins → User Plugin Manager** in the desktop client. Enabling it requires a one-time risk acknowledgement because managed plugins run with the same access as Vencord and Discord.
-
-The manager accepts Git repositories, HTTP archives/files, and local directories/files. It inspects and previews installable entries before anything is queued. Installs, updates, repairs, adoptions, and removals remain pending until **Apply**; Apply rebuilds once and uses a transaction journal for rollback or startup recovery. The manager's own infrastructure is protected from removal.
-
-## Footprint (the honest cost)
-
-Because the in-app updater rebuilds **locally**, the checkout + build toolchain stay under `~/.config/Vencord`:
-
-- `~/.config/Vencord/` — upstream source + injected manager core + `src/userplugins/` (ours and managed plugins) + `custom-patches/` (ours) + `node_modules` (build toolchain, ~300 MB) + `dist/` (what Discord loads) + `settings/`.
-
-That `node_modules` is what lets *Check for updates* recompile with our patches — the same as any Vencord dev install. No symlinks, no `~/.local/share`, one location. (Want it tiny instead, at the cost of the in-app button? Then you'd rebuild from scratch on each update instead — ask and we can switch models.)
-
-## Structure (this repo)
+## Repository layout
 
 ```text
 vencord-custom/
-├─ core/                        # User Plugin Manager main/shared/UI implementation
-├─ userplugins/
-│  ├─ _shared/author.ts         # our author metadata (no fork of constants.ts)
-│  ├─ platformSpoofer/
-│  └─ questCompleter/
-├─ patches/
-│  ├─ translate.patch           # immersive/auto Translate
-│  ├─ update.patch              # restore the complete overlay after upstream pulls
-│  └─ userplugin-manager.patch  # wire the manager into Vencord/Electron
-├─ tests/userPluginManager/     # manager model, safety, source, and transaction tests
-└─ install.sh                   # local-build installer (curl | sh)
+├── core/src/                         # active User Plugin Manager overlay
+├── userplugins/                      # canonical custom plugin sources
+│   ├── _shared/author.ts
+│   ├── platformSpoofer/
+│   ├── questCompleter/
+│   └── steamRichPresence/
+├── patches/
+│   ├── translate.patch               # Translate customization
+│   ├── update.patch                  # temporary clean-build updater
+│   └── userplugin-manager.patch      # Vencord/Electron manager wiring
+├── scripts/
+│   ├── package-vencord-asar.sh
+│   └── stage-userplugin-seeds.sh
+├── tests/
+│   ├── userPluginManager/
+│   ├── package-vencord-asar.sh
+│   └── steamRichPresence.test.ts
+└── install.sh
 ```
 
-## When upstream changes the patched files
+`userplugins/` is the canonical plugin source. `core/src/` is not a duplicate: it is the manager implementation copied into the temporary upstream checkout. Generated `core/dist/userPluginSeeds/` output is obsolete and must not be retained or packaged.
 
-If a Vencord update changes a patched upstream file enough that a patch no longer applies, fix the affected file in `~/.config/Vencord` by hand once and regenerate it: `git -C ~/.config/Vencord diff <path> > patches/<name>.patch`.
+## Build flow
 
-## License & attribution
+```mermaid
+graph TD
+    O["vencord-custom overlay"] --> T["temporary workspace"]
+    U["fresh upstream Vencord"] --> T
+    T --> P["apply patches and embed canonical userplugins"]
+    P --> B["compile"]
+    B --> A["package app.asar"]
+    A --> R["~/.config/Vencord/app.asar"]
+    T --> C["workspace removed"]
+```
 
-GPL-3.0-or-later. Derives from and links against [Vencord](https://github.com/Vendicated/Vencord) (GPL-3.0-or-later). See [`LICENSE`](../LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+## Verification
+
+Focused local checks:
+
+```sh
+pnpm dlx tsx --test tests/steamRichPresence.test.ts
+sh tests/package-vencord-asar.sh
+```
+
+The complete install/build path is exercised by running `./install.sh` from the repository root.
+
+## License
+
+This project and its custom plugins are licensed under GPL-3.0-or-later. Vencord is copyright Vendicated and contributors and is also GPL-3.0-or-later.
+
+See [`LICENSE`](../LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
