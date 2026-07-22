@@ -18,6 +18,10 @@ make_asar() {
 }
 
 make_asar "$WORK/original-src" "$WORK/original.asar" "console.log('Discord original');"
+mkdir -p "$WORK/openasar-src/updater"
+printf '%s\n' \
+    "fs.rmSync(downloadPath,{recursive:true,force:true});mkdir(downloadPath);continueStartup();" \
+    > "$WORK/openasar-src/updater/moduleUpdater.js"
 make_asar "$WORK/openasar-src" "$WORK/openasar.asar" "global.oaVersion='nightly-test'; console.log('OpenAsar');"
 make_asar "$WORK/openasar-next-src" "$WORK/openasar-next.asar" "global.oaVersion='nightly-next'; console.log('OpenAsar');"
 printf '%s\n' 'not an asar' > "$WORK/invalid.asar"
@@ -26,6 +30,25 @@ if python3 "$HELPER" validate-openasar "$WORK/invalid.asar" >/dev/null 2>&1; the
     exit 1
 fi
 python3 "$HELPER" validate-openasar "$WORK/openasar.asar"
+python3 "$HELPER" prepare-openasar "$WORK/openasar.asar"
+python3 - "$HELPER" "$WORK/openasar.asar" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("manage_openasar", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+source = module.Asar(Path(sys.argv[2])).read("updater/moduleUpdater.js")
+broken = b"fs.rmSync(downloadPath,{recursive:true,force:true});mkdir(downloadPath);"
+fixed = b"skipModule||[fs.rmSync(downloadPath,{recursive:true,force:true}),mkdir(downloadPath)];"
+assert broken not in source
+assert source.count(fixed) == 1
+assert b"continueStartup();" in source
+PY
+patched_openasar=$(sha256sum "$WORK/openasar.asar")
+python3 "$HELPER" prepare-openasar "$WORK/openasar.asar"
+[ "$(sha256sum "$WORK/openasar.asar")" = "$patched_openasar" ]
 
 mkdir -p "$WORK/fresh-resources"
 cp "$WORK/original.asar" "$WORK/fresh-resources/app.asar"

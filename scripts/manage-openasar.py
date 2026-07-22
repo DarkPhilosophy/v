@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import struct
@@ -14,6 +15,12 @@ from typing import NoReturn
 
 MAX_HEADER_BYTES = 16 * 1024 * 1024
 MAX_TEXT_ENTRY_BYTES = 4 * 1024 * 1024
+BROKEN_OPENASAR_MODULE_SETUP = (
+    b"fs.rmSync(downloadPath,{recursive:true,force:true});mkdir(downloadPath);"
+)
+PATCHED_OPENASAR_MODULE_SETUP = (
+    b"skipModule||[fs.rmSync(downloadPath,{recursive:true,force:true}),mkdir(downloadPath)];"
+)
 
 
 def fail(message: str) -> NoReturn:
@@ -94,6 +101,105 @@ class Asar:
         if not isinstance(package, dict):
             fail(f"package.json is not an object in {self.path}")
         return package
+def rewrite_asar_entry(archive: Asar, target: str, replacement: bytes) -> None:
+    entries: list[tuple[str, dict[str, object], bytes]] = []
+
+    def collect(files: dict[str, object], prefix: PurePosixPath = PurePosixPath()) -> None:
+        for name, value in files.items():
+            if not isinstance(value, dict):
+                fail(f"invalid ASAR node {prefix / name} in {archive.path}")
+            path = prefix / name
+            children = value.get("files")
+            if children is not None:
+                if not isinstance(children, dict):
+                    fail(f"invalid ASAR directory {path} in {archive.path}")
+                collect(children, path)
+            elif "size" in value:
+                if value.get("unpacked") or "link" in value:
+                    fail(f"unsupported ASAR entry {path} in {archive.path}")
+                entries.append(
+                    (path.as_posix(), value, archive.read(path.as_posix(), archive.size))
+                )
+            else:
+                fail(f"invalid ASAR node {path} in {archive.path}")
+
+    collect(archive.header["files"])
+    matches = [entry for entry in entries if entry[0] == target]
+    if len(matches) != 1:
+        fail(f"expected one ASAR entry {target} in {archive.path}")
+
+    entries.sort(key=lambda entry: int(entry[1].get("offset", "0")))
+    offset = 0
+    data_parts: list[bytes] = []
+    for name, node, data in entries:
+        if name == target:
+            data = replacement
+        node["size"] = len(data)
+        node["offset"] = str(offset)
+        integrity = node.get("integrity")
+        if integrity is not None:
+            if not isinstance(integrity, dict) or integrity.get("algorithm") != "SHA256":
+                fail(f"unsupported ASAR integrity metadata for {name} in {archive.path}")
+            block_size = integrity.get("blockSize")
+            if not isinstance(block_size, int) or block_size <= 0:
+                fail(f"invalid ASAR integrity block size for {name} in {archive.path}")
+            integrity["hash"] = hashlib.sha256(data).hexdigest()
+            integrity["blocks"] = [
+                hashlib.sha256(data[index : index + block_size]).hexdigest()
+                for index in range(0, len(data), block_size)
+            ]
+        data_parts.append(data)
+        offset += len(data)
+
+    header_json = json.dumps(
+        archive.header, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    if len(header_json) > MAX_HEADER_BYTES:
+        fail(f"rewritten ASAR header is too large: {archive.path}")
+    header = struct.pack(
+        "<IIII", 4, 8 + len(header_json), 4 + len(header_json), len(header_json)
+    )
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{archive.path.name}.", suffix=".tmp", dir=archive.path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(header)
+            stream.write(header_json)
+            for data in data_parts:
+                stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, archive.path.stat().st_mode & 0o777)
+        os.replace(temporary, archive.path)
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        fail(f"cannot rewrite ASAR {archive.path}: {exc}")
+
+
+def prepare_openasar(candidate: Path) -> None:
+    validate_openasar(candidate)
+    archive = Asar(candidate)
+    source = archive.read("updater/moduleUpdater.js")
+    if source.count(PATCHED_OPENASAR_MODULE_SETUP) == 1:
+        if BROKEN_OPENASAR_MODULE_SETUP in source:
+            fail(f"ambiguous OpenAsar module updater in {candidate}")
+        print("OpenAsar Flatpak module-update fix already applied")
+        return
+    if source.count(BROKEN_OPENASAR_MODULE_SETUP) != 1:
+        fail(f"unsupported OpenAsar module updater in {candidate}")
+
+    rewrite_asar_entry(
+        archive,
+        "updater/moduleUpdater.js",
+        source.replace(BROKEN_OPENASAR_MODULE_SETUP, PATCHED_OPENASAR_MODULE_SETUP),
+    )
+    validate_openasar(candidate)
+    patched = Asar(candidate).read("updater/moduleUpdater.js")
+    if patched.count(PATCHED_OPENASAR_MODULE_SETUP) != 1:
+        fail(f"OpenAsar module-update fix verification failed: {candidate}")
+    print("OpenAsar Flatpak module-update fix applied")
 
 
 def classify_discord_asar(path: Path) -> str:
@@ -301,11 +407,15 @@ def remove(resources: Path) -> None:
 def main(argv: list[str]) -> None:
     if len(argv) < 3:
         fail(
+            f"       {argv[0]} prepare-openasar <candidate>\n"
             f"usage: {argv[0]} <validate-openasar|validate-runtime> <candidate>\n"
             f"       {argv[0]} <prepare-loader|install|keep|remove> <resources> [candidate]\n"
             f"       {argv[0]} verify-chain <resources> <runtime> <auto|openasar|original>"
         )
     action = argv[1]
+    if action == "prepare-openasar" and len(argv) == 3:
+        prepare_openasar(Path(argv[2]))
+        return
     if action == "validate-openasar" and len(argv) == 3:
         validate_openasar(Path(argv[2]))
         print("OpenAsar candidate verified")

@@ -132,7 +132,7 @@ assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer
 assert 'OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"' in installer
 assert 'OPENASAR_ACTION="$("$OPENASAR_CHOOSER")"' in installer
-assert 'python3 "$OPENASAR_HELPER" validate-openasar "$OPENASAR_CANDIDATE"' in installer
+assert 'python3 "$OPENASAR_HELPER" prepare-openasar "$OPENASAR_CANDIDATE"' in installer
 assert 'python3 "$OPENASAR_HELPER" validate-runtime "$APP_ASAR"' in installer
 assert 'target = Path(sys.argv[2])' in installer
 assert 'target.parents[1].resolve() / target.parent.name / target.name' in installer
@@ -141,7 +141,7 @@ assert 'install) manage_openasar install "$resources" "$OPENASAR_CANDIDATE"' in 
 assert 'keep) manage_openasar keep "$resources"' in installer
 assert 'remove) manage_openasar remove "$resources"' in installer
 assert 'python3 "$OPENASAR_HELPER" verify-chain "$resources" "$VENCORD/app.asar" auto' in installer
-assert installer.index('validate-openasar "$OPENASAR_CANDIDATE"') < installer.index('manage_openasar prepare-loader "$resources"')
+assert installer.index('prepare-openasar "$OPENASAR_CANDIDATE"') < installer.index('manage_openasar prepare-loader "$resources"')
 assert installer.index('validate-runtime "$APP_ASAR"') < installer.index('manage_openasar prepare-loader "$resources"')
 assert installer.index('manage_openasar prepare-loader "$resources"') < installer.index('mv -f "$SYSTEM_STAGE" "$resources/app.asar"')
 assert installer.index('mv -f "$APP_ASAR" "$VENCORD/app.asar"') < installer.index('verify-chain "$resources" "$VENCORD/app.asar" auto')

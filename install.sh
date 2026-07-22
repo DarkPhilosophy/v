@@ -150,8 +150,8 @@ if [ "$OPENASAR_ACTION" = "install" ]; then
     OPENASAR_CANDIDATE="$WORK/openasar.asar"
     say "Downloading OpenAsar"
     curl -fsSL "$OPENASAR_URL" -o "$OPENASAR_CANDIDATE" || die "OpenAsar download failed"
-    python3 "$OPENASAR_HELPER" validate-openasar "$OPENASAR_CANDIDATE" \
-        || die "OpenAsar candidate validation failed"
+    python3 "$OPENASAR_HELPER" prepare-openasar "$OPENASAR_CANDIDATE" \
+        || die "OpenAsar candidate preparation failed"
 fi
 
 manage_openasar() {
