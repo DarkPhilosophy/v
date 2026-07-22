@@ -533,7 +533,8 @@ export async function createUserPluginManagerService(
         }
         try {
             return await paths.build(userpluginsRoot);
-        } catch {
+        } catch (error) {
+            console.error("[Vencord] User Plugin Manager build failed", error);
             return false;
         }
     }
