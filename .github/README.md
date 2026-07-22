@@ -6,13 +6,12 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 
 ## Included customizations
 
-- **PlatformSpoofer** — changes the client platform reported by Discord (Desktop, Mobile, Web, or Console).
-- **QuestCompleter** — automates supported Discord Quest tasks.
-- **SteamRichPresence** — detects Steam games running on the Linux host and publishes their Steam name, artwork, description, elapsed time, and store link as Discord Rich Presence. Inspired by [mbutsk/open-drpc](https://github.com/mbutsk/open-drpc), but implemented as a native Vencord plugin with no Python daemon or extra runtime dependencies.
-- **Translate patch** — immersive incoming-message translation and automatic translation behavior.
-- **User Plugin Manager** — inspects, stages, installs, updates, adopts, and removes user plugins from Vencord's Plugins settings. Changes are applied transactionally and rebuild the complete runtime.
-- **Updater integration** — Vencord's normal updater fetches fresh upstream and the current custom overlay, rebuilds in a temporary workspace, and atomically replaces `app.asar`.
-- **Flatpak restart** — after a manager rebuild, Discord relaunches through a delayed host command so Flatpak's single-instance lock can clear first.
+- **PlatformSpoofer** — spoofs the Discord client platform (Desktop, Mobile, Web, or Console).
+- **QuestCompleter** — completes supported Discord quests without installing the advertised game.
+- **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
+- **User Plugin Manager** — transactionally installs and updates custom user plugins from Discord settings.
+- **Translate** — custom translation integration.
+- **OpenAsar** — installed or updated by default as Discord's optimized bootstrap while preserving Vencord's loader.
 
 ## Install
 
@@ -20,21 +19,58 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
 ```
 
-Requirements: `git`, `node`, `pnpm` (or Corepack), `curl`, `tar`, `python3`, and permission to update Discord's loader `app.asar`. The installer may request `sudo` only when the system Discord resources directory is not user-writable.
+Requirements: `git`, `node`, `pnpm` (or Corepack), `curl`, `tar`, `python3`, and permission to update Discord's `app.asar`. The installer may request `sudo` only when the Discord resources directory is not user-writable.
 
 The installer:
 
 1. downloads this overlay when it is not run from a local checkout;
 2. clones a fresh upstream Vencord checkout into a temporary directory;
-3. overlays the canonical `core/src/` tree, then applies the custom patches;
+3. overlays the canonical `core/src/` tree and applies the custom patches;
 4. lists every custom plugin discovered under `core/src/userplugins/`;
-5. installs build dependencies and compiles only inside that temporary checkout;
+5. installs build dependencies and compiles only inside the temporary checkout;
 6. verifies every listed plugin name in the renderer bundle and its exact source path in the renderer source map;
-7. packages the verified runtime as `~/.config/Vencord/app.asar`;
-8. installs a small loader into Discord's own `resources/app.asar`;
-9. removes temporary source, dependencies, patches, and build output.
+7. packages the verified runtime for `~/.config/Vencord/app.asar`;
+8. installs or updates OpenAsar by default, preserving the original Discord bootstrap as `resources/app.asar.backup`;
+9. installs the Vencord loader as `resources/app.asar` and keeps the selected bootstrap at `resources/_app.asar`;
+10. verifies the complete loader → Vencord runtime → OpenAsar/original bootstrap chain;
+11. removes temporary source, dependencies, patches, and build output.
 
 Existing Vencord settings are preserved. No persistent `dist/`, `node_modules/`, cloned Vencord source, or `userPluginSeeds/` directory is required.
+
+### OpenAsar choices
+
+OpenAsar uses the official nightly artifact also used by the Vencord installer. The default is `install`, including for non-interactive installs.
+
+```sh
+# Install or update OpenAsar (default)
+OPENASAR_ACTION=install ./install.sh
+
+# Preserve the current OpenAsar/original Discord bootstrap state
+OPENASAR_ACTION=keep ./install.sh
+
+# Remove OpenAsar and restore the preserved original Discord bootstrap
+OPENASAR_ACTION=remove ./install.sh
+```
+
+Interactive runs accept `install`, `keep`, or `remove`. The source URL can be overridden for controlled testing:
+
+```sh
+OPENASAR_URL=https://example.invalid/app.asar ./install.sh
+```
+
+The candidate is parsed and validated as OpenAsar before Discord files are changed. Installation is fail-closed and uses sibling temporary files plus atomic replacement. `remove` refuses to proceed when a valid original backup is unavailable.
+
+After installation, the Discord resources layout is:
+
+```text
+Discord/resources/
+├── app.asar          # small Vencord loader
+├── _app.asar         # OpenAsar by default, or Discord's original bootstrap
+└── app.asar.backup   # preserved original while OpenAsar is installed
+
+~/.config/Vencord/
+└── app.asar          # compiled custom Vencord runtime
+```
 
 ## Updating
 
@@ -42,17 +78,7 @@ In Discord, open:
 
 **Settings → Vencord → Updater → Check for updates**
 
-The update path follows the same clean-build model as installation. Its workspace lives temporarily under `~/.config/Vencord/.update-*` and is removed after the build. The resulting `app.asar` is the only persistent compiled artifact.
-
-## Runtime layout
-
-```text
-~/.config/Vencord/
-├── app.asar     # complete compiled custom Vencord runtime
-└── settings/    # persistent Vencord/user settings
-```
-
-For Flatpak Discord, the installer grants the app access to `~/.config/Vencord` so the loader can read the runtime.
+The updater performs the same temporary clean build, plugin verification, and atomic runtime replacement. OpenAsar lifecycle selection remains an installer concern; Vencord updates preserve the current bootstrap state.
 
 ## Repository layout
 
@@ -67,15 +93,19 @@ vencord-custom/
 │   ├── components/                   # Vencord settings integration
 │   └── shared/                       # shared manager contracts
 ├── patches/
-│   ├── translate.patch               # Translate customization
+│   ├── translate.patch
 │   ├── update.patch                  # temporary clean-build updater
 │   └── userplugin-manager.patch      # Vencord/Electron manager wiring
 ├── scripts/
+│   ├── choose-openasar-action.sh
+│   ├── manage-openasar.py
 │   ├── package-vencord-asar.sh
 │   ├── stage-userplugin-seeds.sh
 │   └── verify-userplugins-build.py
 ├── tests/
 │   ├── userPluginManager/
+│   ├── choose-openasar-action.sh
+│   ├── manage-openasar.sh
 │   ├── package-vencord-asar.sh
 │   ├── steamRichPresence.test.ts
 │   └── verify-userplugins-build.sh
@@ -93,9 +123,11 @@ graph TD
     T --> P["apply patches and embed canonical userplugins"]
     P --> B["compile"]
     B --> V["verify plugin names + source-map paths"]
-    V --> A["package app.asar"]
-    A --> R["~/.config/Vencord/app.asar"]
-    T --> C["workspace removed"]
+    V --> A["package Vencord app.asar"]
+    A --> L["prepare Discord loader + selected bootstrap"]
+    L --> C["verify loader chain"]
+    C --> R["install ~/.config/Vencord/app.asar"]
+    T --> X["remove workspace"]
 ```
 
 ## Verification
@@ -106,12 +138,16 @@ Focused local checks:
 pnpm dlx tsx --test tests/steamRichPresence.test.ts
 sh tests/verify-userplugins-build.sh
 sh tests/package-vencord-asar.sh
+sh tests/choose-openasar-action.sh
+sh tests/manage-openasar.sh
 ```
 
-The complete install/build path is exercised by running `./install.sh` from the repository root.
+The complete install/build path is exercised by running `./install.sh` from the repository root. A real Discord restart is required to load a newly installed runtime or bootstrap.
 
 ## License
 
 This project and its custom plugins are licensed under GPL-3.0-or-later. Vencord is copyright Vendicated and contributors and is also GPL-3.0-or-later.
+
+OpenAsar is an independent AGPL-3.0 project downloaded from [GooseMod/OpenAsar](https://github.com/GooseMod/OpenAsar); it is not vendored in this repository.
 
 See [`LICENSE`](../LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

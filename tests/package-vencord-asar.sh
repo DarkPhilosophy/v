@@ -130,6 +130,23 @@ assert './core/src/userplugins' in installer
 assert '$PKG/userplugins' not in installer
 assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer
+assert 'OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"' in installer
+assert 'OPENASAR_ACTION="$("$OPENASAR_CHOOSER")"' in installer
+assert 'python3 "$OPENASAR_HELPER" validate-openasar "$OPENASAR_CANDIDATE"' in installer
+assert 'python3 "$OPENASAR_HELPER" validate-runtime "$APP_ASAR"' in installer
+assert 'target = Path(sys.argv[2])' in installer
+assert 'target.parents[1].resolve() / target.parent.name / target.name' in installer
+assert 'manage_openasar prepare-loader "$resources"' in installer
+assert 'install) manage_openasar install "$resources" "$OPENASAR_CANDIDATE"' in installer
+assert 'keep) manage_openasar keep "$resources"' in installer
+assert 'remove) manage_openasar remove "$resources"' in installer
+assert 'python3 "$OPENASAR_HELPER" verify-chain "$resources" "$VENCORD/app.asar" auto' in installer
+assert installer.index('validate-openasar "$OPENASAR_CANDIDATE"') < installer.index('manage_openasar prepare-loader "$resources"')
+assert installer.index('validate-runtime "$APP_ASAR"') < installer.index('manage_openasar prepare-loader "$resources"')
+assert installer.index('manage_openasar prepare-loader "$resources"') < installer.index('mv -f "$SYSTEM_STAGE" "$resources/app.asar"')
+assert installer.index('mv -f "$APP_ASAR" "$VENCORD/app.asar"') < installer.index('verify-chain "$resources" "$VENCORD/app.asar" auto')
+assert 'RUNTIME_BACKUP="$WORK/runtime-backup.asar"' in installer
+assert 'restore_runtime' in installer
 assert 'join(source, "dist", "renderer.js.map")' in patch
 assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch

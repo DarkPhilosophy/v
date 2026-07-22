@@ -1,32 +1,31 @@
-# Third-Party Notices
+# Third-party notices
 
-This repository contains only original plugins and patches authored for it.
-It does **not** bundle Vencord — the upstream client is cloned, pristine, at
-build/install time. The notices below cover the upstream projects this package
-builds on and derives from.
+This repository contains a source overlay, custom plugins, patches, and build/install tooling. It does not vendor a Vencord checkout or an OpenAsar binary. Those projects are obtained from their upstream sources during installation.
 
-## Vencord (upstream)
+## Vencord
 
-- Repository: https://github.com/Vendicated/Vencord
-- Copyright: © Vendicated and Vencord contributors
+- Source: https://github.com/Vendicated/Vencord
+- Copyright: Vendicated and Vencord contributors
 - License: GPL-3.0-or-later
-- Relationship to this package:
-  - Plugins in `userplugins/` (PlatformSpoofer, QuestCompleter) are original works
-    built against Vencord's plugin APIs and are licensed **GPL-3.0-or-later**
-    (see the SPDX headers in each file).
-  - `patches/translate.patch` is a **derivative modification** of Vencord's
-    built-in Translate plugin (`src/plugins/translate`), likewise GPL-3.0-or-later.
-  - Vencord source is **not redistributed here**; `install.sh` / `vencord.sh`
-    fetch it from the official repository and apply our overlay on top.
 
-## VencordInstaller
+The overlay under `core/src/`, the patches under `patches/`, and the custom plugins integrate with or modify Vencord. Files derived from Vencord retain their upstream copyright and SPDX notices.
 
-- Repository: https://github.com/Vendicated/VencordInstaller
-- License: GPL-3.0-or-later
-- Use: downloaded at install time to patch the Discord desktop client into loading
-  Vencord. Not bundled in this repository.
+## Vencord Installer
 
----
+- Source: https://github.com/Vencord/Installer
+- Copyright: Vendicated and Vencord contributors
+- License: GPL-3.0
 
-Because this package derives from and links against Vencord (GPL-3.0-or-later),
-the package as a whole is distributed under the same terms — see `LICENSE`.
+The OpenAsar lifecycle and loader layout follow the compatibility model used by the official Vencord installer. This repository contains an independent implementation rather than vendored installer source.
+
+## OpenAsar
+
+- Source: https://github.com/GooseMod/OpenAsar
+- Copyright: GooseMod/OpenAsar contributors
+- License: AGPL-3.0
+
+`install.sh` downloads the official OpenAsar nightly artifact at runtime unless `OPENASAR_URL` is explicitly overridden. No OpenAsar binary or source file is committed to this repository.
+
+## Repository license
+
+Unless a file states otherwise, this repository is licensed under GPL-3.0-or-later. See [`../LICENSE`](../LICENSE).

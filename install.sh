@@ -11,6 +11,7 @@ set -eu
 VENCORD="${XDG_CONFIG_HOME:-$HOME/.config}/Vencord"
 VENCORD_REPO="${VENCORD_UPSTREAM:-https://github.com/Vendicated/Vencord.git}"
 PKG_TARBALL="${VENCORD_CUSTOM_TARBALL:-https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main}"
+OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"
 
 say() { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[install] %s\033[0m\n' "$*" >&2; exit 1; }
@@ -91,12 +92,9 @@ HELPER="$PKG/scripts/package-vencord-asar.sh"
 APP_ASAR="$WORK/app.asar"
 "$HELPER" "$BUILD/dist" "$APP_ASAR" || die "ASAR packaging failed"
 [ -s "$APP_ASAR" ] || die "ASAR packaging produced no output"
-# Keep the packaged runtime in the temporary workspace until the loader has
-# also been prepared; a loader/package failure therefore leaves the old app.asar
-# untouched.
 
-# 5) Find Discord and install a tiny system loader. The loader's patcher.js
-# requires the user-writable runtime app.asar installed above.
+# 5) Find Discord and build the tiny loader that forwards to the user-writable
+# Vencord runtime.
 disc=""
 for c in \
     "/var/lib/flatpak/app/com.discordapp.Discord/current/active/files/discord" \
@@ -110,26 +108,73 @@ loader="$WORK/loader"
 mkdir -p "$loader"
 python3 - "$loader/patcher.js" "$VENCORD/app.asar/patcher.js" <<'PY'
 import json
-import pathlib
 import sys
-pathlib.Path(sys.argv[1]).write_text(
-    "require(" + json.dumps(sys.argv[2]) + ");\n", encoding="utf-8"
+from pathlib import Path
+
+target = Path(sys.argv[2])
+canonical_target = target.parents[1].resolve() / target.parent.name / target.name
+Path(sys.argv[1]).write_text(
+    "require(" + json.dumps(str(canonical_target)) + ");\n",
+    encoding="utf-8",
 )
 PY
 printf '%s\n' '{"name":"discord","version":"0.0.0"}' > "$loader/package.json"
 LOADER_ASAR="$WORK/loader.asar"
 "$HELPER" "$loader" "$LOADER_ASAR" || die "loader packaging failed"
 
-# Remove artifacts from older integrated installs, retaining only settings/user
-# data and the currently working runtime until its replacement is ready.
-for stale in "$VENCORD"/* "$VENCORD"/.[!.]* "$VENCORD"/..?*; do
-    [ -e "$stale" ] || continue
-    case "$stale" in
-        "$VENCORD/app.asar"|"$VENCORD/settings") continue ;;
-    esac
-    rm -rf "$stale"
-done
+# 6) Choose the OpenAsar lifecycle action. Install/update is the interactive and
+# non-interactive default; OPENASAR_ACTION=keep/remove are explicit overrides.
+OPENASAR_HELPER="$PKG/scripts/manage-openasar.py"
+OPENASAR_CHOOSER="$PKG/scripts/choose-openasar-action.sh"
+[ -x "$OPENASAR_HELPER" ] || die "missing OpenAsar manager: $OPENASAR_HELPER"
+[ -x "$OPENASAR_CHOOSER" ] || die "missing OpenAsar action chooser: $OPENASAR_CHOOSER"
+python3 "$OPENASAR_HELPER" validate-runtime "$APP_ASAR" \
+    || die "Vencord runtime candidate validation failed"
+RUNTIME_BACKUP="$WORK/runtime-backup.asar"
+RUNTIME_EXISTED=0
+if [ -f "$VENCORD/app.asar" ]; then
+    cp -p "$VENCORD/app.asar" "$RUNTIME_BACKUP" \
+        || die "failed to preserve existing Vencord runtime"
+    RUNTIME_EXISTED=1
+fi
+restore_runtime() {
+    if [ "$RUNTIME_EXISTED" -eq 1 ]; then
+        mv -f "$RUNTIME_BACKUP" "$VENCORD/app.asar"
+    else
+        rm -f "$VENCORD/app.asar"
+    fi
+}
+OPENASAR_ACTION="$("$OPENASAR_CHOOSER")" || die "invalid OpenAsar action"
+OPENASAR_CANDIDATE=""
+if [ "$OPENASAR_ACTION" = "install" ]; then
+    OPENASAR_CANDIDATE="$WORK/openasar.asar"
+    say "Downloading OpenAsar"
+    curl -fsSL "$OPENASAR_URL" -o "$OPENASAR_CANDIDATE" || die "OpenAsar download failed"
+    python3 "$OPENASAR_HELPER" validate-openasar "$OPENASAR_CANDIDATE" \
+        || die "OpenAsar candidate validation failed"
+fi
 
+manage_openasar() {
+    if [ -w "$resources" ]; then
+        python3 "$OPENASAR_HELPER" "$@"
+    else
+        command -v sudo >/dev/null 2>&1 || die "Discord resources need write permission and sudo is unavailable"
+        sudo python3 "$OPENASAR_HELPER" "$@"
+    fi
+}
+
+# prepare-loader copies the current Discord bootstrap to _app.asar without
+# removing app.asar. OpenAsar mutations are atomic and retain the validated
+# original as app.asar.backup.
+manage_openasar prepare-loader "$resources" || die "Discord bootstrap preparation failed"
+case "$OPENASAR_ACTION" in
+    install) manage_openasar install "$resources" "$OPENASAR_CANDIDATE" || die "OpenAsar installation failed" ;;
+    keep) manage_openasar keep "$resources" || die "OpenAsar state validation failed" ;;
+    remove) manage_openasar remove "$resources" || die "OpenAsar removal failed" ;;
+esac
+
+# Replace app.asar only after the active bootstrap is valid. Until this rename,
+# Discord still has its previous app.asar.
 SYSTEM_STAGE="$resources/.app.asar.vencord.$$"
 if [ -w "$resources" ]; then
     install -m 0644 "$LOADER_ASAR" "$SYSTEM_STAGE"
@@ -142,15 +187,28 @@ else
     SYSTEM_STAGE=""
 fi
 
-# Install the compiled runtime only after the system loader has been prepared.
-# The rename is atomic within the user data filesystem and leaves an existing
-# runtime untouched if it fails.
-mv -f "$APP_ASAR" "$VENCORD/app.asar" || die "could not install $VENCORD/app.asar"
+# Install the validated runtime atomically, then verify only the final on-disk
+# chain. Restore the previous runtime if that final verification fails.
+mv -f "$APP_ASAR" "$VENCORD/app.asar" || die "failed to install $VENCORD/app.asar"
+if ! python3 "$OPENASAR_HELPER" verify-chain "$resources" "$VENCORD/app.asar" auto; then
+    restore_runtime || die "bootstrap verification failed and runtime rollback failed"
+    die "OpenAsar/Vencord bootstrap verification failed; previous runtime restored"
+fi
+
+# Remove artifacts from older integrated installs only after the new chain is
+# verified, retaining settings/user data and the active runtime.
+for stale in "$VENCORD"/* "$VENCORD"/.[!.]* "$VENCORD"/..?*; do
+    [ -e "$stale" ] || continue
+    case "$stale" in
+        "$VENCORD/app.asar"|"$VENCORD/settings") continue ;;
+    esac
+    rm -rf "$stale"
+done
 
 # Flatpak must be allowed to read the user-writable runtime path.
 if [ "${disc#*flatpak}" != "$disc" ] && command -v flatpak >/dev/null 2>&1; then
     flatpak override --user --filesystem="$VENCORD" com.discordapp.Discord 2>/dev/null || true
 fi
 
-say "Done. Runtime installed at ${VENCORD}/app.asar. Restart Discord (Ctrl+R)."
+say "Done. Runtime installed at ${VENCORD}/app.asar with OpenAsar action: ${OPENASAR_ACTION}. Restart Discord (Ctrl+R)."
 say "Update from Discord: Settings -> Vencord -> Updater -> Check for updates."
