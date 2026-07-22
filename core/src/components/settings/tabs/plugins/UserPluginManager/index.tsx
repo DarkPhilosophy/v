@@ -15,6 +15,7 @@ import { Span } from "@components/Span";
 import type {
     ManagedSourceV1,
     PendingChangeV1,
+    UserPluginManagerBuildStage,
     UserPluginManagerSnapshot
 } from "@shared/userPluginManager";
 import { relaunch } from "@utils/native";
@@ -31,6 +32,12 @@ const RECOVERY_MESSAGE: Record<string, string> = {
     "recovery-build": "Files were changed but the rebuild did not finish. Recovering rebuilds Vencord to match what is on disk.",
     "commit": "A change finished on disk but was not recorded. Recovering finalises the bookkeeping.",
     "none": "No recovery is needed."
+};
+
+const BUILD_STAGE_LABEL: Record<UserPluginManagerBuildStage, string> = {
+    preparing: "Preparing files",
+    building: "Building Vencord",
+    installing: "Installing runtime"
 };
 
 function confirmAction(options: {
@@ -77,13 +84,13 @@ function describePending(change: PendingChangeV1, sources: readonly ManagedSourc
         }
     }
 }
-
 interface ManagerBinding {
     controller: UserPluginManagerController;
     snapshot: UserPluginManagerSnapshot | null;
     busy: boolean;
+    progress: { label: string; elapsedSeconds: number; } | null;
     error: ManagerError | null;
-    run(action: (controller: UserPluginManagerController) => Promise<unknown>): Promise<boolean>;
+    run(action: (controller: UserPluginManagerController) => Promise<unknown>, progressLabel?: string): Promise<boolean>;
 }
 
 function useUserPluginManager(): ManagerBinding {
@@ -93,11 +100,17 @@ function useUserPluginManager(): ManagerBinding {
 
     const [snapshot, setSnapshot] = useState<UserPluginManagerSnapshot | null>(() => controller.current);
     const [busy, setBusy] = useState(false);
+    const [progressLabel, setProgressLabel] = useState<string | null>(null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
     const [error, setError] = useState<ManagerError | null>(null);
 
-    const run = useCallback(async (action: (controller: UserPluginManagerController) => Promise<unknown>): Promise<boolean> => {
+    const run = useCallback(async (action: (controller: UserPluginManagerController) => Promise<unknown>, label?: string) => {
         setBusy(true);
         setError(null);
+        setProgressLabel(label ?? null);
+        setProgressStartedAt(label ? Date.now() : null);
+        setElapsedSeconds(0);
         try {
             await action(controller);
             return true;
@@ -109,20 +122,36 @@ function useUserPluginManager(): ManagerBinding {
             return false;
         } finally {
             setBusy(false);
+            setProgressLabel(null);
+            setProgressStartedAt(null);
         }
     }, [controller]);
 
     useEffect(() => {
-        const unsubscribe = controller.subscribe(setSnapshot);
-        void run(c => c.load());
-        return unsubscribe;
-    }, [controller, run]);
+        if (progressStartedAt === null) return;
+        const timer = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - progressStartedAt) / 1000)), 1000);
+        return () => window.clearInterval(timer);
+    }, [progressStartedAt]);
 
-    return { controller, snapshot, busy, error, run };
+    useEffect(() => VencordNative.userPluginManager.onProgress(stage => {
+        setProgressLabel(BUILD_STAGE_LABEL[stage]);
+    }), []);
+
+    useEffect(() => controller.subscribe(next => setSnapshot(next)), [controller]);
+    useEffect(() => { void run(c => c.load()); }, [run]);
+
+    return {
+        controller,
+        snapshot,
+        busy,
+        progress: progressLabel ? { label: progressLabel, elapsedSeconds } : null,
+        error,
+        run
+    };
 }
 
 function UserPluginManagerView() {
-    const { controller, snapshot, busy, error, run } = useUserPluginManager();
+    const { controller, snapshot, busy, progress, error, run } = useUserPluginManager();
 
     if (!snapshot) {
         return (
@@ -147,7 +176,7 @@ function UserPluginManagerView() {
         confirmText: "Apply & rebuild",
         variant: "primary",
         body: <Paragraph>The staged changes are written to disk and Vencord is rebuilt in a single step. A restart is needed afterwards to load them.</Paragraph>,
-        onConfirm: () => void run(c => c.applyPending()).then(ok => {
+        onConfirm: () => void run(c => c.applyPending(), "Applying changes and rebuilding Vencord").then(ok => {
             if (ok) confirmAction({
                 title: "Applied — restart to load changes?",
                 confirmText: "Restart",
@@ -226,7 +255,7 @@ function UserPluginManagerView() {
                             <Paragraph>{RECOVERY_MESSAGE[recovery.action] ?? RECOVERY_MESSAGE.rollback}</Paragraph>
                             <Paragraph className={cl("meta")}>Mutations are blocked until recovery completes.</Paragraph>
                             <div className={cl("callout-actions")}>
-                                <Button variant="dangerPrimary" size="small" disabled={!view.canRecover} onClick={() => void run(c => c.recover())}>
+                                <Button variant="dangerPrimary" size="small" disabled={!view.canRecover} onClick={() => void run(c => c.recover(), "Recovering and rebuilding Vencord")}>
                                     Recover now
                                 </Button>
                             </div>
@@ -264,6 +293,18 @@ function UserPluginManagerView() {
                         </Button>
                         {busy ? <span className={cl("toolbar-status")} role="status">Working…</span> : null}
                     </div>
+
+                    {progress ? (
+                        <Card variant="warning" className={cl("progress")} role="status" aria-live="polite">
+                            <span className={cl("progress-spinner")} aria-hidden="true" />
+                            <div>
+                                <HeadingTertiary>{progress.label}</HeadingTertiary>
+                                <Paragraph className={cl("meta")}>
+                                    Preparing, building, and installing. This can take a few minutes. {progress.elapsedSeconds}s elapsed.
+                                </Paragraph>
+                            </div>
+                        </Card>
+                    ) : null}
 
                     {pending.length ? (
                         <Card variant="warning" className={cl("callout")}>

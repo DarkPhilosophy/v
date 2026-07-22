@@ -324,6 +324,26 @@ test("Update restores a managed destination missing from disk", async t => {
     assert.match(await readFile(join(paths.embeddedRoot, "source", "index.ts"), "utf8"), /Fixture/);
 });
 
+test("Apply reports real rebuild stages in order", async t => {
+    const paths = await createFixture(t);
+    const stages: string[] = [];
+    const service = await createUserPluginManagerService({
+        ...paths,
+        build: async (userpluginsRoot, report) => {
+            report?.("building");
+            report?.("installing");
+            return replaceEmbeddedRoot(paths, userpluginsRoot);
+        }
+    });
+    await service.acknowledgeRisk();
+    const inspection = await service.inspectSource({ kind: "local-directory", locator: paths.sourceRoot });
+    await service.stageInstall({ inspectionId: inspection.inspectionId, displayName: "Fixture" });
+
+    await service.applyPending(stage => stages.push(stage));
+
+    assert.deepEqual(stages, ["preparing", "building", "installing"]);
+});
+
 test("failed Apply restores installed files and preserves the pending batch", async t => {
     const paths = await createFixture(t);
     let builds = 0;

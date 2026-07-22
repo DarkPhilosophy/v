@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { DATA_DIR } from "@main/utils/constants";
 import { IpcEvents } from "@shared/IpcEvents";
-import type { UserPluginManagerIpcResult } from "@shared/userPluginManager";
+import type { UserPluginManagerBuildStage, UserPluginManagerIpcResult } from "@shared/userPluginManager";
 import { redactSensitiveData } from "@shared/userPluginManagerSafety";
 import { ipcMain } from "electron";
 
@@ -34,7 +34,28 @@ function serializeManagerCall<TArgs extends unknown[], TResult>(
     };
 }
 
-export function registerUserPluginManagerIpcHandlers(build: (userpluginsRoot: string) => Promise<boolean>): void {
+function serializeManagerEventCall<TResult>(
+    call: (event: Electron.IpcMainInvokeEvent) => Promise<TResult>
+): (event: Electron.IpcMainInvokeEvent) => Promise<UserPluginManagerIpcResult<TResult>> {
+    return async event => {
+        try {
+            return { ok: true, value: await call(event) };
+        } catch (error) {
+            const candidate = error as { code?: unknown; message?: unknown; };
+            return {
+                ok: false,
+                error: {
+                    code: typeof candidate.code === "string" ? candidate.code : "INTERNAL_ERROR",
+                    message: redactSensitiveData(typeof candidate.message === "string" ? candidate.message : "User Plugin Manager operation failed")
+                }
+            };
+        }
+    };
+}
+
+export function registerUserPluginManagerIpcHandlers(
+    build: (userpluginsRoot: string, report?: (stage: UserPluginManagerBuildStage) => void) => Promise<boolean>
+): void {
     const dataRoot = join(DATA_DIR, "userPluginManager");
     const service = createUserPluginManagerService({
         dataRoot,
@@ -58,6 +79,12 @@ export function registerUserPluginManagerIpcHandlers(build: (userpluginsRoot: st
     ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_STAGE_ADOPT, serializeManagerCall(async input => (await service).stageAdopt(input)));
     ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_STAGE_REMOVE, serializeManagerCall(async sourceId => (await service).stageRemove(sourceId)));
     ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_DISCARD_PENDING, serializeManagerCall(async () => (await service).discardPending()));
-    ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_APPLY_PENDING, serializeManagerCall(async () => (await service).applyPending()));
-    ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_RECOVER, serializeManagerCall(async () => (await service).recover()));
+    ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_APPLY_PENDING, serializeManagerEventCall(async event => {
+        const report = (stage: UserPluginManagerBuildStage) => event.sender.send(IpcEvents.USER_PLUGIN_MANAGER_PROGRESS, stage);
+        return (await service).applyPending(report);
+    }));
+    ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_RECOVER, serializeManagerEventCall(async event => {
+        const report = (stage: UserPluginManagerBuildStage) => event.sender.send(IpcEvents.USER_PLUGIN_MANAGER_PROGRESS, stage);
+        return (await service).recover(report);
+    }));
 }

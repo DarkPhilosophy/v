@@ -179,6 +179,8 @@ export interface UserPluginManagerSnapshot {
     locked: boolean;
 }
 
+export type UserPluginManagerBuildStage = "preparing" | "building" | "installing";
+
 export interface UserPluginManagerIpcError {
     code: string;
     message: string;

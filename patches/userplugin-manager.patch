@@ -12,7 +12,7 @@ index 1b2e87be..59e1e31b 100644
  
  const setCssDebounced = debounce((css: string) => VencordNative.quickCss.set(css));
  
-@@ -70,6 +73,21 @@ window.VencordNative = {
+@@ -70,6 +73,22 @@ window.VencordNative = {
          onRendererCssUpdate: NOOP,
      },
  
@@ -29,6 +29,7 @@ index 1b2e87be..59e1e31b 100644
 +        discardPending: USER_PLUGIN_MANAGER_UNSUPPORTED,
 +        applyPending: USER_PLUGIN_MANAGER_UNSUPPORTED,
 +        recover: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        onProgress: () => NOOP,
 +    },
 +
      updater: {
@@ -38,7 +39,7 @@ diff --git a/src/VencordNative.ts b/src/VencordNative.ts
 index 67ea7a09..3e254a7a 100644
 --- a/src/VencordNative.ts
 +++ b/src/VencordNative.ts
-@@ -9,6 +9,15 @@ import type { CspRequestResult } from "@main/csp/manager";
+@@ -9,6 +9,16 @@ import type { CspRequestResult } from "@main/csp/manager";
  import type { PluginIpcMappings } from "@main/ipcPlugins";
  import type { UserThemeHeader } from "@main/themes";
  import { IpcEvents } from "@shared/IpcEvents";
@@ -49,12 +50,13 @@ index 67ea7a09..3e254a7a 100644
 +    UserPluginManagerInspection,
 +    UserPluginManagerInspectionInput,
 +    UserPluginManagerIpcResult,
-+    UserPluginManagerSnapshot
++    UserPluginManagerSnapshot,
++    type UserPluginManagerBuildStage
 +} from "@shared/userPluginManager";
  import type { IpcRes } from "@utils/types";
  import { ipcRenderer } from "electron/renderer";
  
-@@ -20,6 +29,16 @@ export function sendSync<T = any>(event: IpcEvents, ...args: any[]) {
+@@ -20,6 +30,22 @@ export function sendSync<T = any>(event: IpcEvents, ...args: any[]) {
      return ipcRenderer.sendSync(event, ...args) as T;
  }
  
@@ -67,11 +69,17 @@ index 67ea7a09..3e254a7a 100644
 +    }
 +    return result.value;
 +}
++function onUserPluginManagerProgress(listener: (stage: UserPluginManagerBuildStage) => void): () => void {
++    const handler = (_event: Electron.IpcRendererEvent, stage: UserPluginManagerBuildStage) => listener(stage);
++    ipcRenderer.on(IpcEvents.USER_PLUGIN_MANAGER_PROGRESS, handler);
++    return () => ipcRenderer.off(IpcEvents.USER_PLUGIN_MANAGER_PROGRESS, handler);
++}
++
 +
  const PluginHelpers = {} as Record<string, Record<string, (...args: any[]) => Promise<any>>>;
  const pluginIpcMap = sendSync<PluginIpcMappings>(IpcEvents.GET_PLUGIN_IPC_METHOD_MAP);
  
-@@ -100,5 +119,20 @@ export default {
+@@ -100,5 +126,21 @@ export default {
              invoke<CspRequestResult>(IpcEvents.CSP_REQUEST_ADD_OVERRIDE, url, directives, callerName),
      },
  
@@ -87,7 +95,8 @@ index 67ea7a09..3e254a7a 100644
 +        stageRemove: (sourceId: string) => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_STAGE_REMOVE, sourceId),
 +        discardPending: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_DISCARD_PENDING),
 +        applyPending: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_APPLY_PENDING),
-+        recover: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_RECOVER)
++        recover: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_RECOVER),
++        onProgress: onUserPluginManagerProgress
 +    },
 +
      pluginHelpers: PluginHelpers
@@ -117,7 +126,7 @@ diff --git a/src/shared/IpcEvents.ts b/src/shared/IpcEvents.ts
 index 72813bc0..800abf85 100644
 --- a/src/shared/IpcEvents.ts
 +++ b/src/shared/IpcEvents.ts
-@@ -54,5 +54,18 @@ export const enum IpcEvents {
+@@ -54,5 +54,19 @@ export const enum IpcEvents {
      RENDERER_CSS_UPDATE = "VencordRendererCssUpdate",
      PRELOAD_GET_RENDERER_JS = "VencordPreloadGetRendererJs",
  
@@ -133,6 +142,7 @@ index 72813bc0..800abf85 100644
 +    USER_PLUGIN_MANAGER_DISCARD_PENDING = "VencordUserPluginManagerDiscardPending",
 +    USER_PLUGIN_MANAGER_APPLY_PENDING = "VencordUserPluginManagerApplyPending",
 +    USER_PLUGIN_MANAGER_RECOVER = "VencordUserPluginManagerRecover",
++    USER_PLUGIN_MANAGER_PROGRESS = "VencordUserPluginManagerProgress",
 +
      SUPPORTS_WINDOWS_MATERIAL = "VencordSupportsWindowsMaterial",
  }

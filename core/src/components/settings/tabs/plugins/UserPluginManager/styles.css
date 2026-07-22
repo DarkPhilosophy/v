@@ -30,6 +30,34 @@
     font-variant-numeric: tabular-nums;
 }
 
+.vc-upm-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.vc-upm-progress-spinner {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    border: 2px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
+    border-top-color: var(--text-normal);
+    border-radius: 50%;
+    animation: vc-upm-spin 0.8s linear infinite;
+}
+
+@keyframes vc-upm-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vc-upm-progress-spinner {
+        animation-duration: 1.8s;
+    }
+}
+
 .vc-upm-section {
     display: flex;
     flex-direction: column;

@@ -20,6 +20,7 @@ import {
     type StageInstallInput,
     type StageUpdateInput,
     type UserPluginInventoryEntry,
+    type UserPluginManagerBuildStage,
     type UserPluginManagerInspection,
     type UserPluginManagerInspectionInput,
     type UserPluginManagerSnapshot,
@@ -68,7 +69,7 @@ export interface UserPluginManagerPaths {
     host?: UserPluginManagerHost;
     inspectionTtlMs?: number;
     now?: () => number;
-    build?: (userpluginsRoot: string) => Promise<boolean>;
+    build?: (userpluginsRoot: string, report?: (stage: UserPluginManagerBuildStage) => void) => Promise<boolean>;
     embeddedUserPlugins?: {
         files: Readonly<Record<string, string>>;
         inventory: readonly HostInventoryEntry[];
@@ -524,7 +525,10 @@ export async function createUserPluginManagerService(
         };
     }
 
-    async function runBuild(userpluginsRoot: string): Promise<boolean> {
+    async function runBuild(
+        userpluginsRoot: string,
+        report?: (stage: UserPluginManagerBuildStage) => void
+    ): Promise<boolean> {
         if (!paths.build) {
             throw new UserPluginManagerServiceError(
                 "INVALID_OPERATION",
@@ -532,15 +536,18 @@ export async function createUserPluginManagerService(
             );
         }
         try {
-            return await paths.build(userpluginsRoot);
+            return await paths.build(userpluginsRoot, report);
         } catch (error) {
             console.error("[Vencord] User Plugin Manager build failed", error);
             return false;
         }
     }
 
-    async function runRecoveryBuild(userpluginsRoot: string): Promise<void> {
-        const succeeded = await runBuild(userpluginsRoot);
+    async function runRecoveryBuild(
+        userpluginsRoot: string,
+        report?: (stage: UserPluginManagerBuildStage) => void
+    ): Promise<void> {
+        const succeeded = await runBuild(userpluginsRoot, report);
         await host.execute({ action: "complete-recovery-build", journalPath, succeeded });
     }
 
@@ -558,7 +565,8 @@ export async function createUserPluginManagerService(
         await host.execute({ action: "complete-commit", journalPath });
     }
 
-    async function recover(): Promise<UserPluginManagerSnapshot> {
+    async function recover(report?: (stage: UserPluginManagerBuildStage) => void): Promise<UserPluginManagerSnapshot> {
+        report?.("preparing");
         const recovery = await host.execute({ action: "inspect-recovery", journalPath });
         if (recovery.action === "none") return snapshot();
         const { journal } = recovery;
@@ -567,16 +575,17 @@ export async function createUserPluginManagerService(
         }
         if (recovery.action === "rollback") {
             await host.execute({ action: "rollback-for-recovery", journalPath });
-            await runRecoveryBuild(journal.installedRoot);
+            await runRecoveryBuild(journal.installedRoot, report);
         } else if (recovery.action === "recovery-build") {
-            await runRecoveryBuild(journal.installedRoot);
+            await runRecoveryBuild(journal.installedRoot, report);
         } else {
             await recoverCommit(journal.operationId, journal.pendingId);
         }
         return snapshot();
     }
 
-    async function applyPending(): Promise<UserPluginManagerSnapshot> {
+    async function applyPending(report?: (stage: UserPluginManagerBuildStage) => void): Promise<UserPluginManagerSnapshot> {
+        report?.("preparing");
         await ensureMutable();
         const { pending } = state;
         if (!pending || pending.changes.length === 0) {
@@ -592,18 +601,18 @@ export async function createUserPluginManagerService(
             const recovery = await host.execute({ action: "inspect-recovery", journalPath });
             if (recovery.action === "rollback") {
                 const journal = await host.execute({ action: "rollback-for-recovery", journalPath });
-                await runRecoveryBuild(journal.installedRoot);
+                await runRecoveryBuild(journal.installedRoot, report);
             } else if (recovery.action === "recovery-build" && recovery.journal) {
-                await runRecoveryBuild(recovery.journal.installedRoot);
+                await runRecoveryBuild(recovery.journal.installedRoot, report);
             } else if (recovery.action === "none") {
                 await rm(join(dataRoot, "operations", operationId), { recursive: true, force: true });
             }
             throw error;
         }
 
-        if (!await runBuild(prepared.plan.installedRoot)) {
+        if (!await runBuild(prepared.plan.installedRoot, report)) {
             const journal = await host.execute({ action: "acknowledge-build", journalPath, succeeded: false });
-            await runRecoveryBuild(journal.installedRoot);
+            await runRecoveryBuild(journal.installedRoot, report);
             throw new UserPluginManagerServiceError(
                 "BUILD_FAILED",
                 "Vencord build failed; installed files were restored and the pending plan was preserved"

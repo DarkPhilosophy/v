@@ -122,6 +122,8 @@ assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
 assert 'await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);' in patch
 assert "await packageRuntime(overlay, source);" in patch
+assert 'report?.("building");' in patch
+assert 'report?.("installing");' in patch
 assert "waitForPackagedRuntime" not in patch
 assert "const candidate" not in patch
 PY
