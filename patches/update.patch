@@ -10,8 +10,8 @@ index 30191cb..ff46155 100644
 +                <Card variant="info">
 +                    <HeadingSecondary>Custom build — vencord-custom</HeadingSecondary>
 +                    <Paragraph>
-+                        This build includes the PlatformSpoofer and QuestCompleter user plugins, plus the Translate
-+                        and User Plugin Manager source patches from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>.
++                        This build centers on the User Plugin Manager and includes additional custom integrations plus
++                        OpenAsar support from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>.
 +                    </Paragraph>
 +                    <Paragraph className={Margins.top8}>
 +                        The updater rebuilds Vencord from disposable workspaces and atomically replaces the runtime only after a successful build.
