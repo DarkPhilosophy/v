@@ -192,13 +192,20 @@ interface UpdateSourceModalProps extends RenderModalProps {
     controller: UserPluginManagerController;
     source: ManagedSourceV1;
     onQueued(): void;
+    initialMode?: "update" | "resync";
 }
 
-function UpdateSourceModal({ controller, source, onQueued, ...modalProps }: UpdateSourceModalProps) {
+function UpdateSourceModal({
+    controller,
+    source,
+    onQueued,
+    initialMode = "update",
+    ...modalProps
+}: UpdateSourceModalProps) {
     const [inspection, setInspection] = useState<UserPluginManagerInspection | null>(null);
     const [busy, setBusy] = useState(true);
     const [error, setError] = useState<ManagerError | null>(null);
-    const [mode, setMode] = useState<"update" | "resync">("update");
+    const [mode, setMode] = useState<"update" | "resync">(initialMode);
 
     useEffect(() => {
         let cancelled = false;
@@ -403,9 +410,18 @@ export function openAddSourceModal(controller: UserPluginManagerController, onQu
 export function openUpdateSourceModal(
     controller: UserPluginManagerController,
     source: ManagedSourceV1,
-    onQueued: () => void
+    onQueued: () => void,
+    initialMode: "update" | "resync" = "update"
 ): void {
-    openModal(props => <UpdateSourceModal {...props} controller={controller} source={source} onQueued={onQueued} />);
+    openModal(props => (
+        <UpdateSourceModal
+            {...props}
+            controller={controller}
+            source={source}
+            onQueued={onQueued}
+            initialMode={initialMode}
+        />
+    ));
 }
 
 export function openAdoptModal(

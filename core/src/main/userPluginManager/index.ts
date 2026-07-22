@@ -28,6 +28,11 @@ import {
 import { redactSourceLocator, resolveContainedExistingPath } from "@shared/userPluginManagerSafety";
 
 import {
+    embeddedUserPluginFiles,
+    embeddedUserPluginInventory,
+    materializeEmbeddedUserPluginsTree
+} from "./buildSources";
+import {
     createLocalUserPluginManagerHost,
     type HostInventoryEntry,
     type UserPluginManagerHost
@@ -60,11 +65,14 @@ export type UserPluginManagerServiceErrorCode =
 
 export interface UserPluginManagerPaths {
     dataRoot: string;
-    installedRoot: string;
     host?: UserPluginManagerHost;
     inspectionTtlMs?: number;
     now?: () => number;
-    build?: () => Promise<boolean>;
+    build?: (userpluginsRoot: string) => Promise<boolean>;
+    embeddedUserPlugins?: {
+        files: Readonly<Record<string, string>>;
+        inventory: readonly HostInventoryEntry[];
+    };
 }
 
 interface InspectionRecord {
@@ -102,19 +110,22 @@ export class UserPluginManagerServiceError extends Error {
     }
 }
 
+
 export async function createUserPluginManagerService(
     paths: UserPluginManagerPaths
 ): Promise<UserPluginManagerService> {
     const { dataRoot } = paths;
-    const { installedRoot } = paths;
     const host = paths.host ?? createLocalUserPluginManagerHost();
     const statePath = join(dataRoot, "state.json");
     const journalPath = join(dataRoot, "journal.json");
     const inspectionsRoot = join(dataRoot, "inspections");
     const now = paths.now ?? Date.now;
     const inspectionTtlMs = paths.inspectionTtlMs ?? DEFAULT_INSPECTION_TTL_MS;
+    const embeddedUserPlugins = paths.embeddedUserPlugins ?? {
+        files: embeddedUserPluginFiles,
+        inventory: embeddedUserPluginInventory
+    };
     const inspections = new Map<string, InspectionRecord>();
-    await host.execute({ action: "ensure-installed-root", installedRoot });
 
     await mkdir(dataRoot, { recursive: true, mode: 0o700 });
     let state = await readManagerState(statePath);
@@ -281,22 +292,17 @@ export async function createUserPluginManagerService(
         if (input.destinations.length === 0 || new Set(input.destinations).size !== input.destinations.length) {
             throw new UserPluginManagerServiceError("INVALID_OPERATION", "Adoption requires unique installed destinations");
         }
-        const entries: ManagedEntryV1[] = [];
-        for (const destination of input.destinations) {
-            try {
-                const contentDigest = await host.execute({
-                    action: "digest-installed-destination",
-                    installedRoot,
-                    destination
-                });
-                entries.push({ sourcePath: destination, destination, contentDigest });
-            } catch (error) {
-                if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-                    throw new UserPluginManagerServiceError("INVALID_OPERATION", `Cannot adopt missing destination ${destination}`);
-                }
-                throw error;
+        const entries: ManagedEntryV1[] = input.destinations.map(destination => {
+            const bundled = embeddedUserPlugins.inventory.find(entry => entry.destination === destination);
+            if (!bundled) {
+                throw new UserPluginManagerServiceError("INVALID_OPERATION", `Cannot adopt missing destination ${destination}`);
             }
-        }
+            return {
+                sourcePath: destination,
+                destination,
+                contentDigest: bundled.contentDigest
+            };
+        });
         const timestamp = new Date(now()).toISOString();
         const source: ManagedSourceV1 = {
             id: input.sourceId,
@@ -324,11 +330,16 @@ export async function createUserPluginManagerService(
 
     function expectedDestination(
         source: ManagedSourceV1,
-        destination: string
+        destination: string,
+        allowMissing = false
     ): TransactionExpectedDestination {
         const entry = source.entries.find(candidate => candidate.destination === destination);
         return entry
-            ? { state: "owned", sourceId: source.id, contentDigest: entry.contentDigest }
+            ? {
+                state: allowMissing ? "owned-or-absent" : "owned",
+                sourceId: source.id,
+                contentDigest: entry.contentDigest
+            }
             : { state: "absent" };
     }
 
@@ -395,7 +406,8 @@ export async function createUserPluginManagerService(
     ): Promise<PreparedTransaction> {
         const operationRoot = join(dataRoot, "operations", operationId);
         const stagedSourcesRoot = join(operationRoot, "sources");
-        await mkdir(stagedSourcesRoot, { recursive: true, mode: 0o700 });
+        const workingRoot = join(operationRoot, "userplugins");
+        await materializeEmbeddedUserPluginsTree(workingRoot, embeddedUserPlugins.files);
 
         const ownership: TransactionOwnership[] = state.sources.flatMap(source =>
             source.entries.map(entry => ({
@@ -481,7 +493,7 @@ export async function createUserPluginManagerService(
                     sourceId: source.id,
                     stagedPath: change.shape === "single-file" ? stagedRoot : join(stagedRoot, entry.sourcePath),
                     inspectedDigest: entry.contentDigest,
-                    expected: expectedDestination(source, entry.destination)
+                    expected: expectedDestination(source, entry.destination, true)
                 });
             }
             for (const entry of source.entries) {
@@ -500,7 +512,7 @@ export async function createUserPluginManagerService(
             plan: {
                 operationId,
                 pendingId: pending.id,
-                installedRoot,
+                installedRoot: workingRoot,
                 operationRoot,
                 journalPath,
                 sources,
@@ -512,7 +524,7 @@ export async function createUserPluginManagerService(
         };
     }
 
-    async function runBuild(): Promise<boolean> {
+    async function runBuild(userpluginsRoot: string): Promise<boolean> {
         if (!paths.build) {
             throw new UserPluginManagerServiceError(
                 "INVALID_OPERATION",
@@ -520,14 +532,14 @@ export async function createUserPluginManagerService(
             );
         }
         try {
-            return await paths.build();
+            return await paths.build(userpluginsRoot);
         } catch {
             return false;
         }
     }
 
-    async function runRecoveryBuild(): Promise<void> {
-        const succeeded = await runBuild();
+    async function runRecoveryBuild(userpluginsRoot: string): Promise<void> {
+        const succeeded = await runBuild(userpluginsRoot);
         await host.execute({ action: "complete-recovery-build", journalPath, succeeded });
     }
 
@@ -554,9 +566,9 @@ export async function createUserPluginManagerService(
         }
         if (recovery.action === "rollback") {
             await host.execute({ action: "rollback-for-recovery", journalPath });
-            await runRecoveryBuild();
+            await runRecoveryBuild(journal.installedRoot);
         } else if (recovery.action === "recovery-build") {
-            await runRecoveryBuild();
+            await runRecoveryBuild(journal.installedRoot);
         } else {
             await recoverCommit(journal.operationId, journal.pendingId);
         }
@@ -578,19 +590,19 @@ export async function createUserPluginManagerService(
         } catch (error) {
             const recovery = await host.execute({ action: "inspect-recovery", journalPath });
             if (recovery.action === "rollback") {
-                await host.execute({ action: "rollback-for-recovery", journalPath });
-                await runRecoveryBuild();
-            } else if (recovery.action === "recovery-build") {
-                await runRecoveryBuild();
+                const journal = await host.execute({ action: "rollback-for-recovery", journalPath });
+                await runRecoveryBuild(journal.installedRoot);
+            } else if (recovery.action === "recovery-build" && recovery.journal) {
+                await runRecoveryBuild(recovery.journal.installedRoot);
             } else if (recovery.action === "none") {
                 await rm(join(dataRoot, "operations", operationId), { recursive: true, force: true });
             }
             throw error;
         }
 
-        if (!await runBuild()) {
-            await host.execute({ action: "acknowledge-build", journalPath, succeeded: false });
-            await runRecoveryBuild();
+        if (!await runBuild(prepared.plan.installedRoot)) {
+            const journal = await host.execute({ action: "acknowledge-build", journalPath, succeeded: false });
+            await runRecoveryBuild(journal.installedRoot);
             throw new UserPluginManagerServiceError(
                 "BUILD_FAILED",
                 "Vencord build failed; installed files were restored and the pending plan was preserved"
@@ -605,8 +617,7 @@ export async function createUserPluginManagerService(
 
     async function snapshot(): Promise<UserPluginManagerSnapshot> {
         const recovery = await host.execute({ action: "inspect-recovery", journalPath });
-        const inventoryEntries = await host.execute({ action: "collect-inventory", installedRoot });
-        const inventory = collectInventory(inventoryEntries, state.sources);
+        const inventory = collectInventory(embeddedUserPlugins.inventory, state.sources);
         return {
             active: Boolean(state.riskAcknowledgedAt),
             state: structuredClone(state),
@@ -673,15 +684,26 @@ function collectInventory(
         }
     }
 
-    return entries.map(entry => {
-        const owners = ownership.get(entry.destination) ?? [];
-        return {
-            destination: entry.destination,
-            state: owners.length === 0 ? "unmanaged" : owners.length === 1 ? "managed" : "conflict",
-            sourceIds: owners,
-            contentDigest: entry.contentDigest
-        };
-    });
+    const installed = new Map(entries.map(entry => [entry.destination, entry]));
+    const destinations = new Set([...installed.keys(), ...ownership.keys()]);
+    return Array.from(destinations)
+        .sort((left, right) => left.localeCompare(right))
+        .map(destination => {
+            const entry = installed.get(destination);
+            const owners = ownership.get(destination) ?? [];
+            return {
+                destination,
+                state: entry === undefined
+                    ? "missing"
+                    : owners.length === 0
+                        ? "unmanaged"
+                        : owners.length === 1
+                            ? "managed"
+                            : "conflict",
+                sourceIds: owners,
+                ...(entry ? { contentDigest: entry.contentDigest } : {})
+            };
+        });
 }
 
 function digestEntries(entries: readonly ManagedEntryV1[]): string {

@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { resolveContainedExistingPath } from "@shared/userPluginManagerSafety";
@@ -153,21 +153,29 @@ function parseHostRunnerResponse(stdout: string): HostRunnerResponse {
 }
 
 export function createFlatpakUserPluginManagerHost(
-    _dataRoot: string,
+    dataRoot: string,
     runnerPath: string,
     timeoutMs = DEFAULT_HOST_RUNNER_TIMEOUT_MS
 ): UserPluginManagerHost {
     return {
         async execute<TRequest extends UserPluginManagerHostRequest>(request: TRequest): Promise<UserPluginManagerHostResult<TRequest>> {
-            const stdout = await executeFlatpakHostRunner(runnerPath, JSON.stringify(request), timeoutMs);
-            const response = parseHostRunnerResponse(stdout);
-            if (!response.ok) {
-                const error = new Error(response.error.message);
-                error.name = response.error.name ?? "UserPluginManagerHostError";
-                if (response.error.code) Object.assign(error, { code: response.error.code });
-                throw error;
+            await mkdir(dataRoot, { recursive: true });
+            const runnerRoot = await mkdtemp(join(dataRoot, ".host-runner-"));
+            const materializedRunnerPath = join(runnerRoot, "userPluginManagerHost.cjs");
+            try {
+                await copyFile(runnerPath, materializedRunnerPath);
+                const stdout = await executeFlatpakHostRunner(materializedRunnerPath, JSON.stringify(request), timeoutMs);
+                const response = parseHostRunnerResponse(stdout);
+                if (!response.ok) {
+                    const error = new Error(response.error.message);
+                    error.name = response.error.name ?? "UserPluginManagerHostError";
+                    if (response.error.code) Object.assign(error, { code: response.error.code });
+                    throw error;
+                }
+                return response.value as UserPluginManagerHostResult<TRequest>;
+            } finally {
+                await rm(runnerRoot, { recursive: true, force: true });
             }
-            return response.value as UserPluginManagerHostResult<TRequest>;
         }
     };
 }

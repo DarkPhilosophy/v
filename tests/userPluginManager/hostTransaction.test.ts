@@ -105,15 +105,16 @@ test("Flatpak host bridge streams requests over stdin without sandbox-only reque
     const result = await host.execute({ action: "ensure-installed-root", installedRoot: join(root, "unused") });
 
     assert.equal(result, "ensure-installed-root");
-    assert.deepEqual(
-        (await readFile(argsMarker, "utf8")).trim().split("\n"),
-        ["--host", "node", runnerPath]
-    );
+    const spawnArgs = (await readFile(argsMarker, "utf8")).trim().split("\n");
+    assert.equal(spawnArgs[0], "--host");
+    assert.equal(spawnArgs[1], "node");
+    assert.notEqual(spawnArgs[2], runnerPath);
+    assert.match(spawnArgs[2], new RegExp(`^${dataRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\.host-runner-`));
     assert.deepEqual(
         JSON.parse(await readFile(requestMarker, "utf8")),
         { action: "ensure-installed-root", installedRoot: join(root, "unused") }
     );
-    await assert.rejects(readFile(dataRoot), { code: "ENOENT" });
+    await assert.rejects(readFile(spawnArgs[2]), { code: "ENOENT" });
 });
 
 test("Flatpak host bridge validates response envelopes without masking host errors", {

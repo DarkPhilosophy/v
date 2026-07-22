@@ -23,10 +23,15 @@ index 30191cb..ff46155 100644
                  title="Automatically update"
                  description="Automatically update Vencord without confirmation prompt"
 diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
-index 1955f7d..8c40731 100644
+index 1955f7d..fb6cccb 100644
 --- a/src/main/updater/git.ts
 +++ b/src/main/updater/git.ts
-@@ -19,12 +19,20 @@
+@@ -16,15 +16,25 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+ 
++import { materializeUserPluginsTree } from "@main/userPluginManager/buildSources";
++import { registerUserPluginManagerIpcHandlers } from "@main/userPluginManager/ipc";
  import { IpcEvents } from "@shared/IpcEvents";
  import { execFile as cpExecFile } from "child_process";
  import { ipcMain } from "electron";
@@ -48,7 +53,7 @@ index 1955f7d..8c40731 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,56 +40,86 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,58 +42,96 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -78,9 +83,17 @@ index 1955f7d..8c40731 100644
 -
 -    const existsOnOrigin = (await git("ls-remote", "origin", branch)).stdout.length > 0;
 -    if (!existsOnOrigin) return [];
--
++    const res = await run("git", ["ls-remote", UPSTREAM_REPO, "HEAD"]);
++    const hash = res.stdout.trim().split(/\s+/)[0];
++    return hash ? [{ hash: hash.slice(0, 7), author: "Vencord", message: "Upstream rebuild available" }] : [];
++}
+ 
 -    const res = await git("log", `HEAD...origin/${branch}`, "--pretty=format:%an/%h/%s");
--
++async function pull() {
++    // The actual update is performed by build() in a disposable workspace.
++    return true;
++}
+ 
 -    const commits = res.stdout.trim();
 -    return commits ? commits.split("\n").map(line => {
 -        const [author, hash, ...rest] = line.split("/");
@@ -89,44 +102,38 @@ index 1955f7d..8c40731 100644
 -            message: rest.join("/").split("\n")[0]
 -        };
 -    }) : [];
-+    const res = await run("git", ["ls-remote", UPSTREAM_REPO, "HEAD"]);
-+    const hash = res.stdout.trim().split(/\s+/)[0];
-+    return hash ? [{ hash: hash.slice(0, 7), author: "Vencord", message: "Upstream rebuild available" }] : [];
++async function downloadTarball(url: string, destination: string) {
++    await run("curl", ["-fsSL", url, "-o", destination]);
  }
  
- async function pull() {
+-async function pull() {
 -    const res = await git("pull");
 -    return res.stdout.includes("Fast-forward");
-+    // The actual update is performed by build() in a disposable workspace.
-+    return true;
++async function extractTarball(archive: string, destination: string) {
++    await mkdir(destination, { recursive: true });
++    await run("tar", ["-xzf", archive, "--strip-components=1", "-C", destination]);
  }
  
 -async function build() {
 -    const opts = { cwd: VENCORD_SRC_DIR };
-+async function downloadTarball(url: string, destination: string) {
-+    await run("curl", ["-fsSL", url, "-o", destination]);
++async function copyOverlay(overlay: string, source: string, userpluginsRoot?: string) {
++    await run("cp", ["-r", join(overlay, "core", "src", "."), join(source, "src")]);
++    await materializeUserPluginsTree(source, userpluginsRoot ?? join(overlay, "userplugins"));
++    await run("cp", ["-r", join(overlay, "patches", "."), join(source, "custom-patches")]);
 +}
  
 -    const command = isFlatpak ? "flatpak-spawn" : "node";
 -    const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
-+async function extractTarball(archive: string, destination: string) {
-+    await mkdir(destination, { recursive: true });
-+    await run("tar", ["-xzf", archive, "--strip-components=1", "-C", destination]);
-+}
-+
-+async function copyOverlay(overlay: string, source: string) {
-+    await run("cp", ["-r", join(overlay, "core", "src", "."), join(source, "src")]);
-+    await run("cp", ["-r", join(overlay, "userplugins", "."), join(source, "src", "userplugins")]);
-+    await run("cp", ["-r", join(overlay, "patches", "."), join(source, "custom-patches")]);
-+}
  
 -    if (IS_DEV) args.push("--dev");
+ 
+-    const res = await execFile(command, args, opts);
 +async function applyOverlay(source: string) {
 +    for (const patch of CUSTOM_OVERLAY_PATCHES)
 +        await run("git", ["apply", join(source, "custom-patches", patch)], source);
 +}
  
--    const res = await execFile(command, args, opts);
+-    return !res.stderr.includes("Build failed");
 +async function replaceRuntime(candidate: string) {
 +    const parent = join(RUNTIME_ASAR, "..");
 +    await mkdir(parent, { recursive: true });
@@ -137,10 +144,9 @@ index 1955f7d..8c40731 100644
 +    } finally {
 +        await rm(staging, { force: true });
 +    }
-+}
+ }
  
--    return !res.stderr.includes("Build failed");
-+async function build() {
++async function build(userpluginsRoot?: string) {
 +    await mkdir(RUNTIME_DIR, { recursive: true });
 +    const work = await mkdtemp(join(RUNTIME_DIR, ".update-"));
 +    const overlay = join(work, "overlay");
@@ -153,9 +159,13 @@ index 1955f7d..8c40731 100644
 +        await extractTarball(overlayArchive, overlay);
 +        await downloadTarball(UPSTREAM_TARBALL, upstreamArchive);
 +        await extractTarball(upstreamArchive, source);
-+        await copyOverlay(overlay, source);
++        await copyOverlay(overlay, source, userpluginsRoot);
 +        await applyOverlay(source);
 +        await run("pnpm", ["install", "--frozen-lockfile"], source);
++        await run(join(overlay, "scripts", "stage-userplugin-seeds.sh"), [
++            join(source, "src", "userplugins"),
++            join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")
++        ]);
 +        const args = ["scripts/build/build.mjs"];
 +        if (IS_DEV) args.push("--dev");
 +        await run("node", args, source);
@@ -167,6 +177,10 @@ index 1955f7d..8c40731 100644
 +    } finally {
 +        await rm(work, { recursive: true, force: true });
 +    }
- }
- 
++}
++
++registerUserPluginManagerIpcHandlers(build);
++
  ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(getRepo));
+ ipcMain.handle(IpcEvents.GET_UPDATES, serializeErrors(calculateGitChanges));
+ ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));

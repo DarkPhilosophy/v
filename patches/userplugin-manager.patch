@@ -136,3 +136,25 @@ index 72813bc0..800abf85 100644
 +
      SUPPORTS_WINDOWS_MATERIAL = "VencordSupportsWindowsMaterial",
  }
+diff --git a/scripts/build/build.mjs b/scripts/build/build.mjs
+index 65326d3..efd1610 100644
+--- a/scripts/build/build.mjs
++++ b/scripts/build/build.mjs
+@@ -214,6 +214,17 @@ const buildConfigs = ([
+             IS_DISCORD_DESKTOP: "false",
+             IS_VESKTOP: "true"
+         }
++    },
++    {
++        ...nodeCommonOpts,
++        entryPoints: ["src/main/userPluginManager/hostRunner.ts"],
++        outfile: "dist/userPluginManagerHost.cjs",
++        sourcemap,
++        define: {
++            ...defines,
++            IS_DISCORD_DESKTOP: "true",
++            IS_VESKTOP: "false"
++        }
+     }
+ ]);
+ 

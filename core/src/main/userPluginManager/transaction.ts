@@ -64,7 +64,8 @@ export interface TransactionAdoption {
 
 export type TransactionExpectedDestination =
     | { state: "absent"; }
-    | { state: "owned"; sourceId: string; contentDigest: string; };
+    | { state: "owned"; sourceId: string; contentDigest: string; }
+    | { state: "owned-or-absent"; sourceId: string; contentDigest: string; };
 
 export interface TransactionWriteMutation {
     action: "write";
@@ -366,15 +367,16 @@ async function assertTransactionPreconditions(plan: TransactionPlan): Promise<vo
             if (currentDigest !== undefined || ownership !== undefined) {
                 throw new TransactionError("OWNERSHIP_CONFLICT", `Destination ${mutation.destination} is not absent`);
             }
-        } else if (
-            currentDigest === undefined
-            || ownership === undefined
-            || ownership.sourceId !== mutation.expected.sourceId
-            || ownership.sourceId !== mutation.sourceId
-            || ownership.contentDigest !== mutation.expected.contentDigest
-            || currentDigest !== mutation.expected.contentDigest
-        ) {
-            throw new TransactionError("OWNERSHIP_CONFLICT", `Destination ${mutation.destination} is unmanaged, stale, or owned by another source`);
+        } else {
+            const ownershipMatches = ownership !== undefined
+                && ownership.sourceId === mutation.expected.sourceId
+                && ownership.sourceId === mutation.sourceId
+                && ownership.contentDigest === mutation.expected.contentDigest;
+            const contentsMatch = currentDigest === mutation.expected.contentDigest;
+            const missingContentsAllowed = mutation.expected.state === "owned-or-absent" && currentDigest === undefined;
+            if (!ownershipMatches || (!contentsMatch && !missingContentsAllowed)) {
+                throw new TransactionError("OWNERSHIP_CONFLICT", `Destination ${mutation.destination} is unmanaged, stale, or owned by another source`);
+            }
         }
 
         if (mutation.action === "write") {
@@ -502,12 +504,12 @@ async function restoreCompletedDestinations(journal: TransactionJournal): Promis
 
 async function cleanupCompletedTransaction(journalPath: string, journal: TransactionJournal): Promise<void> {
     const managerDataRoot = dirname(resolve(journalPath));
-    const operationRoot = await resolveOperationCleanupPath(managerDataRoot, journal.operationRoot, journal.operationRoot);
-    await rm(operationRoot, { recursive: true, force: true });
     if (journal.swapRoot) {
         await rm(journal.swapRoot, { recursive: true, force: true });
         await syncDirectory(dirname(journal.swapRoot));
     }
+    const operationRoot = await resolveOperationCleanupPath(managerDataRoot, journal.operationRoot, journal.operationRoot);
+    await rm(operationRoot, { recursive: true, force: true });
     await rm(journalPath, { force: true });
     await syncDirectory(managerDataRoot);
 }

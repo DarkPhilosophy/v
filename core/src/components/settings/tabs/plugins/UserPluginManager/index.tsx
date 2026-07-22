@@ -126,8 +126,10 @@ function UserPluginManagerView() {
 
     if (!snapshot) {
         return (
-            <div className={cl("root")} aria-busy="true">
-                <Paragraph className={cl("meta")} role="status">Loading the User Plugin Manager…</Paragraph>
+            <div className={cl("root")} aria-busy={!error}>
+                {error
+                    ? <ErrorDisplay error={error} />
+                    : <Paragraph className={cl("meta")} role="status">Loading the User Plugin Manager…</Paragraph>}
             </div>
         );
     }
@@ -309,6 +311,9 @@ function UserPluginManagerView() {
                                                 <Span weight="semibold">{source.displayName}</Span>
                                                 <Badge tone="muted">{SOURCE_KIND_META[source.kind].label}</Badge>
                                                 <Badge tone="muted">{source.updatePolicy === "check-on-open" ? "auto-check" : "manual"}</Badge>
+                                                {inventory.some(entry => entry.state === "missing" && entry.sourceIds.includes(source.id))
+                                                    ? <Badge tone="danger">missing files</Badge>
+                                                    : null}
                                             </div>
                                             <span className={cl("meta")}>{source.locator}</span>
                                             <span className={cl("meta")}>rev {source.resolvedRevision.slice(0, 12)} · {source.entries.length} file(s)</span>
@@ -339,24 +344,40 @@ function UserPluginManagerView() {
                         {inventory.length ? (
                             <div className={cl("list")}>
                                 {inventory.map(entry => {
-                                    const owners = entry.sourceIds.map(id => sources.find(source => source.id === id)?.displayName ?? id);
+                                    const ownerSources = entry.sourceIds.flatMap(id => {
+                                        const source = sources.find(candidate => candidate.id === id);
+                                        return source ? [source] : [];
+                                    });
+                                    const owners = ownerSources.map(source => source.displayName);
                                     return (
                                         <div className={cl("row")} key={entry.destination}>
                                             <div className={cl("row-main")}>
                                                 <div className={cl("title-line")}>
                                                     <span className={cl("code")}>{entry.destination}</span>
-                                                    <Badge tone={entry.state === "unmanaged" ? "warning" : entry.state === "conflict" ? "danger" : "success"}>
+                                                    <Badge tone={
+                                                        entry.state === "conflict" || entry.state === "missing"
+                                                            ? "danger"
+                                                            : entry.state === "unmanaged" ? "warning" : "success"
+                                                    }>
                                                         {entry.state}
                                                     </Badge>
                                                 </div>
                                                 <span className={cl("meta")}>
-                                                    {owners.length ? `Managed by ${owners.join(", ")}` : "Not tracked by the manager"}
+                                                    {entry.state === "missing"
+                                                        ? `Managed by ${owners.join(", ")} · source missing on disk`
+                                                        : owners.length ? `Managed by ${owners.join(", ")}` : "Not tracked by the manager"}
                                                 </span>
                                             </div>
                                             {entry.state === "unmanaged" ? (
                                                 <div className={cl("row-actions")}>
                                                     <Button variant="secondary" size="small" disabled={!canStage} onClick={() => openAdoptModal(controller, entry, refresh)}>
                                                         Adopt
+                                                    </Button>
+                                                </div>
+                                            ) : entry.state === "missing" && ownerSources.length === 1 ? (
+                                                <div className={cl("row-actions")}>
+                                                    <Button variant="secondary" size="small" disabled={!canStage} onClick={() => openUpdateSourceModal(controller, ownerSources[0], refresh, "resync")}>
+                                                        Check & resync
                                                     </Button>
                                                 </div>
                                             ) : null}

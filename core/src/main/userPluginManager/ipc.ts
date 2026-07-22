@@ -34,11 +34,10 @@ function serializeManagerCall<TArgs extends unknown[], TResult>(
     };
 }
 
-export function registerUserPluginManagerIpcHandlers(build: () => Promise<boolean>): void {
+export function registerUserPluginManagerIpcHandlers(build: (userpluginsRoot: string) => Promise<boolean>): void {
     const dataRoot = join(DATA_DIR, "userPluginManager");
     const service = createUserPluginManagerService({
         dataRoot,
-        installedRoot: join(__dirname, "..", "src", "userplugins"),
         host: process.platform === "linux" && Boolean(process.env.FLATPAK_ID)
             ? createFlatpakUserPluginManagerHost(dataRoot, join(__dirname, "userPluginManagerHost.cjs"))
             : undefined,

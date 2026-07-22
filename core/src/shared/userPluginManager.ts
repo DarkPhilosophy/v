@@ -161,7 +161,7 @@ export interface StageReconfigureInput {
 
 export interface UserPluginInventoryEntry {
     destination: string;
-    state: "managed" | "unmanaged" | "conflict";
+    state: "managed" | "unmanaged" | "conflict" | "missing";
     sourceIds: string[];
     contentDigest?: string;
 }

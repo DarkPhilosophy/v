@@ -70,6 +70,10 @@ done
 # 3) Install dependencies and build only inside the temporary checkout.
 say "Installing temporary build dependencies"
 (cd "$BUILD" && pnpm install --frozen-lockfile) || die "dependency installation failed"
+SEED_HELPER="$PKG/scripts/stage-userplugin-seeds.sh"
+[ -x "$SEED_HELPER" ] || die "missing embedded source generator: $SEED_HELPER"
+"$SEED_HELPER" "$BUILD/src/userplugins" "$BUILD/src/main/userPluginManager/embeddedSeeds.generated.ts" \
+    || die "embedded source generation failed"
 say "Building"
 (cd "$BUILD" && pnpm build) || die "build failed"
 

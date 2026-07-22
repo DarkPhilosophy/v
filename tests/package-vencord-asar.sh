@@ -3,14 +3,31 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 HELPER="$ROOT/scripts/package-vencord-asar.sh"
+SEED_HELPER="$ROOT/scripts/stage-userplugin-seeds.sh"
+UPDATE_PATCH="$ROOT/patches/update.patch"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
-mkdir -p "$WORK/dist/nested"
+mkdir -p "$WORK/dist/nested" "$WORK/src/userplugins/mediaPlaybackSpeed" "$WORK/src/userplugins/platformSpoofer" "$WORK/src/userplugins/questCompleter"
 printf '%s\n' 'module.exports = 1;' > "$WORK/dist/patcher.js"
 printf '%s\n' 'preload' > "$WORK/dist/preload.js"
 printf '%s\n' 'css' > "$WORK/dist/nested/renderer.css"
 printf '%s\n' '{"name":"fixture"}' > "$WORK/dist/package.json"
+printf '%s\n' 'media plugin' > "$WORK/src/userplugins/mediaPlaybackSpeed/index.tsx"
+printf '%s\n' 'platform plugin' > "$WORK/src/userplugins/platformSpoofer/index.tsx"
+printf '%s\n' 'quest plugin' > "$WORK/src/userplugins/questCompleter/index.tsx"
+GENERATED_SEEDS="$WORK/embeddedSeeds.generated.ts"
+"$SEED_HELPER" "$WORK/src/userplugins" "$GENERATED_SEEDS"
+python3 - "$GENERATED_SEEDS" <<'PY'
+import sys
+from pathlib import Path
+
+generated = Path(sys.argv[1]).read_text()
+assert "mediaPlaybackSpeed/index.tsx" in generated
+assert "platformSpoofer/index.tsx" in generated
+assert "questCompleter/index.tsx" in generated
+assert "media plugin" in generated
+PY
 "$HELPER" "$WORK/dist" "$WORK/app.asar"
 cp "$WORK/app.asar" "$WORK/first.asar"
 "$HELPER" "$WORK/dist" "$WORK/second.asar"
@@ -50,6 +67,7 @@ assert package["main"] == "patcher.js"
 assert file_bytes("patcher.js") == b"module.exports = 1;\n"
 assert file_bytes("preload.js") == b"preload\n"
 assert file_bytes("nested/renderer.css") == b"css\n"
+assert "userPluginSeeds" not in header["files"]
 PY
 
 printf 'keep-old-asar' > "$WORK/existing.asar"
@@ -57,6 +75,18 @@ if "$HELPER" "$WORK/missing" "$WORK/existing.asar" 2>/dev/null; then
     echo 'expected packaging failure' >&2
     exit 1
 fi
+python3 - "$UPDATE_PATCH" <<'PY'
+from pathlib import Path
+import sys
+
+patch = Path(sys.argv[1]).read_text(encoding="utf-8")
+generator = 'join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")'
+build = 'await run("node", args, source);'
+assert generator in patch
+assert patch.index(generator) < patch.index(build)
+assert 'join(source, "dist", "userPluginSeeds")' not in patch
+PY
+
 [ "$(cat "$WORK/existing.asar")" = 'keep-old-asar' ]
 
 ln -s patcher.js "$WORK/dist/unsafe-link"
