@@ -10,6 +10,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 [ -d "$ROOT/core/src/userplugins" ]
 [ ! -e "$ROOT/userplugins" ]
+git apply --numstat "$UPDATE_PATCH" >/dev/null
 
 mkdir -p "$WORK/dist/nested" "$WORK/src/userplugins/mediaPlaybackSpeed" "$WORK/src/userplugins/platformSpoofer" "$WORK/src/userplugins/questCompleter"
 printf '%s\n' 'module.exports = 1;' > "$WORK/dist/patcher.js"
