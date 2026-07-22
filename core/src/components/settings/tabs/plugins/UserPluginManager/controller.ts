@@ -35,6 +35,7 @@ export interface UserPluginManagerRendererApi {
     stageRemove(sourceId: string): Promise<UserPluginManagerSnapshot>;
     discardPending(): Promise<UserPluginManagerSnapshot>;
     applyPending(): Promise<UserPluginManagerSnapshot>;
+    restart(): Promise<void>;
     recover(): Promise<UserPluginManagerSnapshot>;
 }
 
@@ -155,6 +156,10 @@ export class UserPluginManagerController {
     /** Commit the reviewed pending plan in a single transactional apply + rebuild. */
     async applyPending(): Promise<UserPluginManagerSnapshot> {
         return this.publish(await this.api.applyPending());
+    }
+
+    async restart(): Promise<void> {
+        await this.api.restart();
     }
 
     /** Reconcile a journal left behind by an interrupted apply. */

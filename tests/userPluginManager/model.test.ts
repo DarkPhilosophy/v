@@ -10,6 +10,7 @@ import {
     coalescePendingChange,
     createEmptyManagerState,
     findDestinationConflicts,
+    getUserPluginManagerRelaunchOptions,
     readManagerState,
     writeManagerStateAtomic,
     type ManagedSourceV1,
@@ -198,6 +199,14 @@ test("manager infrastructure cannot be staged for removal", () => {
     }), (error: unknown) => {
         return error instanceof UserPluginManagerError && error.code === "PROTECTED_INFRASTRUCTURE";
     });
+});
+
+test("Flatpak builds relaunch through a delayed host command", () => {
+    assert.deepEqual(getUserPluginManagerRelaunchOptions(true), {
+        execPath: "/usr/bin/flatpak-spawn",
+        args: ["--host", "sh", "-c", "sleep 2; exec flatpak run com.discordapp.Discord"]
+    });
+    assert.equal(getUserPluginManagerRelaunchOptions(false), undefined);
 });
 
 test("failed atomic replacement preserves the previous valid state", async () => {

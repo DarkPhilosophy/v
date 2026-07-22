@@ -18,7 +18,6 @@ import type {
     UserPluginManagerBuildStage,
     UserPluginManagerSnapshot
 } from "@shared/userPluginManager";
-import { relaunch } from "@utils/native";
 import type { ModalActionVariant } from "@vencord/discord-types";
 import { ConfirmModal, openModal, useCallback, useEffect, useRef, useState } from "@webpack/common";
 import type { ReactNode } from "react";
@@ -182,7 +181,7 @@ function UserPluginManagerView() {
                 confirmText: "Restart",
                 variant: "primary",
                 body: <Paragraph>Your plugin changes were applied and Vencord was rebuilt. Restart now to load them.</Paragraph>,
-                onConfirm: () => relaunch()
+                onConfirm: () => void controller.restart()
             });
         })
     });

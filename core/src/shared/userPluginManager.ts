@@ -9,6 +9,20 @@ import { basename, dirname, resolve } from "node:path";
 
 export const USER_PLUGIN_MANAGER_SCHEMA_VERSION = 1 as const;
 export const USER_PLUGIN_MANAGER_INFRASTRUCTURE_ID = "@vencord/user-plugin-manager";
+export interface UserPluginManagerRelaunchOptions {
+    execPath: string;
+    args: string[];
+}
+
+export function getUserPluginManagerRelaunchOptions(isFlatpak: boolean): UserPluginManagerRelaunchOptions | undefined {
+    return isFlatpak
+        ? {
+            execPath: "/usr/bin/flatpak-spawn",
+            args: ["--host", "sh", "-c", "sleep 2; exec flatpak run com.discordapp.Discord"]
+        }
+        : undefined;
+}
+
 
 export type SourceKind = "git" | "http-archive" | "http-file" | "local-file" | "local-directory";
 export type UpdatePolicy = "manual" | "check-on-open";

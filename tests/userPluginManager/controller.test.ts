@@ -148,6 +148,9 @@ function fixture() {
             });
             return structuredClone(current);
         },
+        async restart() {
+            calls.push("restart");
+        },
         async recover() {
             calls.push("recover");
             current = snapshot({ active: true, state: { schemaVersion: 1, riskAcknowledgedAt: "2026-07-21T00:00:00.000Z", sources: [] } });
@@ -194,6 +197,15 @@ test("apply commits the reviewed plan and clears pending", async () => {
     assert.equal(applied.state.pending, undefined);
     assert.deepEqual(applied.state.lastApply?.sourceIds, ["source-1"]);
     assert.deepEqual(calls.slice(-1), ["apply"]);
+});
+
+test("restart delegates to the native bridge", async () => {
+    const { api, calls } = fixture();
+    const controller = new UserPluginManagerController(api);
+
+    await controller.restart();
+
+    assert.deepEqual(calls, ["restart"]);
 });
 
 test("aggregate conflicts disable mutation actions in the view state", () => {

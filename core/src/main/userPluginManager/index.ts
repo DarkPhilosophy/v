@@ -638,7 +638,7 @@ export async function createUserPluginManagerService(
                 operationId: recovery.journal?.operationId,
                 pendingId: recovery.journal?.pendingId
             },
-            locked: recovery.action !== "none"
+            locked: recovery.action !== "none",
         };
     }
 

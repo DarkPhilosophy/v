@@ -8,9 +8,9 @@ import { join } from "node:path";
 
 import { DATA_DIR } from "@main/utils/constants";
 import { IpcEvents } from "@shared/IpcEvents";
-import type { UserPluginManagerBuildStage, UserPluginManagerIpcResult } from "@shared/userPluginManager";
+import { getUserPluginManagerRelaunchOptions, type UserPluginManagerBuildStage, type UserPluginManagerIpcResult } from "@shared/userPluginManager";
 import { redactSensitiveData } from "@shared/userPluginManagerSafety";
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 
 import { createUserPluginManagerService } from ".";
 import { createFlatpakUserPluginManagerHost } from "./host";
@@ -57,9 +57,11 @@ export function registerUserPluginManagerIpcHandlers(
     build: (userpluginsRoot: string, report?: (stage: UserPluginManagerBuildStage) => void) => Promise<boolean>
 ): void {
     const dataRoot = join(DATA_DIR, "userPluginManager");
+    const isFlatpak = process.platform === "linux" && Boolean(process.env.FLATPAK_ID);
     const service = createUserPluginManagerService({
         dataRoot,
-        host: process.platform === "linux" && Boolean(process.env.FLATPAK_ID)
+        isFlatpak,
+        host: isFlatpak
             ? createFlatpakUserPluginManagerHost(dataRoot, join(__dirname, "userPluginManagerHost.cjs"))
             : undefined,
         build
@@ -83,6 +85,10 @@ export function registerUserPluginManagerIpcHandlers(
         const report = (stage: UserPluginManagerBuildStage) => event.sender.send(IpcEvents.USER_PLUGIN_MANAGER_PROGRESS, stage);
         return (await service).applyPending(report);
     }));
+    ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_RESTART, () => {
+        app.relaunch(getUserPluginManagerRelaunchOptions(isFlatpak));
+        app.exit(0);
+    });
     ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_RECOVER, serializeManagerEventCall(async event => {
         const report = (stage: UserPluginManagerBuildStage) => event.sender.send(IpcEvents.USER_PLUGIN_MANAGER_PROGRESS, stage);
         return (await service).recover(report);
