@@ -122,11 +122,24 @@ for path in sorted(contents):
 header_json = json.dumps(tree, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 # ASAR's pickle framing: [pickle-size=4][header-size][json-size][json-length][JSON].
 header = struct.pack("<IIII", 4, 8 + len(header_json), 4 + len(header_json), len(header_json)) + header_json
+temporary = None
 try:
-    with output.open("wb") as stream:
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=output.parent,
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        temporary = Path(stream.name)
         stream.write(header)
         for data in data_parts:
             stream.write(data)
+    os.replace(temporary, output)
 except OSError as exc:
+    if temporary is not None:
+        temporary.unlink(missing_ok=True)
     fail(output, str(exc))
 PY

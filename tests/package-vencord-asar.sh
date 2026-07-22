@@ -28,10 +28,38 @@ assert "platformSpoofer/index.tsx" in generated
 assert "questCompleter/index.tsx" in generated
 assert "media plugin" in generated
 PY
+python3 - "$WORK/dist/large.bin" <<'PY'
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_bytes(bytes(32 * 1024 * 1024))
+PY
 "$HELPER" "$WORK/dist" "$WORK/app.asar"
 cp "$WORK/app.asar" "$WORK/first.asar"
-"$HELPER" "$WORK/dist" "$WORK/second.asar"
+expected_size=$(wc -c < "$WORK/first.asar")
+printf '%s' 'keep-old' > "$WORK/second.asar"
+"$HELPER" "$WORK/dist" "$WORK/second.asar" &
+packager_pid=$!
+partial_size=
+while kill -0 "$packager_pid" 2>/dev/null; do
+    observed_size=$(wc -c < "$WORK/second.asar")
+    if [ "$observed_size" -ne 8 ] && [ "$observed_size" -ne "$expected_size" ]; then
+        partial_size=$observed_size
+        break
+    fi
+done
+wait "$packager_pid"
+[ -z "$partial_size" ] || {
+    printf 'packager exposed a partial output of %s bytes\n' "$partial_size" >&2
+    exit 1
+}
 cmp "$WORK/first.asar" "$WORK/second.asar"
+python3 - "$WORK" <<'PY'
+import sys
+from pathlib import Path
+
+assert not list(Path(sys.argv[1]).glob(".*.tmp"))
+PY
 
 if "$HELPER" "$WORK/dist" "$WORK/dist/nested/output.asar" 2>/dev/null; then
     echo 'expected output path rejection' >&2
@@ -92,6 +120,8 @@ assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive:
 assert 'await run("cp"' not in patch
 assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
+assert "async function waitForPackagedRuntime(candidate: string)" in patch
+assert "await waitForPackagedRuntime(candidate);" in patch
 PY
 
 [ "$(cat "$WORK/existing.asar")" = 'keep-old-asar' ]

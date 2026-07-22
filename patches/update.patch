@@ -51,7 +51,7 @@ index 1955f7d..fb6cccb 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,58 +40,96 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,58 +40,110 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -144,6 +144,21 @@ index 1955f7d..fb6cccb 100644
 +    }
  }
  
++async function waitForPackagedRuntime(candidate: string) {
++    let lastSize = -1;
++    for (let attempt = 0; attempt < 100; attempt++) {
++        try {
++            const output = await stat(candidate);
++            if (output.isFile() && output.size > 0 && output.size === lastSize) return;
++            lastSize = output.size;
++        } catch (error) {
++            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
++        }
++        await new Promise(resolve => setTimeout(resolve, 100));
++    }
++    throw new Error("ASAR packager produced no stable output");
++}
++
 +async function build(userpluginsRoot?: string) {
 +    await mkdir(RUNTIME_DIR, { recursive: true });
 +    const work = await mkdtemp(join(RUNTIME_DIR, ".update-"));
@@ -166,8 +181,7 @@ index 1955f7d..fb6cccb 100644
 +        if (IS_DEV) args.push("--dev");
 +        await run("node", args, source);
 +        await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), candidate]);
-+        const output = await stat(candidate);
-+        if (!output.isFile() || output.size === 0) throw new Error("ASAR packager produced an empty output");
++        await waitForPackagedRuntime(candidate);
 +        await replaceRuntime(candidate);
 +        return true;
 +    } finally {
