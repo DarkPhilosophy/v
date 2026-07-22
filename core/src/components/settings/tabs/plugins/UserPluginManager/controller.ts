@@ -12,7 +12,7 @@ import type {
     UserPluginManagerInspection,
     UserPluginManagerInspectionInput,
     UserPluginManagerSnapshot
-} from "../../../../../shared/userPluginManager";
+} from "@shared/userPluginManager";
 
 /**
  * Renderer-facing surface of the User Plugin Manager IPC bridge.

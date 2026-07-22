@@ -5,43 +5,41 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { cp, lstat, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import {
     coalescePendingChange,
-    createEmptyManagerState,
     findDestinationConflicts,
     type ManagedEntryV1,
     type ManagedSourceV1,
     type ManagerStateV1,
     type PendingChangeV1,
     readManagerState,
-    type SourceKind,
     type StageAdoptInput,
     type StageInstallInput,
     type StageUpdateInput,
-    type UpdatePolicy,
     type UserPluginInventoryEntry,
     type UserPluginManagerInspection,
     type UserPluginManagerInspectionInput,
     type UserPluginManagerSnapshot,
     writeManagerStateAtomic
-} from "../../shared/userPluginManager";
-import { redactSourceLocator, resolveContainedExistingPath } from "../../shared/userPluginManagerSafety";
-import {
-    acquireAndInspectSource,
-    type SourceInspection
-} from "./sources";
+} from "@shared/userPluginManager";
+import { redactSourceLocator, resolveContainedExistingPath } from "@shared/userPluginManagerSafety";
+
 import {
     createLocalUserPluginManagerHost,
     type HostInventoryEntry,
     type UserPluginManagerHost
 } from "./host";
 import {
+    acquireAndInspectSource,
+    type SourceInspection
+} from "./sources";
+import {
     type TransactionAdoption,
-    type TransactionMutation,
     type TransactionExpectedDestination,
+    type TransactionMutation,
     type TransactionOwnership,
     type TransactionPlan,
     type TransactionSourceCheck
@@ -107,8 +105,8 @@ export class UserPluginManagerServiceError extends Error {
 export async function createUserPluginManagerService(
     paths: UserPluginManagerPaths
 ): Promise<UserPluginManagerService> {
-    const dataRoot = paths.dataRoot;
-    const installedRoot = paths.installedRoot;
+    const { dataRoot } = paths;
+    const { installedRoot } = paths;
     const host = paths.host ?? createLocalUserPluginManagerHost();
     const statePath = join(dataRoot, "state.json");
     const journalPath = join(dataRoot, "journal.json");
@@ -550,7 +548,7 @@ export async function createUserPluginManagerService(
     async function recover(): Promise<UserPluginManagerSnapshot> {
         const recovery = await host.execute({ action: "inspect-recovery", journalPath });
         if (recovery.action === "none") return snapshot();
-        const journal = recovery.journal;
+        const { journal } = recovery;
         if (!journal) {
             throw new UserPluginManagerServiceError("RECOVERY_REQUIRED", "Transaction journal is unavailable");
         }
@@ -567,7 +565,7 @@ export async function createUserPluginManagerService(
 
     async function applyPending(): Promise<UserPluginManagerSnapshot> {
         await ensureMutable();
-        const pending = state.pending;
+        const { pending } = state;
         if (!pending || pending.changes.length === 0) {
             throw new UserPluginManagerServiceError("INVALID_OPERATION", "There are no pending changes to apply");
         }

@@ -8,17 +8,16 @@ import { ErrorCard } from "@components/ErrorCard";
 import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
 import { Span } from "@components/Span";
-import { classNameFactory } from "@utils/css";
-import { Margins } from "@utils/margins";
-import { classes } from "@utils/misc";
-import type { ReactNode } from "react";
-
 import type {
     SourceKind,
     SourceShape,
     UpdatePolicy,
     UserPluginManagerInspection
-} from "../../../../../shared/userPluginManager";
+} from "@shared/userPluginManager";
+import { classNameFactory } from "@utils/css";
+import { Margins } from "@utils/margins";
+import { classes } from "@utils/misc";
+import type { ReactNode } from "react";
 
 export const cl = classNameFactory("vc-upm-");
 

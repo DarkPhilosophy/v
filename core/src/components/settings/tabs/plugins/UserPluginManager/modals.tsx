@@ -7,10 +7,6 @@
 import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
 import { Span } from "@components/Span";
-import { Margins } from "@utils/margins";
-import type { ModalAction, RenderModalProps } from "@vencord/discord-types";
-import { Modal, openModal, Select, TextInput, Toasts, useEffect, useState } from "@webpack/common";
-
 import type {
     ManagedSourceV1,
     SourceKind,
@@ -18,7 +14,11 @@ import type {
     UserPluginInventoryEntry,
     UserPluginManagerInspection,
     UserPluginManagerInspectionInput
-} from "../../../../../shared/userPluginManager";
+} from "@shared/userPluginManager";
+import { Margins } from "@utils/margins";
+import type { ModalAction, RenderModalProps } from "@vencord/discord-types";
+import { Modal, openModal, Select, TextInput, Toasts, useEffect, useState } from "@webpack/common";
+
 import type { UserPluginManagerController } from "./controller";
 import {
     cl,

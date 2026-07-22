@@ -8,7 +8,8 @@ import { spawn } from "node:child_process";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { resolveContainedExistingPath } from "../../shared/userPluginManagerSafety";
+import { resolveContainedExistingPath } from "@shared/userPluginManagerSafety";
+
 import {
     acknowledgeTransactionBuild,
     applyTransaction,
@@ -23,6 +24,7 @@ import {
 } from "./transaction";
 
 const MAX_HOST_RESPONSE_BYTES = 1024 * 1024;
+const DEFAULT_HOST_RUNNER_TIMEOUT_MS = 30_000;
 
 export interface HostInventoryEntry {
     destination: string;
@@ -103,21 +105,66 @@ export function createLocalUserPluginManagerHost(): UserPluginManagerHost {
     return { execute: executeUserPluginManagerHostRequest };
 }
 
-interface HostRunnerResponse {
-    ok: boolean;
-    value?: unknown;
-    error?: { code?: string; message: string; name?: string; };
+interface HostRunnerError {
+    code?: string;
+    message: string;
+    name?: string;
 }
 
-export function createFlatpakUserPluginManagerHost(_dataRoot: string, runnerPath: string): UserPluginManagerHost {
+type HostRunnerResponse =
+    | { ok: true; value?: unknown; }
+    | { ok: false; error: HostRunnerError; };
+
+function parseHostRunnerResponse(stdout: string): HostRunnerResponse {
+    let candidate: unknown;
+    try {
+        candidate = JSON.parse(stdout);
+    } catch {
+        throw new Error("Malformed User Plugin Manager host response");
+    }
+
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+        throw new Error("Malformed User Plugin Manager host response");
+    }
+
+    const response = candidate as Record<string, unknown>;
+    if (response.ok === true) return { ok: true, value: response.value };
+    if (response.ok !== false || response.error === null || typeof response.error !== "object" || Array.isArray(response.error)) {
+        throw new Error("Malformed User Plugin Manager host response");
+    }
+
+    const error = response.error as Record<string, unknown>;
+    if (
+        typeof error.message !== "string"
+        || (error.code !== undefined && typeof error.code !== "string")
+        || (error.name !== undefined && typeof error.name !== "string")
+    ) {
+        throw new Error("Malformed User Plugin Manager host response");
+    }
+
+    return {
+        ok: false,
+        error: {
+            code: error.code as string | undefined,
+            message: error.message,
+            name: error.name as string | undefined
+        }
+    };
+}
+
+export function createFlatpakUserPluginManagerHost(
+    _dataRoot: string,
+    runnerPath: string,
+    timeoutMs = DEFAULT_HOST_RUNNER_TIMEOUT_MS
+): UserPluginManagerHost {
     return {
         async execute<TRequest extends UserPluginManagerHostRequest>(request: TRequest): Promise<UserPluginManagerHostResult<TRequest>> {
-            const stdout = await executeFlatpakHostRunner(runnerPath, JSON.stringify(request));
-            const response = JSON.parse(stdout) as HostRunnerResponse;
+            const stdout = await executeFlatpakHostRunner(runnerPath, JSON.stringify(request), timeoutMs);
+            const response = parseHostRunnerResponse(stdout);
             if (!response.ok) {
-                const error = new Error(response.error?.message ?? "User Plugin Manager host operation failed");
-                error.name = response.error?.name ?? "UserPluginManagerHostError";
-                if (response.error?.code) Object.assign(error, { code: response.error.code });
+                const error = new Error(response.error.message);
+                error.name = response.error.name ?? "UserPluginManagerHostError";
+                if (response.error.code) Object.assign(error, { code: response.error.code });
                 throw error;
             }
             return response.value as UserPluginManagerHostResult<TRequest>;
@@ -142,7 +189,7 @@ export async function runUserPluginManagerHostRequest(input: string): Promise<Ho
     }
 }
 
-function executeFlatpakHostRunner(runnerPath: string, input: string): Promise<string> {
+function executeFlatpakHostRunner(runnerPath: string, input: string, timeoutMs: number): Promise<string> {
     const { promise, resolve, reject } = Promise.withResolvers<string>();
     const child = spawn(
         "flatpak-spawn",
@@ -158,9 +205,15 @@ function executeFlatpakHostRunner(runnerPath: string, input: string): Promise<st
     const fail = (error: Error) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timeout);
         child.kill();
         reject(error);
     };
+    const timeout = setTimeout(
+        () => fail(new Error("User Plugin Manager host process timed out")),
+        timeoutMs
+    );
+    timeout.unref();
 
     child.stdout.on("data", (chunk: Buffer) => {
         stdoutBytes += chunk.byteLength;
@@ -182,6 +235,7 @@ function executeFlatpakHostRunner(runnerPath: string, input: string): Promise<st
     child.stdin.once("error", fail);
     child.once("close", (code, signal) => {
         if (settled) return;
+        clearTimeout(timeout);
         settled = true;
         if (code !== 0) {
             const detail = Buffer.concat(stderr).toString("utf8").trim();

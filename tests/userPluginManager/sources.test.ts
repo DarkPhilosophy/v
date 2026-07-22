@@ -193,7 +193,7 @@ test("git acquisition honors refs without running repository code", async t => {
     await assert.rejects(readFile(join(root, "hook-ran")), { code: "ENOENT" });
 });
 
-test("git acquisition uses host Git inside Flatpak", async t => {
+test("git acquisition uses host Git inside Flatpak", { skip: process.platform !== "linux" }, async t => {
     const { root, operationRoot } = await createOperationRoot();
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, "plugin");
@@ -230,7 +230,7 @@ test("git acquisition uses host Git inside Flatpak", async t => {
     assert.deepEqual((await readFile(marker, "utf8")).trim().split("\n").slice(0, 2), ["--host", "git"]);
 });
 
-test("git acquisition identifies an unavailable Flatpak host bridge", async t => {
+test("git acquisition identifies an unavailable Flatpak host bridge", { skip: process.platform !== "linux" }, async t => {
     const { root, operationRoot } = await createOperationRoot();
     t.after(() => rm(root, { recursive: true, force: true }));
     const previousFlatpakId = process.env.FLATPAK_ID;

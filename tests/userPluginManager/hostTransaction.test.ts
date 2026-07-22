@@ -64,7 +64,9 @@ test("host request applies staged sources to the host-installed root", async t =
     );
 });
 
-test("Flatpak host bridge streams requests over stdin without sandbox-only request files", async t => {
+test("Flatpak host bridge streams requests over stdin without sandbox-only request files", {
+    skip: process.platform !== "linux"
+}, async t => {
     const root = await mkdtemp(join(tmpdir(), "vencord-upm-flatpak-host-"));
     t.after(() => rm(root, { recursive: true, force: true }));
 
@@ -112,4 +114,86 @@ test("Flatpak host bridge streams requests over stdin without sandbox-only reque
         { action: "ensure-installed-root", installedRoot: join(root, "unused") }
     );
     await assert.rejects(readFile(dataRoot), { code: "ENOENT" });
+});
+
+test("Flatpak host bridge validates response envelopes without masking host errors", {
+    skip: process.platform !== "linux"
+}, async t => {
+    const root = await mkdtemp(join(tmpdir(), "vencord-upm-flatpak-malformed-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+
+    const bin = join(root, "bin");
+    const runnerPath = join(root, "host-runner.cjs");
+    await mkdir(bin);
+    await writeFile(
+        join(bin, "flatpak-spawn"),
+        "#!/bin/sh\nshift\ncat >/dev/null\nprintf '%s' \"$UPM_RESPONSE\"\n"
+    );
+    await chmod(join(bin, "flatpak-spawn"), 0o755);
+    await writeFile(runnerPath, "");
+
+    const previousPath = process.env.PATH;
+    const previousResponse = process.env.UPM_RESPONSE;
+    process.env.PATH = `${bin}:${previousPath ?? ""}`;
+    t.after(() => {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        if (previousResponse === undefined) delete process.env.UPM_RESPONSE;
+        else process.env.UPM_RESPONSE = previousResponse;
+    });
+
+    const host = createFlatpakUserPluginManagerHost(join(root, "unused"), runnerPath);
+    for (const response of [
+        "not-json",
+        "null",
+        "{}",
+        "{\"ok\":\"yes\"}",
+        "{\"ok\":false}",
+        "{\"ok\":false,\"error\":null}",
+        "{\"ok\":false,\"error\":{\"message\":42}}"
+    ]) {
+        process.env.UPM_RESPONSE = response;
+        await assert.rejects(
+            host.execute({ action: "ensure-installed-root", installedRoot: join(root, "unused") }),
+            { message: "Malformed User Plugin Manager host response" },
+            response
+        );
+    }
+
+    process.env.UPM_RESPONSE = JSON.stringify({
+        ok: false,
+        error: { code: "EHOSTTEST", message: "real host failure", name: "HostTestError" }
+    });
+    await assert.rejects(
+        host.execute({ action: "ensure-installed-root", installedRoot: join(root, "unused") }),
+        { code: "EHOSTTEST", message: "real host failure", name: "HostTestError" }
+    );
+});
+
+test("Flatpak host bridge times out a stalled host runner", {
+    skip: process.platform !== "linux"
+}, async t => {
+    const root = await mkdtemp(join(tmpdir(), "vencord-upm-flatpak-timeout-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+
+    const bin = join(root, "bin");
+    const runnerPath = join(root, "host-runner.cjs");
+    await mkdir(bin);
+    await writeFile(join(bin, "flatpak-spawn"), "#!/bin/sh\nshift\nexec \"$@\"\n");
+    await chmod(join(bin, "flatpak-spawn"), 0o755);
+    // This integration test needs the platform clock because the timeout controls a spawned process.
+    await writeFile(runnerPath, "setTimeout(() => {}, 200);\nprocess.stdin.resume();\n");
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${bin}:${previousPath ?? ""}`;
+    t.after(() => {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+    });
+
+    const host = createFlatpakUserPluginManagerHost(join(root, "unused"), runnerPath, 25);
+    await assert.rejects(
+        host.execute({ action: "ensure-installed-root", installedRoot: join(root, "unused") }),
+        { message: "User Plugin Manager host process timed out" }
+    );
 });

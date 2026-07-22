@@ -10,11 +10,10 @@ import {
     lstat,
     mkdir,
     open,
-    readFile,
     readdir,
+    readFile,
     rename,
-    rm,
-    stat
+    rm
 } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
@@ -22,7 +21,7 @@ import {
     resolveContainedDestination,
     resolveContainedExistingPath,
     resolveOperationCleanupPath
-} from "../../shared/userPluginManagerSafety";
+} from "@shared/userPluginManagerSafety";
 
 export type TransactionJournalPhase =
     | "prepared"

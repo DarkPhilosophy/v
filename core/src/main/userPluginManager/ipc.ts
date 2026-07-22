@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { IpcEvents } from "@shared/IpcEvents";
-import type { UserPluginManagerIpcResult } from "@shared/userPluginManager";
-import { ipcMain } from "electron";
 import { join } from "node:path";
 
-import { redactSensitiveData } from "../../shared/userPluginManagerSafety";
-import { DATA_DIR } from "../utils/constants";
+import { DATA_DIR } from "@main/utils/constants";
+import { IpcEvents } from "@shared/IpcEvents";
+import type { UserPluginManagerIpcResult } from "@shared/userPluginManager";
+import { redactSensitiveData } from "@shared/userPluginManagerSafety";
+import { ipcMain } from "electron";
+
 import { createUserPluginManagerService } from ".";
 import { createFlatpakUserPluginManagerHost } from "./host";
 
@@ -43,6 +44,10 @@ export function registerUserPluginManagerIpcHandlers(build: () => Promise<boolea
             : undefined,
         build
     });
+
+    // Initialization starts eagerly, but the first IPC request may arrive after a startup failure.
+    // Mark the rejection handled now; handlers still await the original promise and serialize its error.
+    void service.catch(() => undefined);
 
     ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_GET_SNAPSHOT, serializeManagerCall(async () => (await service).getSnapshot()));
     ipcMain.handle(IpcEvents.USER_PLUGIN_MANAGER_ACKNOWLEDGE_RISK, serializeManagerCall(async () => (await service).acknowledgeRisk()));

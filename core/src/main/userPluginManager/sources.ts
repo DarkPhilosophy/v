@@ -10,28 +10,28 @@ import {
     copyFile,
     lstat,
     mkdir,
-    readFile,
     readdir,
+    readFile,
     rm,
     stat,
     writeFile
 } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { gunzipSync, strFromU8, unzipSync } from "fflate";
 
-import type { SourceKind } from "../../shared/userPluginManager";
+import type { SourceKind } from "@shared/userPluginManager";
 import {
     assertAcquisitionLimits,
     assertSafeArchiveEntryPath,
     createDestinationSlug,
     MAX_ACQUISITION_EXPANDED_BYTES,
     MAX_ACQUISITION_REDIRECTS,
-    MAX_ACQUISITION_RESPONSE_BYTES,
     redactSourceLocator,
     resolveContainedExistingPath,
     UserPluginManagerSafetyError
-} from "../../shared/userPluginManagerSafety";
+} from "@shared/userPluginManagerSafety";
+import { gunzipSync, strFromU8, unzipSync } from "fflate";
+
 import { computePathDigest } from "./transaction";
 
 const execFileAsync = promisify(execFile);
@@ -217,9 +217,9 @@ async function execGit(
     const command = useFlatpakHost ? "flatpak-spawn" : "git";
     const commandArgs = useFlatpakHost ? ["--host", "git", ...args] : args;
     try {
-        return await execFileAsync(command, commandArgs, env == null ? undefined : { env });
+        return await execFileAsync(command, commandArgs, { encoding: "utf8", ...(env == null ? {} : { env }) });
     } catch (error) {
-        const code = (error as NodeJS.ErrnoException & { code?: string | number; }).code;
+        const { code } = (error as NodeJS.ErrnoException & { code?: string | number; });
         if (code === "ENOENT") {
             throw new SourceAcquisitionError(
                 "ACQUISITION_FAILED",
@@ -242,8 +242,8 @@ function deriveGitSourceDisplayName(locator: string): string {
         // Local paths and scp-style Git locators are handled below.
     }
     const segment = sourcePath
-        .replace(/[\\\/]+$/, "")
-        .split(/[\\\/:]/)
+        .replace(/[\\/]+$/, "")
+        .split(/[\\/:]/)
         .filter(Boolean)
         .at(-1)
         ?.replace(/\.git$/i, "");
@@ -337,8 +337,8 @@ async function acquireHttpSource(
 
 async function fetchWithRedirectLimit(locator: string, fetchImpl: typeof fetch): Promise<Response> {
     const initial = new URL(locator);
-    const username = initial.username;
-    const password = initial.password;
+    const { username } = initial;
+    const { password } = initial;
     initial.username = "";
     initial.password = "";
     let current = initial;

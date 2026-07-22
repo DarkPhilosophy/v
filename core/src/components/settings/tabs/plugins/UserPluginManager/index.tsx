@@ -12,16 +12,16 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { HeadingSecondary, HeadingTertiary } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
 import { Span } from "@components/Span";
+import type {
+    ManagedSourceV1,
+    PendingChangeV1,
+    UserPluginManagerSnapshot
+} from "@shared/userPluginManager";
 import { relaunch } from "@utils/native";
 import type { ModalActionVariant } from "@vencord/discord-types";
 import { ConfirmModal, openModal, useCallback, useEffect, useRef, useState } from "@webpack/common";
 import type { ReactNode } from "react";
 
-import type {
-    ManagedSourceV1,
-    PendingChangeV1,
-    UserPluginManagerSnapshot
-} from "../../../../../shared/userPluginManager";
 import { UserPluginManagerController } from "./controller";
 import { openAddSourceModal, openAdoptModal, openUpdateSourceModal } from "./modals";
 import { Badge, type BadgeTone, cl, ErrorDisplay, type ManagerError, SOURCE_KIND_META, toManagerError } from "./shared";
@@ -134,7 +134,7 @@ function UserPluginManagerView() {
 
     const view = UserPluginManagerController.deriveViewState(snapshot, busy);
     const { state, inventory, conflicts, recovery } = snapshot;
-    const sources = state.sources;
+    const { sources } = state;
     const pending = state.pending?.changes ?? [];
     const canStage = snapshot.active && !snapshot.locked && !busy;
 
