@@ -26,7 +26,7 @@ diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
 index 1955f7d..fb6cccb 100644
 --- a/src/main/updater/git.ts
 +++ b/src/main/updater/git.ts
-@@ -16,15 +16,25 @@
+@@ -16,15 +16,23 @@
   * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
  
@@ -44,8 +44,6 @@ index 1955f7d..fb6cccb 100644
  
 -const VENCORD_SRC_DIR = join(__dirname, "..");
 +const OVERLAY_TARBALL = "https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main";
-+const UPSTREAM_TARBALL = process.env.VENCORD_UPSTREAM_TARBALL
-+    || "https://codeload.github.com/Vendicated/Vencord/tar.gz/refs/heads/main";
 +const UPSTREAM_REPO = process.env.VENCORD_UPSTREAM || "https://github.com/Vendicated/Vencord.git";
 +const RUNTIME_DIR = join(homedir(), ".config", "Vencord");
 +const RUNTIME_ASAR = join(RUNTIME_DIR, "app.asar");
@@ -53,7 +51,7 @@ index 1955f7d..fb6cccb 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,58 +42,96 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,58 +40,94 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -152,13 +150,11 @@ index 1955f7d..fb6cccb 100644
 +    const overlay = join(work, "overlay");
 +    const source = join(work, "vencord");
 +    const overlayArchive = join(work, "overlay.tar.gz");
-+    const upstreamArchive = join(work, "upstream.tar.gz");
 +    const candidate = join(work, "app.asar");
 +    try {
 +        await downloadTarball(OVERLAY_TARBALL, overlayArchive);
 +        await extractTarball(overlayArchive, overlay);
-+        await downloadTarball(UPSTREAM_TARBALL, upstreamArchive);
-+        await extractTarball(upstreamArchive, source);
++        await run("git", ["clone", "--depth", "1", UPSTREAM_REPO, source]);
 +        await copyOverlay(overlay, source, userpluginsRoot);
 +        await applyOverlay(source);
 +        await run("pnpm", ["install", "--frozen-lockfile"], source);

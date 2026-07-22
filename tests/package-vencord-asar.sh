@@ -85,6 +85,8 @@ build = 'await run("node", args, source);'
 assert generator in patch
 assert patch.index(generator) < patch.index(build)
 assert 'join(source, "dist", "userPluginSeeds")' not in patch
+assert 'await run("git", ["clone", "--depth", "1", UPSTREAM_REPO, source]);' in patch
+assert "UPSTREAM_TARBALL" not in patch
 PY
 
 [ "$(cat "$WORK/existing.asar")" = 'keep-old-asar' ]
