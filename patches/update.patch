@@ -146,7 +146,7 @@ index 1955f7d..fb6cccb 100644
  
 +async function waitForPackagedRuntime(candidate: string) {
 +    let lastSize = -1;
-+    for (let attempt = 0; attempt < 100; attempt++) {
++    for (let attempt = 0; attempt < 3000; attempt++) {
 +        try {
 +            const output = await stat(candidate);
 +            if (output.isFile() && output.size > 0 && output.size === lastSize) return;

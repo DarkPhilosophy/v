@@ -121,6 +121,7 @@ assert 'await run("cp"' not in patch
 assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
 assert "async function waitForPackagedRuntime(candidate: string)" in patch
+assert "for (let attempt = 0; attempt < 3000; attempt++)" in patch
 assert "await waitForPackagedRuntime(candidate);" in patch
 PY
 
