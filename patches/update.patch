@@ -1,8 +1,8 @@
 diff --git a/src/components/settings/tabs/updater/index.tsx b/src/components/settings/tabs/updater/index.tsx
-index 30191cb9..62bbc458 100644
+index 30191cb..ff46155 100644
 --- a/src/components/settings/tabs/updater/index.tsx
 +++ b/src/components/settings/tabs/updater/index.tsx
-@@ -81,6 +81,20 @@ function Updater() {
+@@ -81,6 +81,19 @@ function Updater() {
          <SettingsTab>
              <VesktopSection />
  
@@ -14,8 +14,7 @@ index 30191cb9..62bbc458 100644
 +                        and User Plugin Manager source patches from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>.
 +                    </Paragraph>
 +                    <Paragraph className={Margins.top8}>
-+                        The updater preserves local tracked changes, reapplies each overlay only when it applies
-+                        cleanly, and fails with an actionable error when upstream drift or a local conflict needs review.
++                        The updater rebuilds Vencord from disposable workspaces and atomically replaces the runtime only after a successful build.
 +                    </Paragraph>
 +                </Card>
 +            </Flex>
@@ -24,142 +23,150 @@ index 30191cb9..62bbc458 100644
                  title="Automatically update"
                  description="Automatically update Vencord without confirmation prompt"
 diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
-index 1955f7dc..84581009 100644
+index 1955f7d..8c40731 100644
 --- a/src/main/updater/git.ts
 +++ b/src/main/updater/git.ts
-@@ -22,6 +22,7 @@ import { ipcMain } from "electron";
+@@ -19,12 +19,20 @@
+ import { IpcEvents } from "@shared/IpcEvents";
+ import { execFile as cpExecFile } from "child_process";
+ import { ipcMain } from "electron";
++import { copyFile, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";
++import { homedir } from "os";
  import { join } from "path";
  import { promisify } from "util";
  
-+import { registerUserPluginManagerIpcHandlers } from "../userPluginManager/ipc";
  import { serializeErrors } from "./common";
  
- const VENCORD_SRC_DIR = join(__dirname, "..");
-@@ -67,13 +68,91 @@ async function calculateGitChanges() {
+-const VENCORD_SRC_DIR = join(__dirname, "..");
++const OVERLAY_TARBALL = "https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main";
++const UPSTREAM_TARBALL = process.env.VENCORD_UPSTREAM_TARBALL
++    || "https://codeload.github.com/Vendicated/Vencord/tar.gz/refs/heads/main";
++const UPSTREAM_REPO = process.env.VENCORD_UPSTREAM || "https://github.com/Vendicated/Vencord.git";
++const RUNTIME_DIR = join(homedir(), ".config", "Vencord");
++const RUNTIME_ASAR = join(RUNTIME_DIR, "app.asar");
++const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch"] as const;
+ 
+ const execFile = promisify(cpExecFile);
+ 
+@@ -32,56 +40,86 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+ 
+ if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
+ 
+-function git(...args: string[]) {
+-    const opts = { cwd: VENCORD_SRC_DIR };
+-
+-    if (isFlatpak) return execFile("flatpak-spawn", ["--host", "git", ...args], opts);
+-    else return execFile("git", args, opts);
++async function run(command: string, args: string[], cwd?: string) {
++    const opts = cwd ? { cwd } : {};
++    if (isFlatpak) return execFile("flatpak-spawn", ["--host", command, ...args], opts);
++    return execFile(command, args, opts);
+ }
+ 
+ async function getRepo() {
+-    const res = await git("remote", "get-url", "origin");
+-    return res.stdout.trim()
+-        .replace(/git@(.+):/, "https://$1/")
+-        .replace(/\.git$/, "");
++    return "https://github.com/DarkPhilosophy/vencord-custom";
+ }
+ 
+ async function calculateGitChanges() {
+-    await git("fetch");
+-
+-    const branch = (await git("branch", "--show-current")).stdout.trim();
+-
+-    const existsOnOrigin = (await git("ls-remote", "origin", branch)).stdout.length > 0;
+-    if (!existsOnOrigin) return [];
+-
+-    const res = await git("log", `HEAD...origin/${branch}`, "--pretty=format:%an/%h/%s");
+-
+-    const commits = res.stdout.trim();
+-    return commits ? commits.split("\n").map(line => {
+-        const [author, hash, ...rest] = line.split("/");
+-        return {
+-            hash, author,
+-            message: rest.join("/").split("\n")[0]
+-        };
+-    }) : [];
++    const res = await run("git", ["ls-remote", UPSTREAM_REPO, "HEAD"]);
++    const hash = res.stdout.trim().split(/\s+/)[0];
++    return hash ? [{ hash: hash.slice(0, 7), author: "Vencord", message: "Upstream rebuild available" }] : [];
  }
  
  async function pull() {
 -    const res = await git("pull");
 -    return res.stdout.includes("Fast-forward");
-+    const states = await inspectCustomOverlay();
-+
-+    try {
-+        // Remove only our cleanly applied overlays. Unrelated tracked changes remain
-+        // untouched; git pull --ff-only fails instead of overwriting them.
-+        for (const patch of [...CUSTOM_OVERLAY_PATCHES].reverse()) {
-+            if (states.get(patch) !== "applied") continue;
-+            await git("apply", "--reverse", join(CUSTOM_PATCHES_DIR, patch));
-+        }
-+
-+        const res = await git("pull", "--ff-only");
-+        await applyCustomOverlay();
-+        return res.stdout.includes("Fast-forward");
-+    } catch (error) {
-+        // Restore the pre-update overlay state before surfacing any pull or apply error.
-+        try {
-+            await applyCustomOverlay();
-+        } catch (restoreError) {
-+            throw overlayError(
-+                `The update failed and restoring custom overlays also failed: ${errorMessage(error)}; ${errorMessage(restoreError)}`
-+            );
-+        }
-+        throw error;
-+    }
++    // The actual update is performed by build() in a disposable workspace.
++    return true;
  }
  
 -async function build() {
-+const CUSTOM_PATCHES_DIR = join(VENCORD_SRC_DIR, "custom-patches");
-+const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch"] as const;
-+type CustomOverlayState = "applied" | "pending";
-+
-+function errorMessage(error: unknown) {
-+    if (error && typeof error === "object") {
-+        const details = error as { stderr?: string; stdout?: string; message?: string };
-+        return details.stderr?.trim() || details.stdout?.trim() || details.message || String(error);
-+    }
-+    return String(error);
+-    const opts = { cwd: VENCORD_SRC_DIR };
++async function downloadTarball(url: string, destination: string) {
++    await run("curl", ["-fsSL", url, "-o", destination]);
++}
+ 
+-    const command = isFlatpak ? "flatpak-spawn" : "node";
+-    const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
++async function extractTarball(archive: string, destination: string) {
++    await mkdir(destination, { recursive: true });
++    await run("tar", ["-xzf", archive, "--strip-components=1", "-C", destination]);
 +}
 +
-+function overlayError(message: string) {
-+    return Object.assign(new Error(message), { stderr: message });
++async function copyOverlay(overlay: string, source: string) {
++    await run("cp", ["-r", join(overlay, "core", "src", "."), join(source, "src")]);
++    await run("cp", ["-r", join(overlay, "userplugins", "."), join(source, "src", "userplugins")]);
++    await run("cp", ["-r", join(overlay, "patches", "."), join(source, "custom-patches")]);
 +}
-+
-+async function checkPatch(...args: string[]) {
+ 
+-    if (IS_DEV) args.push("--dev");
++async function applyOverlay(source: string) {
++    for (const patch of CUSTOM_OVERLAY_PATCHES)
++        await run("git", ["apply", join(source, "custom-patches", patch)], source);
++}
+ 
+-    const res = await execFile(command, args, opts);
++async function replaceRuntime(candidate: string) {
++    const parent = join(RUNTIME_ASAR, "..");
++    await mkdir(parent, { recursive: true });
++    const staging = `${RUNTIME_ASAR}.next-${process.pid}`;
 +    try {
-+        await git("apply", ...args);
++        await copyFile(candidate, staging);
++        await rename(staging, RUNTIME_ASAR);
++    } finally {
++        await rm(staging, { force: true });
++    }
++}
+ 
+-    return !res.stderr.includes("Build failed");
++async function build() {
++    await mkdir(RUNTIME_DIR, { recursive: true });
++    const work = await mkdtemp(join(RUNTIME_DIR, ".update-"));
++    const overlay = join(work, "overlay");
++    const source = join(work, "vencord");
++    const overlayArchive = join(work, "overlay.tar.gz");
++    const upstreamArchive = join(work, "upstream.tar.gz");
++    const candidate = join(work, "app.asar");
++    try {
++        await downloadTarball(OVERLAY_TARBALL, overlayArchive);
++        await extractTarball(overlayArchive, overlay);
++        await downloadTarball(UPSTREAM_TARBALL, upstreamArchive);
++        await extractTarball(upstreamArchive, source);
++        await copyOverlay(overlay, source);
++        await applyOverlay(source);
++        await run("pnpm", ["install", "--frozen-lockfile"], source);
++        const args = ["scripts/build/build.mjs"];
++        if (IS_DEV) args.push("--dev");
++        await run("node", args, source);
++        await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), candidate]);
++        const output = await stat(candidate);
++        if (!output.isFile() || output.size === 0) throw new Error("ASAR packager produced an empty output");
++        await replaceRuntime(candidate);
 +        return true;
-+    } catch {
-+        return false;
++    } finally {
++        await rm(work, { recursive: true, force: true });
 +    }
-+}
-+
-+async function inspectCustomOverlay() {
-+    const states = new Map<typeof CUSTOM_OVERLAY_PATCHES[number], CustomOverlayState>();
-+    for (const patch of CUSTOM_OVERLAY_PATCHES) {
-+        const patchPath = join(CUSTOM_PATCHES_DIR, patch);
-+        if (await checkPatch("--reverse", "--check", patchPath)) {
-+            states.set(patch, "applied");
-+        } else if (await checkPatch("--check", patchPath)) {
-+            states.set(patch, "pending");
-+        } else {
-+            throw overlayError(
-+                `Custom overlay ${patch} is neither cleanly applied nor applicable. Upstream drift or local edits require manual review.`
-+            );
-+        }
-+    }
-+    return states;
-+}
-+
-+async function applyCustomOverlay() {
-+    const states = await inspectCustomOverlay();
-+    for (const patch of CUSTOM_OVERLAY_PATCHES) {
-+        if (states.get(patch) !== "pending") continue;
-+        try {
-+            await git("apply", join(CUSTOM_PATCHES_DIR, patch));
-+        } catch (error) {
-+            throw overlayError(`Failed to apply custom overlay ${patch}: ${errorMessage(error)}`);
-+        }
-+    }
-+}
-+
-+export async function build() {
-     const opts = { cwd: VENCORD_SRC_DIR };
- 
-+    await applyCustomOverlay();
-+
-     const command = isFlatpak ? "flatpak-spawn" : "node";
-     const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
- 
-@@ -84,6 +163,8 @@ async function build() {
-     return !res.stderr.includes("Build failed");
  }
  
-+registerUserPluginManagerIpcHandlers(build);
-+
  ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(getRepo));
- ipcMain.handle(IpcEvents.GET_UPDATES, serializeErrors(calculateGitChanges));
- ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));
-diff --git a/scripts/build/build.mjs b/scripts/build/build.mjs
-index 54f7a279..e0cfcad3 100644
---- a/scripts/build/build.mjs
-+++ b/scripts/build/build.mjs
-@@ -214,6 +214,18 @@ const buildConfigs = ([
-             IS_VESKTOP: "true"
-         }
--    }
-+    },
-+    {
-+        ...nodeCommonOpts,
-+        entryPoints: ["src/main/userPluginManager/hostRunner.ts"],
-+        outfile: "dist/userPluginManagerHost.cjs",
-+        format: "cjs",
-+        sourcemap,
-+        define: {
-+            ...defines,
-+            IS_DISCORD_DESKTOP: "true",
-+            IS_VESKTOP: "false"
-+        }
-+    }
- ]);
- 
- await buildOrWatchAll(buildConfigs);

@@ -1,73 +1,90 @@
 #!/usr/bin/env sh
-# install.sh — install our custom Vencord (INTEGRATED model) into ~/.config/Vencord.
+# install.sh — build custom Vencord in a temporary checkout and install app.asar.
 #
 #   sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
 #
-# Sets up an upstream Vencord checkout at ~/.config/Vencord with our overlay
-# (src/userplugins + custom-patches) baked in, builds it, and points Discord at
-# ~/.config/Vencord/dist directly. Vencord's own Updater tab then keeps it current:
-# update.patch reapplies our patches over the freshly pulled upstream, locally.
-# No prebuild, no CI. The build toolchain (node_modules) stays in the checkout so
-# the in-app updater can rebuild — that is the cost of native auto-update.
+# Only ~/.config/Vencord/app.asar is a persistent compiled Vencord artifact.
+# Settings and user data in ~/.config/Vencord are retained; source, dependencies,
+# patches, and build output are temporary and removed on exit.
 set -eu
 
 VENCORD="${XDG_CONFIG_HOME:-$HOME/.config}/Vencord"
 VENCORD_REPO="${VENCORD_UPSTREAM:-https://github.com/Vendicated/Vencord.git}"
 PKG_TARBALL="${VENCORD_CUSTOM_TARBALL:-https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main}"
-INSTALLER_URL="https://github.com/Vencord/Installer/releases/latest/download/VencordInstallerCli-linux"
 
 say() { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[install] %s\033[0m\n' "$*" >&2; exit 1; }
 
-for c in git node curl tar; do
+for c in git node curl tar python3 install mv; do
     command -v "$c" >/dev/null 2>&1 || die "missing dependency: $c"
 done
-command -v pnpm >/dev/null 2>&1 || corepack enable >/dev/null 2>&1 || die "pnpm unavailable (enable corepack)"
+if ! command -v pnpm >/dev/null 2>&1; then
+    command -v corepack >/dev/null 2>&1 || die "pnpm unavailable (install pnpm or enable corepack)"
+    corepack enable >/dev/null 2>&1 || die "could not enable corepack"
+fi
+command -v pnpm >/dev/null 2>&1 || die "pnpm unavailable"
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT INT TERM
+# Keep the temporary workspace beside the final app.asar so the final rename is
+# atomic on filesystems where ~/.config is a single mount.
+mkdir -p "$VENCORD"
+WORK="$(mktemp -d "${VENCORD}.build.XXXXXX")"
+SYSTEM_STAGE=""
+cleanup() {
+    rm -rf "$WORK"
+    if [ -n "$SYSTEM_STAGE" ] && [ -e "$SYSTEM_STAGE" ]; then
+        sudo rm -f "$SYSTEM_STAGE" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
 
-# 1) our overlay (local checkout if run from inside it, else HTTPS tarball -> temp)
+# 1) Obtain our overlay without retaining a checkout.
 if [ -d "./userplugins" ] && [ -d "./core/src/main/userPluginManager" ] && [ -f "./patches/userplugin-manager.patch" ]; then
-    PKG="$(pwd)"
+    PKG="$(pwd -P)"
 else
     say "Fetching overlay"
-    curl -fsSL "$PKG_TARBALL" | tar -xz --strip-components=1 -C "$WORK" || die "overlay download failed"
-    PKG="$WORK"
+    mkdir -p "$WORK/overlay"
+    curl -fsSL "$PKG_TARBALL" | tar -xz --strip-components=1 -C "$WORK/overlay" \
+        || die "overlay download failed"
+    PKG="$WORK/overlay"
 fi
 
-# 2) remove leftovers from older installs
-[ -L "${VENCORD}/dist" ] && { rm -f "${VENCORD}/dist"; say "Removed stale ${VENCORD}/dist symlink"; }
-[ -d "$HOME/.local/share/vencord-custom" ] && { rm -rf "$HOME/.local/share/vencord-custom"; say "Removed old ~/.local/share/vencord-custom"; }
-
-# 3) upstream Vencord checkout at ~/.config/Vencord (init in place; keeps settings/)
-if [ ! -d "${VENCORD}/.git" ]; then
-    say "Setting up upstream Vencord checkout at ${VENCORD}"
-    mkdir -p "${VENCORD}"
-    git -C "${VENCORD}" init -q
-    git -C "${VENCORD}" remote add origin "${VENCORD_REPO}" 2>/dev/null || git -C "${VENCORD}" remote set-url origin "${VENCORD_REPO}"
-    git -C "${VENCORD}" fetch origin 2>/dev/null || GIT_CONFIG_GLOBAL=/dev/null git -C "${VENCORD}" fetch origin
-    BR="$(git -C "${VENCORD}" remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')"
-    git -C "${VENCORD}" checkout -f "${BR:-main}"
-fi
-
-# 4) seed our overlay into the checkout (core manager files and userplugins are untracked;
-#    custom-patches are reapplied after every upstream pull)
-mkdir -p "${VENCORD}/src/userplugins" "${VENCORD}/custom-patches"
-cp -r "${PKG}/core/src/." "${VENCORD}/src/"
-cp -r "${PKG}/userplugins/." "${VENCORD}/src/userplugins/"
-cp -r "${PKG}/patches/." "${VENCORD}/custom-patches/"
-# 5) deps + apply patches + build (git-mode updater stays enabled)
-[ -d "${VENCORD}/node_modules" ] || { say "Installing deps"; ( cd "${VENCORD}" && pnpm i --frozen-lockfile ); }
+# 2) Clone upstream into the temporary workspace and apply our overlay.
+BUILD="$WORK/Vencord"
+say "Fetching upstream Vencord"
+git clone --depth 1 "$VENCORD_REPO" "$BUILD" >/dev/null 2>&1 \
+    || die "upstream clone failed"
+mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
+cp -r "$PKG/core/src/." "$BUILD/src/"
+cp -r "$PKG/userplugins/." "$BUILD/src/userplugins/"
+cp -r "$PKG/patches/." "$BUILD/custom-patches/"
 for p in translate.patch update.patch userplugin-manager.patch; do
-    if git -C "${VENCORD}" apply --reverse --check "${VENCORD}/custom-patches/$p" 2>/dev/null; then :
-    elif git -C "${VENCORD}" apply --check "${VENCORD}/custom-patches/$p" 2>/dev/null; then git -C "${VENCORD}" apply "${VENCORD}/custom-patches/$p"
-    else die "$p does not apply cleanly (upstream drift)"; fi
+    if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
+        :
+    elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then
+        git -C "$BUILD" apply "$BUILD/custom-patches/$p"
+    else
+        die "$p does not apply cleanly (upstream drift)"
+    fi
 done
-say "Building"
-( cd "${VENCORD}" && pnpm build )
 
-# 6) point Discord at ~/.config/Vencord/dist directly (dev install; no symlink, no official download)
+# 3) Install dependencies and build only inside the temporary checkout.
+say "Installing temporary build dependencies"
+(cd "$BUILD" && pnpm install --frozen-lockfile) || die "dependency installation failed"
+say "Building"
+(cd "$BUILD" && pnpm build) || die "build failed"
+
+# 4) Package the complete compiled runtime into a standalone app.asar.
+HELPER="$PKG/scripts/package-vencord-asar.sh"
+[ -x "$HELPER" ] || die "missing ASAR packager: $HELPER"
+APP_ASAR="$WORK/app.asar"
+"$HELPER" "$BUILD/dist" "$APP_ASAR" || die "ASAR packaging failed"
+[ -s "$APP_ASAR" ] || die "ASAR packaging produced no output"
+# Keep the packaged runtime in the temporary workspace until the loader has
+# also been prepared; a loader/package failure therefore leaves the old app.asar
+# untouched.
+
+# 5) Find Discord and install a tiny system loader. The loader's patcher.js
+# requires the user-writable runtime app.asar installed above.
 disc=""
 for c in \
     "/var/lib/flatpak/app/com.discordapp.Discord/current/active/files/discord" \
@@ -76,20 +93,47 @@ for c in \
     [ -d "$c/resources" ] && { disc="$c"; break; }
 done
 [ -n "$disc" ] || die "Discord install not found; open Discord once, then re-run."
-inst="$WORK/VencordInstallerCli"
-curl -fsSL "$INSTALLER_URL" -o "$inst"
-chmod +x "$inst"
-say "Patching Discord at ${disc}"
-if [ -w "$disc/resources" ]; then
-    env VENCORD_USER_DATA_DIR="${VENCORD}" VENCORD_DEV_INSTALL=1 "$inst" -install -location "$disc"
+resources="$disc/resources"
+loader="$WORK/loader"
+mkdir -p "$loader"
+python3 - "$loader/patcher.js" "$VENCORD/app.asar/patcher.js" <<'PY'
+import json
+import pathlib
+import sys
+pathlib.Path(sys.argv[1]).write_text(
+    "require(" + json.dumps(sys.argv[2]) + ");\n", encoding="utf-8"
+)
+PY
+printf '%s\n' '{"name":"discord","version":"0.0.0"}' > "$loader/package.json"
+LOADER_ASAR="$WORK/loader.asar"
+"$HELPER" "$loader" "$LOADER_ASAR" || die "loader packaging failed"
+
+# Remove artifacts from older integrated installs, but retain settings/user data.
+for stale in dist src custom-patches node_modules .git; do
+    [ -e "$VENCORD/$stale" ] && rm -rf "$VENCORD/$stale"
+done
+
+SYSTEM_STAGE="$resources/.app.asar.vencord.$$"
+if [ -w "$resources" ]; then
+    install -m 0644 "$LOADER_ASAR" "$SYSTEM_STAGE"
+    mv -f "$SYSTEM_STAGE" "$resources/app.asar"
+    SYSTEM_STAGE=""
 else
-    sudo env VENCORD_USER_DATA_DIR="${VENCORD}" VENCORD_DEV_INSTALL=1 "$inst" -install -location "$disc"
-fi
-# flatpak: let the in-app updater run git/node on the host
-if [ "${disc#*flatpak}" != "$disc" ] && command -v flatpak >/dev/null 2>&1; then
-    flatpak override --user --talk-name=org.freedesktop.Flatpak com.discordapp.Discord 2>/dev/null \
-        && say "Granted flatpak portal permission (enables in-app updater)" || true
+    command -v sudo >/dev/null 2>&1 || die "Discord resources are not writable and sudo is unavailable"
+    sudo install -m 0644 "$LOADER_ASAR" "$SYSTEM_STAGE"
+    sudo mv -f "$SYSTEM_STAGE" "$resources/app.asar"
+    SYSTEM_STAGE=""
 fi
 
-say "Done. Everything lives in ${VENCORD}. Restart Discord (Ctrl+R)."
+# Install the compiled runtime only after the system loader has been prepared.
+# The rename is atomic within the user data filesystem and leaves an existing
+# runtime untouched if it fails.
+mv -f "$APP_ASAR" "$VENCORD/app.asar" || die "could not install $VENCORD/app.asar"
+
+# Flatpak must be allowed to read the user-writable runtime path.
+if [ "${disc#*flatpak}" != "$disc" ] && command -v flatpak >/dev/null 2>&1; then
+    flatpak override --user --filesystem="$VENCORD" com.discordapp.Discord 2>/dev/null || true
+fi
+
+say "Done. Runtime installed at ${VENCORD}/app.asar. Restart Discord (Ctrl+R)."
 say "Update from Discord: Settings -> Vencord -> Updater -> Check for updates."
