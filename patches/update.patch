@@ -1,8 +1,8 @@
 diff --git a/src/components/settings/tabs/updater/index.tsx b/src/components/settings/tabs/updater/index.tsx
-index 30191cb9..03236212 100644
+index 30191cb9..62bbc458 100644
 --- a/src/components/settings/tabs/updater/index.tsx
 +++ b/src/components/settings/tabs/updater/index.tsx
-@@ -81,6 +81,22 @@ function Updater() {
+@@ -81,6 +81,20 @@ function Updater() {
          <SettingsTab>
              <VesktopSection />
  
@@ -10,14 +10,12 @@ index 30191cb9..03236212 100644
 +                <Card variant="info">
 +                    <HeadingSecondary>Custom build — vencord-custom</HeadingSecondary>
 +                    <Paragraph>
-+                        This is a customized Vencord: our plugins (PlatformSpoofer, QuestCompleter) and a
-+                        Translate patch, from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>,
-+                        layered on top of upstream Vencord.
++                        This build includes the PlatformSpoofer and QuestCompleter user plugins, plus the Translate
++                        and User Plugin Manager source patches from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>.
 +                    </Paragraph>
 +                    <Paragraph className={Margins.top8}>
-+                        Checking for updates pulls the latest upstream and automatically re-applies our
-+                        patches before rebuilding — you always get latest Vencord + our customizations,
-+                        never a plain reset.
++                        The updater preserves local tracked changes, reapplies each overlay only when it applies
++                        cleanly, and fails with an actionable error when upstream drift or a local conflict needs review.
 +                    </Paragraph>
 +                </Card>
 +            </Flex>
@@ -26,38 +24,142 @@ index 30191cb9..03236212 100644
                  title="Automatically update"
                  description="Automatically update Vencord without confirmation prompt"
 diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
-index 1955f7dc..51185d53 100644
+index 1955f7dc..84581009 100644
 --- a/src/main/updater/git.ts
 +++ b/src/main/updater/git.ts
-@@ -67,13 +67,31 @@ async function calculateGitChanges() {
+@@ -22,6 +22,7 @@ import { ipcMain } from "electron";
+ import { join } from "path";
+ import { promisify } from "util";
+ 
++import { registerUserPluginManagerIpcHandlers } from "../userPluginManager/ipc";
+ import { serializeErrors } from "./common";
+ 
+ const VENCORD_SRC_DIR = join(__dirname, "..");
+@@ -67,13 +68,91 @@ async function calculateGitChanges() {
  }
  
  async function pull() {
-+    // custom: discard our applied overlay patches so upstream pulls cleanly;
-+    // build() reapplies them afterwards. userplugins are gitignored and persist.
-+    await git("checkout", "--", ".");
-     const res = await git("pull");
-     return res.stdout.includes("Fast-forward");
+-    const res = await git("pull");
+-    return res.stdout.includes("Fast-forward");
++    const states = await inspectCustomOverlay();
++
++    try {
++        // Remove only our cleanly applied overlays. Unrelated tracked changes remain
++        // untouched; git pull --ff-only fails instead of overwriting them.
++        for (const patch of [...CUSTOM_OVERLAY_PATCHES].reverse()) {
++            if (states.get(patch) !== "applied") continue;
++            await git("apply", "--reverse", join(CUSTOM_PATCHES_DIR, patch));
++        }
++
++        const res = await git("pull", "--ff-only");
++        await applyCustomOverlay();
++        return res.stdout.includes("Fast-forward");
++    } catch (error) {
++        // Restore the pre-update overlay state before surfacing any pull or apply error.
++        try {
++            await applyCustomOverlay();
++        } catch (restoreError) {
++            throw overlayError(
++                `The update failed and restoring custom overlays also failed: ${errorMessage(error)}; ${errorMessage(restoreError)}`
++            );
++        }
++        throw error;
++    }
  }
  
-+// custom: our overlay patches live in <checkout>/custom-patches; userplugins persist in src/userplugins.
-+async function reapplyCustomOverlay() {
-+    const patchesDir = join(VENCORD_SRC_DIR, "custom-patches");
-+    for (const patch of ["translate.patch", "update.patch"]) {
+-async function build() {
++const CUSTOM_PATCHES_DIR = join(VENCORD_SRC_DIR, "custom-patches");
++const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch"] as const;
++type CustomOverlayState = "applied" | "pending";
++
++function errorMessage(error: unknown) {
++    if (error && typeof error === "object") {
++        const details = error as { stderr?: string; stdout?: string; message?: string };
++        return details.stderr?.trim() || details.stdout?.trim() || details.message || String(error);
++    }
++    return String(error);
++}
++
++function overlayError(message: string) {
++    return Object.assign(new Error(message), { stderr: message });
++}
++
++async function checkPatch(...args: string[]) {
++    try {
++        await git("apply", ...args);
++        return true;
++    } catch {
++        return false;
++    }
++}
++
++async function inspectCustomOverlay() {
++    const states = new Map<typeof CUSTOM_OVERLAY_PATCHES[number], CustomOverlayState>();
++    for (const patch of CUSTOM_OVERLAY_PATCHES) {
++        const patchPath = join(CUSTOM_PATCHES_DIR, patch);
++        if (await checkPatch("--reverse", "--check", patchPath)) {
++            states.set(patch, "applied");
++        } else if (await checkPatch("--check", patchPath)) {
++            states.set(patch, "pending");
++        } else {
++            throw overlayError(
++                `Custom overlay ${patch} is neither cleanly applied nor applicable. Upstream drift or local edits require manual review.`
++            );
++        }
++    }
++    return states;
++}
++
++async function applyCustomOverlay() {
++    const states = await inspectCustomOverlay();
++    for (const patch of CUSTOM_OVERLAY_PATCHES) {
++        if (states.get(patch) !== "pending") continue;
 +        try {
-+            await git("apply", join(patchesDir, patch));
-+        } catch {
-+            // already applied, or upstream drifted; leave it to save-patch maintenance
++            await git("apply", join(CUSTOM_PATCHES_DIR, patch));
++        } catch (error) {
++            throw overlayError(`Failed to apply custom overlay ${patch}: ${errorMessage(error)}`);
 +        }
 +    }
 +}
 +
- async function build() {
++export async function build() {
      const opts = { cwd: VENCORD_SRC_DIR };
  
-+    // custom: re-integrate our patches into the freshly pulled upstream before building
-+    await reapplyCustomOverlay();
++    await applyCustomOverlay();
 +
      const command = isFlatpak ? "flatpak-spawn" : "node";
      const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
  
+@@ -84,6 +163,8 @@ async function build() {
+     return !res.stderr.includes("Build failed");
+ }
+ 
++registerUserPluginManagerIpcHandlers(build);
++
+ ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(getRepo));
+ ipcMain.handle(IpcEvents.GET_UPDATES, serializeErrors(calculateGitChanges));
+ ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));
+diff --git a/scripts/build/build.mjs b/scripts/build/build.mjs
+index 54f7a279..e0cfcad3 100644
+--- a/scripts/build/build.mjs
++++ b/scripts/build/build.mjs
+@@ -214,6 +214,18 @@ const buildConfigs = ([
+             IS_VESKTOP: "true"
+         }
+-    }
++    },
++    {
++        ...nodeCommonOpts,
++        entryPoints: ["src/main/userPluginManager/hostRunner.ts"],
++        outfile: "dist/userPluginManagerHost.cjs",
++        format: "cjs",
++        sourcemap,
++        define: {
++            ...defines,
++            IS_DISCORD_DESKTOP: "true",
++            IS_VESKTOP: "false"
++        }
++    }
+ ]);
+ 
+ await buildOrWatchAll(buildConfigs);

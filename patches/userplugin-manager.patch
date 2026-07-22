@@ -1,0 +1,138 @@
+diff --git a/browser/VencordNativeStub.ts b/browser/VencordNativeStub.ts
+index 1b2e87be..59e1e31b 100644
+--- a/browser/VencordNativeStub.ts
++++ b/browser/VencordNativeStub.ts
+@@ -34,6 +34,9 @@ import { EXTENSION_BASE_URL, metaReady, RENDERER_CSS_URL } from "@utils/web-meta
+ const cssListeners = new Set<(css: string) => void>();
+ const NOOP = () => { };
+ const NOOP_ASYNC = async () => { };
++const USER_PLUGIN_MANAGER_UNSUPPORTED = async (): Promise<never> => {
++    throw new Error("User Plugin Manager is not supported on web");
++};
+ 
+ const setCssDebounced = debounce((css: string) => VencordNative.quickCss.set(css));
+ 
+@@ -70,6 +73,21 @@ window.VencordNative = {
+         onRendererCssUpdate: NOOP,
+     },
+ 
++    userPluginManager: {
++        getSnapshot: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        acknowledgeRisk: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        deactivate: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        inspectSource: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        checkSource: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        stageInstall: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        stageUpdate: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        stageAdopt: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        stageRemove: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        discardPending: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        applyPending: USER_PLUGIN_MANAGER_UNSUPPORTED,
++        recover: USER_PLUGIN_MANAGER_UNSUPPORTED,
++    },
++
+     updater: {
+         getRepo: async () => ({ ok: true, value: "https://github.com/Vendicated/Vencord" }),
+         getUpdates: async () => ({ ok: true, value: [] }),
+diff --git a/src/VencordNative.ts b/src/VencordNative.ts
+index 67ea7a09..3e254a7a 100644
+--- a/src/VencordNative.ts
++++ b/src/VencordNative.ts
+@@ -9,6 +9,15 @@ import type { CspRequestResult } from "@main/csp/manager";
+ import type { PluginIpcMappings } from "@main/ipcPlugins";
+ import type { UserThemeHeader } from "@main/themes";
+ import { IpcEvents } from "@shared/IpcEvents";
++import type {
++    StageAdoptInput,
++    StageInstallInput,
++    StageUpdateInput,
++    UserPluginManagerInspection,
++    UserPluginManagerInspectionInput,
++    UserPluginManagerIpcResult,
++    UserPluginManagerSnapshot
++} from "@shared/userPluginManager";
+ import type { IpcRes } from "@utils/types";
+ import { ipcRenderer } from "electron/renderer";
+ 
+@@ -20,6 +29,16 @@ export function sendSync<T = any>(event: IpcEvents, ...args: any[]) {
+     return ipcRenderer.sendSync(event, ...args) as T;
+ }
+ 
++async function invokeUserPluginManager<T>(event: IpcEvents, ...args: unknown[]): Promise<T> {
++    const result = await invoke<UserPluginManagerIpcResult<T>>(event, ...args);
++    if (!result.ok) {
++        const error = new Error(result.error.message);
++        Object.assign(error, { code: result.error.code });
++        throw error;
++    }
++    return result.value;
++}
++
+ const PluginHelpers = {} as Record<string, Record<string, (...args: any[]) => Promise<any>>>;
+ const pluginIpcMap = sendSync<PluginIpcMappings>(IpcEvents.GET_PLUGIN_IPC_METHOD_MAP);
+ 
+@@ -100,5 +119,20 @@ export default {
+             invoke<CspRequestResult>(IpcEvents.CSP_REQUEST_ADD_OVERRIDE, url, directives, callerName),
+     },
+ 
++    userPluginManager: {
++        getSnapshot: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_GET_SNAPSHOT),
++        acknowledgeRisk: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_ACKNOWLEDGE_RISK),
++        deactivate: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_DEACTIVATE),
++        inspectSource: (input: UserPluginManagerInspectionInput) => invokeUserPluginManager<UserPluginManagerInspection>(IpcEvents.USER_PLUGIN_MANAGER_INSPECT_SOURCE, input),
++        checkSource: (sourceId: string) => invokeUserPluginManager<UserPluginManagerInspection>(IpcEvents.USER_PLUGIN_MANAGER_CHECK_SOURCE, sourceId),
++        stageInstall: (input: StageInstallInput) => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_STAGE_INSTALL, input),
++        stageUpdate: (input: StageUpdateInput) => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_STAGE_UPDATE, input),
++        stageAdopt: (input: StageAdoptInput) => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_STAGE_ADOPT, input),
++        stageRemove: (sourceId: string) => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_STAGE_REMOVE, sourceId),
++        discardPending: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_DISCARD_PENDING),
++        applyPending: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_APPLY_PENDING),
++        recover: () => invokeUserPluginManager<UserPluginManagerSnapshot>(IpcEvents.USER_PLUGIN_MANAGER_RECOVER)
++    },
++
+     pluginHelpers: PluginHelpers
+ };
+diff --git a/src/components/settings/tabs/plugins/index.tsx b/src/components/settings/tabs/plugins/index.tsx
+index 99a327bd..7ca0e754 100644
+--- a/src/components/settings/tabs/plugins/index.tsx
++++ b/src/components/settings/tabs/plugins/index.tsx
+@@ -42,6 +42,7 @@ import Plugins, { ExcludedPlugins, PluginMeta } from "~plugins";
+ 
+ import { PluginCard } from "./PluginCard";
+ import { UIElementsButton } from "./UIElements";
++import UserPluginManager from "./UserPluginManager";
+ 
+ export const cl = classNameFactory("vc-plugins-");
+ export const logger = new Logger("PluginSettings", "#a6d189");
+@@ -267,6 +268,8 @@ function PluginSettings() {
+         <SettingsTab>
+             <ReloadRequiredCard required={changes.hasChanges} />
+ 
++            <UserPluginManager />
++
+             <UIElementsButton />
+ 
+             <HeadingTertiary className={classes(Margins.top20, Margins.bottom8)}>
+diff --git a/src/shared/IpcEvents.ts b/src/shared/IpcEvents.ts
+index 72813bc0..800abf85 100644
+--- a/src/shared/IpcEvents.ts
++++ b/src/shared/IpcEvents.ts
+@@ -54,5 +54,18 @@ export const enum IpcEvents {
+     RENDERER_CSS_UPDATE = "VencordRendererCssUpdate",
+     PRELOAD_GET_RENDERER_JS = "VencordPreloadGetRendererJs",
+ 
++    USER_PLUGIN_MANAGER_GET_SNAPSHOT = "VencordUserPluginManagerGetSnapshot",
++    USER_PLUGIN_MANAGER_ACKNOWLEDGE_RISK = "VencordUserPluginManagerAcknowledgeRisk",
++    USER_PLUGIN_MANAGER_DEACTIVATE = "VencordUserPluginManagerDeactivate",
++    USER_PLUGIN_MANAGER_INSPECT_SOURCE = "VencordUserPluginManagerInspectSource",
++    USER_PLUGIN_MANAGER_CHECK_SOURCE = "VencordUserPluginManagerCheckSource",
++    USER_PLUGIN_MANAGER_STAGE_INSTALL = "VencordUserPluginManagerStageInstall",
++    USER_PLUGIN_MANAGER_STAGE_UPDATE = "VencordUserPluginManagerStageUpdate",
++    USER_PLUGIN_MANAGER_STAGE_ADOPT = "VencordUserPluginManagerStageAdopt",
++    USER_PLUGIN_MANAGER_STAGE_REMOVE = "VencordUserPluginManagerStageRemove",
++    USER_PLUGIN_MANAGER_DISCARD_PENDING = "VencordUserPluginManagerDiscardPending",
++    USER_PLUGIN_MANAGER_APPLY_PENDING = "VencordUserPluginManagerApplyPending",
++    USER_PLUGIN_MANAGER_RECOVER = "VencordUserPluginManagerRecover",
++
+     SUPPORTS_WINDOWS_MATERIAL = "VencordSupportsWindowsMaterial",
+ }
