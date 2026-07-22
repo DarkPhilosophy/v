@@ -35,7 +35,7 @@ index 1955f7d..fb6cccb 100644
  import { IpcEvents } from "@shared/IpcEvents";
  import { execFile as cpExecFile } from "child_process";
  import { ipcMain } from "electron";
-+import { copyFile, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";
++import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";
 +import { homedir } from "os";
  import { join } from "path";
  import { promisify } from "util";
@@ -115,9 +115,9 @@ index 1955f7d..fb6cccb 100644
 -async function build() {
 -    const opts = { cwd: VENCORD_SRC_DIR };
 +async function copyOverlay(overlay: string, source: string, userpluginsRoot?: string) {
-+    await run("cp", ["-r", join(overlay, "core", "src", "."), join(source, "src")]);
++    await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });
 +    await materializeUserPluginsTree(source, userpluginsRoot ?? join(overlay, "userplugins"));
-+    await run("cp", ["-r", join(overlay, "patches", "."), join(source, "custom-patches")]);
++    await cp(join(overlay, "patches"), join(source, "custom-patches"), { recursive: true });
 +}
  
 -    const command = isFlatpak ? "flatpak-spawn" : "node";
