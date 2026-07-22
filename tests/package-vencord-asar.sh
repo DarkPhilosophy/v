@@ -90,7 +90,8 @@ assert "UPSTREAM_TARBALL" not in patch
 assert 'import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat } from "fs/promises";' in patch
 assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });' in patch
 assert 'await run("cp"' not in patch
-assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });' in patch
+assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
+assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
 PY
 
 [ "$(cat "$WORK/existing.asar")" = 'keep-old-asar' ]

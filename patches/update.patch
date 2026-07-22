@@ -51,7 +51,7 @@ index 1955f7d..fb6cccb 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,58 +40,94 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,58 +40,96 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -171,7 +171,9 @@ index 1955f7d..fb6cccb 100644
 +        await replaceRuntime(candidate);
 +        return true;
 +    } finally {
-+        await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
++        await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(error =>
++            console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)
++        );
 +    }
 +}
 +
