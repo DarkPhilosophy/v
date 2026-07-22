@@ -5,7 +5,6 @@
  */
 
 import { definePluginSettings } from "@api/Settings";
-import { Alex } from "../_shared/author";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { Activity } from "@vencord/discord-types";
 import { ActivityFlags, ActivityStatusDisplayType, ActivityType } from "@vencord/discord-types/enums";
@@ -49,7 +48,7 @@ function publish(activity: Activity | null) {
 export default definePlugin({
     name: "SteamRichPresence",
     description: "Shows the Steam game running on your Linux host as Discord Rich Presence",
-    authors: [Alex],
+    authors: [{ name: "Alex", id: 0n }],
     settings,
 
     currentAppId: null as string | null,

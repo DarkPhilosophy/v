@@ -26,11 +26,13 @@ The installer:
 
 1. downloads this overlay when it is not run from a local checkout;
 2. clones a fresh upstream Vencord checkout into a temporary directory;
-3. overlays `core/src/` and `userplugins/`, then applies the custom patches;
-4. installs build dependencies and compiles only inside that temporary checkout;
-5. packages the compiled runtime as `~/.config/Vencord/app.asar`;
-6. installs a small loader into Discord's own `resources/app.asar`;
-7. removes temporary source, dependencies, patches, and build output.
+3. overlays the canonical `core/src/` tree, then applies the custom patches;
+4. lists every custom plugin discovered under `core/src/userplugins/`;
+5. installs build dependencies and compiles only inside that temporary checkout;
+6. verifies every listed plugin name in the renderer bundle and its exact source path in the renderer source map;
+7. packages the verified runtime as `~/.config/Vencord/app.asar`;
+8. installs a small loader into Discord's own `resources/app.asar`;
+9. removes temporary source, dependencies, patches, and build output.
 
 Existing Vencord settings are preserved. No persistent `dist/`, `node_modules/`, cloned Vencord source, or `userPluginSeeds/` directory is required.
 
@@ -56,27 +58,31 @@ For Flatpak Discord, the installer grants the app access to `~/.config/Vencord` 
 
 ```text
 vencord-custom/
-├── core/src/                         # active User Plugin Manager overlay
-├── userplugins/                      # canonical custom plugin sources
-│   ├── _shared/author.ts
-│   ├── platformSpoofer/
-│   ├── questCompleter/
-│   └── steamRichPresence/
+├── core/src/
+│   ├── userplugins/                  # canonical custom plugin sources
+│   │   ├── platformSpoofer/
+│   │   ├── questCompleter/
+│   │   └── steamRichPresence/
+│   ├── main/userPluginManager/       # manager host implementation
+│   ├── components/                   # Vencord settings integration
+│   └── shared/                       # shared manager contracts
 ├── patches/
 │   ├── translate.patch               # Translate customization
 │   ├── update.patch                  # temporary clean-build updater
 │   └── userplugin-manager.patch      # Vencord/Electron manager wiring
 ├── scripts/
 │   ├── package-vencord-asar.sh
-│   └── stage-userplugin-seeds.sh
+│   ├── stage-userplugin-seeds.sh
+│   └── verify-userplugins-build.py
 ├── tests/
 │   ├── userPluginManager/
 │   ├── package-vencord-asar.sh
-│   └── steamRichPresence.test.ts
+│   ├── steamRichPresence.test.ts
+│   └── verify-userplugins-build.sh
 └── install.sh
 ```
 
-`userplugins/` is the canonical plugin source. `core/src/` is not a duplicate: it is the manager implementation copied into the temporary upstream checkout. Generated `core/dist/userPluginSeeds/` output is obsolete and must not be retained or packaged.
+`core/src/` is the single canonical source overlay copied into each temporary upstream checkout. Custom plugins live directly under `core/src/userplugins/`; there is no second source tree to synchronize. Generated `core/dist/userPluginSeeds/` output is obsolete and must not be retained or packaged.
 
 ## Build flow
 
@@ -86,7 +92,8 @@ graph TD
     U["fresh upstream Vencord"] --> T
     T --> P["apply patches and embed canonical userplugins"]
     P --> B["compile"]
-    B --> A["package app.asar"]
+    B --> V["verify plugin names + source-map paths"]
+    V --> A["package app.asar"]
     A --> R["~/.config/Vencord/app.asar"]
     T --> C["workspace removed"]
 ```
@@ -97,6 +104,7 @@ Focused local checks:
 
 ```sh
 pnpm dlx tsx --test tests/steamRichPresence.test.ts
+sh tests/verify-userplugins-build.sh
 sh tests/package-vencord-asar.sh
 ```
 

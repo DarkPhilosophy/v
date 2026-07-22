@@ -5,8 +5,11 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 HELPER="$ROOT/scripts/package-vencord-asar.sh"
 SEED_HELPER="$ROOT/scripts/stage-userplugin-seeds.sh"
 UPDATE_PATCH="$ROOT/patches/update.patch"
+INSTALLER="$ROOT/install.sh"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
+[ -d "$ROOT/core/src/userplugins" ]
+[ ! -e "$ROOT/userplugins" ]
 
 mkdir -p "$WORK/dist/nested" "$WORK/src/userplugins/mediaPlaybackSpeed" "$WORK/src/userplugins/platformSpoofer" "$WORK/src/userplugins/questCompleter"
 printf '%s\n' 'module.exports = 1;' > "$WORK/dist/patcher.js"
@@ -103,11 +106,12 @@ if "$HELPER" "$WORK/missing" "$WORK/existing.asar" 2>/dev/null; then
     echo 'expected packaging failure' >&2
     exit 1
 fi
-python3 - "$UPDATE_PATCH" <<'PY'
+python3 - "$UPDATE_PATCH" "$INSTALLER" <<'PY'
 from pathlib import Path
 import sys
 
 patch = Path(sys.argv[1]).read_text(encoding="utf-8")
+installer = Path(sys.argv[2]).read_text(encoding="utf-8")
 generator = 'join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")'
 build = 'await run("node", args, source);'
 assert generator in patch
@@ -118,6 +122,14 @@ assert "UPSTREAM_TARBALL" not in patch
 assert 'import { cp, mkdir, mkdtemp, rm } from "fs/promises";' in patch
 assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });' in patch
 assert 'await run("cp"' not in patch
+assert 'if (userpluginsRoot) await materializeUserPluginsTree(source, userpluginsRoot);' in patch
+assert 'join(overlay, "userplugins")' not in patch
+assert patch.count('join(overlay, "scripts", "verify-userplugins-build.py")') == 2
+assert './core/src/userplugins' in installer
+assert '$PKG/userplugins' not in installer
+assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
+assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer
+assert 'join(source, "dist", "renderer.js.map")' in patch
 assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
 assert 'await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);' in patch

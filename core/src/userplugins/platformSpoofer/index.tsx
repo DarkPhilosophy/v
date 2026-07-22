@@ -13,7 +13,6 @@ import definePlugin, { OptionType, StartAt } from "@utils/types";
 import { Menu } from "@webpack/common";
 import { waitForStore } from "@webpack/common/internal";
 
-import { Alex } from "../_shared/author";
 
 const logger = new Logger("PlatformSpoofer");
 
@@ -547,7 +546,7 @@ const statusMenuPatch: GlobalContextMenuPatchCallback = (navId, children) => {
 export default definePlugin({
     name: "PlatformSpoofer",
     description: "Spoof your Discord client platform (Desktop, Mobile, Web, Console). Requires Discord restart for guaranteed effect.",
-    authors: [Alex],
+    authors: [{ name: "Alex", id: 0n }],
     settings,
 
     // Run at Init — waitForStore callback fires when webpack loads the store module.

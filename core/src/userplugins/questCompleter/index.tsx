@@ -10,7 +10,6 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByProps } from "@webpack";
 import { Button, FluxDispatcher, Forms, RestAPI, showToast, Toasts } from "@webpack/common";
 
-import { Alex } from "../_shared/author";
 
 const logger = new Logger("QuestCompleter");
 
@@ -308,7 +307,7 @@ let autoHandler: (() => void) | undefined;
 export default definePlugin({
     name: "QuestCompleter",
     description: "Complete Discord Quests without the game installed (video + play/stream via heartbeat spoof).",
-    authors: [Alex],
+    authors: [{ name: "Alex", id: 0n }],
     settings,
 
     start() {

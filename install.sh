@@ -38,7 +38,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # 1) Obtain our overlay without retaining a checkout.
-if [ -d "./userplugins" ] && [ -d "./core/src/main/userPluginManager" ] && [ -f "./patches/userplugin-manager.patch" ]; then
+if [ -d "./core/src/userplugins" ] && [ -d "./core/src/main/userPluginManager" ] && [ -f "./patches/userplugin-manager.patch" ]; then
     PKG="$(pwd -P)"
 else
     say "Fetching overlay"
@@ -55,7 +55,11 @@ git clone --depth 1 "$VENCORD_REPO" "$BUILD" >/dev/null 2>&1 \
     || die "upstream clone failed"
 mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
 cp -r "$PKG/core/src/." "$BUILD/src/"
-cp -r "$PKG/userplugins/." "$BUILD/src/userplugins/"
+USERPLUGIN_INVENTORY="$WORK/userplugins.json"
+say "Staged custom plugins:"
+python3 "$PKG/scripts/verify-userplugins-build.py" inventory \
+    "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
+    || die "custom plugin inventory failed"
 cp -r "$PKG/patches/." "$BUILD/custom-patches/"
 for p in translate.patch update.patch userplugin-manager.patch; do
     if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
@@ -76,6 +80,10 @@ SEED_HELPER="$PKG/scripts/stage-userplugin-seeds.sh"
     || die "embedded source generation failed"
 say "Building"
 (cd "$BUILD" && pnpm build) || die "build failed"
+say "Verifying custom plugins in renderer bundle"
+python3 "$PKG/scripts/verify-userplugins-build.py" verify \
+    "$USERPLUGIN_INVENTORY" "$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map" \
+    || die "custom plugin bundle verification failed"
 
 # 4) Package the complete compiled runtime into a standalone app.asar.
 HELPER="$PKG/scripts/package-vencord-asar.sh"
