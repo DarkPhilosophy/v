@@ -93,17 +93,21 @@ APP_ASAR="$WORK/app.asar"
 "$HELPER" "$BUILD/dist" "$APP_ASAR" || die "ASAR packaging failed"
 [ -s "$APP_ASAR" ] || die "ASAR packaging produced no output"
 
-# 5) Find Discord and build the tiny loader that forwards to the user-writable
-# Vencord runtime.
-disc=""
-for c in \
-    "/var/lib/flatpak/app/com.discordapp.Discord/current/active/files/discord" \
-    "$HOME/.local/share/flatpak/app/com.discordapp.Discord/current/active/files/discord" \
-    "/opt/discord" "/usr/share/discord" "/usr/lib/discord"; do
-    [ -d "$c/resources" ] && { disc="$c"; break; }
-done
-[ -n "$disc" ] || die "Discord install not found; open Discord once, then re-run."
-resources="$disc/resources"
+# 5) Discover every supported Discord layout using the same roots and channel
+# names as the official Vencord installer. An explicit override is required when
+# more than one installation is found.
+DISCORD_DETECTOR="$PKG/scripts/detect-discord.py"
+[ -f "$DISCORD_DETECTOR" ] || die "missing Discord detector: $DISCORD_DETECTOR"
+DISCORD_TARGET="$WORK/discord-target"
+if [ -n "${VENCORD_DISCORD_DIR:-}" ]; then
+    python3 "$DISCORD_DETECTOR" --home "$HOME" --override "$VENCORD_DISCORD_DIR" > "$DISCORD_TARGET" \
+        || die "Discord install detection failed"
+else
+    python3 "$DISCORD_DETECTOR" --home "$HOME" > "$DISCORD_TARGET" \
+        || die "Discord install detection failed"
+fi
+IFS="$(printf '\t')" read -r discord_kind discord_app_id resources < "$DISCORD_TARGET"
+[ -n "$discord_kind" ] && [ -n "$resources" ] || die "Discord detector returned an invalid target"
 loader="$WORK/loader"
 mkdir -p "$loader"
 python3 - "$loader/patcher.js" "$VENCORD/app.asar/patcher.js" <<'PY'
@@ -205,9 +209,10 @@ for stale in "$VENCORD"/* "$VENCORD"/.[!.]* "$VENCORD"/..?*; do
     rm -rf "$stale"
 done
 
-# Flatpak must be allowed to read the user-writable runtime path.
-if [ "${disc#*flatpak}" != "$disc" ] && command -v flatpak >/dev/null 2>&1; then
-    flatpak override --user --filesystem="$VENCORD" com.discordapp.Discord 2>/dev/null || true
+# Flatpak must be allowed to load the user-writable runtime path. Native
+# installations do not receive Flatpak-specific configuration.
+if [ "$discord_kind" = "flatpak" ] && command -v flatpak >/dev/null 2>&1; then
+    flatpak override --user --filesystem="$VENCORD" "$discord_app_id" 2>/dev/null || true
 fi
 
 say "Done. Runtime installed at ${VENCORD}/app.asar with OpenAsar action: ${OPENASAR_ACTION}. Restart Discord (Ctrl+R)."

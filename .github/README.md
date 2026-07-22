@@ -37,6 +37,16 @@ The installer:
 
 Existing Vencord settings are preserved. No persistent `dist/`, `node_modules/`, cloned Vencord source, or `userPluginSeeds/` directory is required.
 
+### Discord installation detection
+
+The installer detects Stable, PTB, Canary, and Development builds installed natively, by Discord's self-updater, or through system/user Flatpak. If more than one installation is found, select one explicitly:
+
+```sh
+VENCORD_DISCORD_DIR=/path/to/discord-or-resources ./install.sh
+```
+
+System-Electron package layouts are detected but rejected because safely managing their paired `app.asar.unpacked` tree is not yet supported.
+
 ### OpenAsar choices
 
 OpenAsar uses the official nightly artifact also used by the Vencord installer. The default is `install`, including for non-interactive installs.

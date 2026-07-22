@@ -6,6 +6,7 @@ HELPER="$ROOT/scripts/package-vencord-asar.sh"
 SEED_HELPER="$ROOT/scripts/stage-userplugin-seeds.sh"
 UPDATE_PATCH="$ROOT/patches/update.patch"
 INSTALLER="$ROOT/install.sh"
+DETECTOR="$ROOT/scripts/detect-discord.py"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 [ -d "$ROOT/core/src/userplugins" ]
@@ -107,12 +108,13 @@ if "$HELPER" "$WORK/missing" "$WORK/existing.asar" 2>/dev/null; then
     echo 'expected packaging failure' >&2
     exit 1
 fi
-python3 - "$UPDATE_PATCH" "$INSTALLER" <<'PY'
+python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" <<'PY'
 from pathlib import Path
 import sys
 
 patch = Path(sys.argv[1]).read_text(encoding="utf-8")
 installer = Path(sys.argv[2]).read_text(encoding="utf-8")
+detector = Path(sys.argv[3]).read_text(encoding="utf-8")
 generator = 'join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")'
 build = 'await run("node", args, source);'
 assert generator in patch
@@ -136,6 +138,16 @@ assert 'python3 "$OPENASAR_HELPER" prepare-openasar "$OPENASAR_CANDIDATE"' in in
 assert 'python3 "$OPENASAR_HELPER" validate-runtime "$APP_ASAR"' in installer
 assert 'target = Path(sys.argv[2])' in installer
 assert 'target.parents[1].resolve() / target.parent.name / target.name' in installer
+assert 'DISCORD_DETECTOR="$PKG/scripts/detect-discord.py"' in installer
+assert 'python3 "$DISCORD_DETECTOR" --home "$HOME"' in installer
+assert 'VENCORD_DISCORD_DIR' in installer
+assert 'IFS="$(printf \'\\t\')" read -r discord_kind discord_app_id resources' in installer
+assert 'com.discordapp.Discord' not in installer
+assert '"/opt/discord"' not in installer
+assert 'if [ "$discord_kind" = "flatpak" ]' in installer
+assert 'flatpak override --user --filesystem="$VENCORD" "$discord_app_id"' in installer
+assert all(f'"{name}"' in detector for name in ("Discord", "DiscordPTB", "DiscordCanary", "DiscordDevelopment"))
+assert all(f'root / "{root}"' in detector for root in ("usr/share", "usr/lib64", "opt"))
 assert 'manage_openasar prepare-loader "$resources"' in installer
 assert 'install) manage_openasar install "$resources" "$OPENASAR_CANDIDATE"' in installer
 assert 'keep) manage_openasar keep "$resources"' in installer
