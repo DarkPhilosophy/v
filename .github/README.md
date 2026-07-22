@@ -53,7 +53,7 @@ That `node_modules` is what lets *Check for updates* recompile with our patches 
 
 ## Structure (this repo)
 
-```
+```text
 vencord-custom/
 ├─ core/                        # User Plugin Manager main/shared/UI implementation
 ├─ userplugins/
