@@ -11,6 +11,7 @@ set -eu
 VENCORD="${XDG_CONFIG_HOME:-$HOME/.config}/Vencord"
 VENCORD_REPO="${VENCORD_UPSTREAM:-https://github.com/Vendicated/Vencord.git}"
 PKG_TARBALL="${VENCORD_CUSTOM_TARBALL:-https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main}"
+CUSTOM_REPO="${VENCORD_CUSTOM_REPO:-https://github.com/DarkPhilosophy/vencord-custom.git}"
 OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"
 
 say() { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
@@ -48,12 +49,20 @@ else
         || die "overlay download failed"
     PKG="$WORK/overlay"
 fi
+if [ -d "$PKG/.git" ]; then
+    OVERLAY_HASH="$(git -C "$PKG" rev-parse HEAD)" || die "could not resolve local overlay revision"
+else
+    OVERLAY_HASH="${VENCORD_CUSTOM_HASH:-$(git ls-remote "$CUSTOM_REPO" refs/heads/main | cut -f1)}"
+fi
+[ "${#OVERLAY_HASH}" -eq 40 ] || die "could not resolve overlay revision"
 
 # 2) Clone upstream into the temporary workspace and apply our overlay.
 BUILD="$WORK/Vencord"
 say "Fetching upstream Vencord"
 git clone --depth 1 "$VENCORD_REPO" "$BUILD" >/dev/null 2>&1 \
     || die "upstream clone failed"
+UPSTREAM_HASH="$(git -C "$BUILD" rev-parse HEAD)" || die "could not resolve upstream revision"
+BUILD_HASH="$(printf '%s.%s' "$UPSTREAM_HASH" "$OVERLAY_HASH" | cut -c1-12,42-53)"
 mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
 cp -r "$PKG/core/src/." "$BUILD/src/"
 USERPLUGIN_INVENTORY="$WORK/userplugins.json"
@@ -80,7 +89,7 @@ SEED_HELPER="$PKG/scripts/stage-userplugin-seeds.sh"
 "$SEED_HELPER" "$BUILD/src/userplugins" "$BUILD/src/main/userPluginManager/embeddedSeeds.generated.ts" \
     || die "embedded source generation failed"
 say "Building"
-(cd "$BUILD" && pnpm build) || die "build failed"
+(cd "$BUILD" && VENCORD_HASH="$BUILD_HASH" pnpm build) || die "build failed"
 say "Verifying custom plugins in renderer bundle"
 python3 "$PKG/scripts/verify-userplugins-build.py" verify \
     "$USERPLUGIN_INVENTORY" "$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map" \

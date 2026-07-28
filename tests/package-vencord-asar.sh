@@ -166,6 +166,12 @@ assert 'await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(sou
 assert "await packageRuntime(overlay, source);" in patch
 assert 'report?.("building");' in patch
 assert 'report?.("installing");' in patch
+assert 'import gitHash from "~git-hash";' in patch
+assert 'const buildHash = `${upstreamHash}.${overlayHash}`;' in patch
+assert 'return buildHash === gitHash ? [] :' in patch
+assert '`${OVERLAY_TARBALL}/${overlayHash}`' in patch
+assert 'VENCORD_HASH: buildHash' in patch
+assert 'VENCORD_HASH="$BUILD_HASH" pnpm build' in installer
 assert "waitForPackagedRuntime" not in patch
 assert "const candidate" not in patch
 PY

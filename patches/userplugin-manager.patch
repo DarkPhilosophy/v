@@ -52,7 +52,7 @@ index 67ea7a09..3e254a7a 100644
 +    UserPluginManagerInspectionInput,
 +    UserPluginManagerIpcResult,
 +    UserPluginManagerSnapshot,
-+    type UserPluginManagerBuildStage
++    UserPluginManagerBuildStage
 +} from "@shared/userPluginManager";
  import type { IpcRes } from "@utils/types";
  import { ipcRenderer } from "electron/renderer";

@@ -1,5 +1,5 @@
 diff --git a/src/components/settings/tabs/updater/index.tsx b/src/components/settings/tabs/updater/index.tsx
-index 30191cb..ff46155 100644
+index 30191cb..d4c0eb0 100644
 --- a/src/components/settings/tabs/updater/index.tsx
 +++ b/src/components/settings/tabs/updater/index.tsx
 @@ -81,6 +81,19 @@ function Updater() {
@@ -23,28 +23,35 @@ index 30191cb..ff46155 100644
                  title="Automatically update"
                  description="Automatically update Vencord without confirmation prompt"
 diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
-index 1955f7d..fb6cccb 100644
+index 1955f7d..42a226b 100644
 --- a/src/main/updater/git.ts
 +++ b/src/main/updater/git.ts
-@@ -16,15 +16,24 @@
+@@ -16,15 +16,31 @@
   * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
  
-+import { materializeUserPluginsTree } from "@main/userPluginManager/buildSources";
++import {
++    embeddedUserPluginFiles,
++    materializeUserPluginsTree,
++    restoreManagedEmbeddedUserPlugins
++} from "@main/userPluginManager/buildSources";
 +import { registerUserPluginManagerIpcHandlers } from "@main/userPluginManager/ipc";
++import { DATA_DIR } from "@main/utils/constants";
  import { IpcEvents } from "@shared/IpcEvents";
-+import type { UserPluginManagerBuildStage } from "@shared/userPluginManager";
++import { readManagerState, type UserPluginManagerBuildStage } from "@shared/userPluginManager";
  import { execFile as cpExecFile } from "child_process";
  import { ipcMain } from "electron";
 +import { cp, mkdir, mkdtemp, rm } from "fs/promises";
 +import { homedir } from "os";
  import { join } from "path";
  import { promisify } from "util";
++import gitHash from "~git-hash";
  
  import { serializeErrors } from "./common";
  
 -const VENCORD_SRC_DIR = join(__dirname, "..");
-+const OVERLAY_TARBALL = "https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main";
++const CUSTOM_REPO = "https://github.com/DarkPhilosophy/vencord-custom";
++const OVERLAY_TARBALL = "https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz";
 +const UPSTREAM_REPO = process.env.VENCORD_UPSTREAM || "https://github.com/Vendicated/Vencord.git";
 +const RUNTIME_DIR = join(homedir(), ".config", "Vencord");
 +const RUNTIME_ASAR = join(RUNTIME_DIR, "app.asar");
@@ -52,7 +59,7 @@ index 1955f7d..fb6cccb 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,58 +41,100 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,58 +48,149 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -61,9 +68,15 @@ index 1955f7d..fb6cccb 100644
 -
 -    if (isFlatpak) return execFile("flatpak-spawn", ["--host", "git", ...args], opts);
 -    else return execFile("git", args, opts);
-+async function run(command: string, args: string[], cwd?: string) {
-+    const opts = cwd ? { cwd } : {};
-+    if (isFlatpak) return execFile("flatpak-spawn", ["--host", command, ...args], opts);
++async function run(command: string, args: string[], cwd?: string, env?: Record<string, string>) {
++    const opts = {
++        ...(cwd ? { cwd } : {}),
++        ...(env ? { env: { ...process.env, ...env } } : {})
++    };
++    if (isFlatpak) {
++        const envArgs = Object.entries(env ?? {}).map(([name, value]) => `--env=${name}=${value}`);
++        return execFile("flatpak-spawn", ["--host", ...envArgs, command, ...args], cwd ? { cwd } : {});
++    }
 +    return execFile(command, args, opts);
  }
  
@@ -72,25 +85,56 @@ index 1955f7d..fb6cccb 100644
 -    return res.stdout.trim()
 -        .replace(/git@(.+):/, "https://$1/")
 -        .replace(/\.git$/, "");
-+    return "https://github.com/DarkPhilosophy/vencord-custom";
++    return CUSTOM_REPO;
++}
++
++async function resolveRemoteHash(repo: string, ref: string) {
++    const { stdout } = await run("git", ["ls-remote", repo, ref]);
++    const hash = stdout.trim().split(/\s+/)[0];
++    if (!/^[0-9a-f]{40}$/i.test(hash))
++        throw new Error(`Could not resolve ${ref} from ${repo}`);
++    return hash;
++}
++
++async function resolveBuildInputs() {
++    const [upstreamHash, overlayHash] = await Promise.all([
++        resolveRemoteHash(UPSTREAM_REPO, "HEAD"),
++        resolveRemoteHash(CUSTOM_REPO, "refs/heads/main")
++    ]);
++    return {
++        upstreamHash,
++        overlayHash,
++        buildHash: `${upstreamHash.slice(0, 12)}.${overlayHash.slice(0, 12)}`
++    };
  }
  
  async function calculateGitChanges() {
 -    await git("fetch");
--
--    const branch = (await git("branch", "--show-current")).stdout.trim();
--
--    const existsOnOrigin = (await git("ls-remote", "origin", branch)).stdout.length > 0;
--    if (!existsOnOrigin) return [];
-+    const res = await run("git", ["ls-remote", UPSTREAM_REPO, "HEAD"]);
-+    const hash = res.stdout.trim().split(/\s+/)[0];
-+    return hash ? [{ hash: hash.slice(0, 7), author: "Vencord", message: "Upstream rebuild available" }] : [];
++    const { buildHash, overlayHash } = await resolveBuildInputs();
++    if (gitHash === buildHash) return [];
++    return [{
++        hash: overlayHash.slice(0, 7),
++        author: "Vencord",
++        message: "Custom build update available"
++    }];
 +}
  
--    const res = await git("log", `HEAD...origin/${branch}`, "--pretty=format:%an/%h/%s");
+-    const branch = (await git("branch", "--show-current")).stdout.trim();
 +async function pull() {
 +    // The actual update is performed by build() in a disposable workspace.
 +    return true;
++}
+ 
+-    const existsOnOrigin = (await git("ls-remote", "origin", branch)).stdout.length > 0;
+-    if (!existsOnOrigin) return [];
++async function downloadTarball(url: string, destination: string) {
++    await run("curl", ["-fsSL", url, "-o", destination]);
++}
+ 
+-    const res = await git("log", `HEAD...origin/${branch}`, "--pretty=format:%an/%h/%s");
++async function extractTarball(archive: string, destination: string) {
++    await mkdir(destination, { recursive: true });
++    await run("tar", ["-xzf", archive, "--strip-components=1", "-C", destination]);
 +}
  
 -    const commits = res.stdout.trim();
@@ -101,42 +145,47 @@ index 1955f7d..fb6cccb 100644
 -            message: rest.join("/").split("\n")[0]
 -        };
 -    }) : [];
-+async function downloadTarball(url: string, destination: string) {
-+    await run("curl", ["-fsSL", url, "-o", destination]);
++async function copyOverlay(overlay: string, source: string, userpluginsRoot?: string) {
++    await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });
++    if (userpluginsRoot) await materializeUserPluginsTree(source, userpluginsRoot);
++    await cp(join(overlay, "patches"), join(source, "custom-patches"), { recursive: true });
  }
  
 -async function pull() {
 -    const res = await git("pull");
 -    return res.stdout.includes("Fast-forward");
-+async function extractTarball(archive: string, destination: string) {
-+    await mkdir(destination, { recursive: true });
-+    await run("tar", ["-xzf", archive, "--strip-components=1", "-C", destination]);
++async function restoreInstalledUserPlugins(source: string) {
++    const state = await readManagerState(join(DATA_DIR, "userPluginManager", "state.json"));
++    const managedDestinations = state.sources.flatMap(managedSource =>
++        managedSource.entries.map(entry => entry.destination)
++    );
++    if (managedDestinations.length === 0) return;
++
++    await restoreManagedEmbeddedUserPlugins(
++        join(source, "src", "userplugins"),
++        managedDestinations,
++        embeddedUserPluginFiles
++    );
  }
  
 -async function build() {
 -    const opts = { cwd: VENCORD_SRC_DIR };
-+async function copyOverlay(overlay: string, source: string, userpluginsRoot?: string) {
-+    await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });
-+    if (userpluginsRoot) await materializeUserPluginsTree(source, userpluginsRoot);
-+    await cp(join(overlay, "patches"), join(source, "custom-patches"), { recursive: true });
-+}
  
 -    const command = isFlatpak ? "flatpak-spawn" : "node";
 -    const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
  
 -    if (IS_DEV) args.push("--dev");
- 
--    const res = await execFile(command, args, opts);
 +async function applyOverlay(source: string) {
 +    for (const patch of CUSTOM_OVERLAY_PATCHES)
 +        await run("git", ["apply", join(source, "custom-patches", patch)], source);
 +}
  
--    return !res.stderr.includes("Build failed");
+-    const res = await execFile(command, args, opts);
 +async function packageRuntime(overlay: string, source: string) {
 +    await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);
- }
++}
  
+-    return !res.stderr.includes("Build failed");
 +async function build(userpluginsRoot?: string, report?: (stage: UserPluginManagerBuildStage) => void) {
 +    await mkdir(RUNTIME_DIR, { recursive: true });
 +    const work = await mkdtemp(join(RUNTIME_DIR, ".update-"));
@@ -144,10 +193,15 @@ index 1955f7d..fb6cccb 100644
 +    const source = join(work, "vencord");
 +    const overlayArchive = join(work, "overlay.tar.gz");
 +    try {
-+        await downloadTarball(OVERLAY_TARBALL, overlayArchive);
++        const { upstreamHash, overlayHash, buildHash } = await resolveBuildInputs();
++        await downloadTarball(`${OVERLAY_TARBALL}/${overlayHash}`, overlayArchive);
 +        await extractTarball(overlayArchive, overlay);
-+        await run("git", ["clone", "--depth", "1", UPSTREAM_REPO, source]);
++        await run("git", ["init", source]);
++        await run("git", ["remote", "add", "origin", UPSTREAM_REPO], source);
++        await run("git", ["fetch", "--depth", "1", "origin", upstreamHash], source);
++        await run("git", ["checkout", "--detach", "FETCH_HEAD"], source);
 +        await copyOverlay(overlay, source, userpluginsRoot);
++        if (!userpluginsRoot) await restoreInstalledUserPlugins(source);
 +        const userpluginInventory = join(work, "userplugins.json");
 +        await run("python3", [
 +            join(overlay, "scripts", "verify-userplugins-build.py"),
@@ -164,7 +218,7 @@ index 1955f7d..fb6cccb 100644
 +        const args = ["scripts/build/build.mjs"];
 +        if (IS_DEV) args.push("--dev");
 +        report?.("building");
-+        await run("node", args, source);
++        await run("node", args, source, { VENCORD_HASH: buildHash });
 +        await run("python3", [
 +            join(overlay, "scripts", "verify-userplugins-build.py"),
 +            "verify",
@@ -180,8 +234,8 @@ index 1955f7d..fb6cccb 100644
 +            console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)
 +        );
 +    }
-+}
-+
+ }
+ 
 +registerUserPluginManagerIpcHandlers(build);
 +
  ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(getRepo));

@@ -99,8 +99,8 @@ export interface UserPluginManagerService {
     stageUpdate(input: StageUpdateInput): Promise<UserPluginManagerSnapshot>;
     stageRemove(sourceId: string): Promise<UserPluginManagerSnapshot>;
     stageAdopt(input: StageAdoptInput): Promise<UserPluginManagerSnapshot>;
-    applyPending(): Promise<UserPluginManagerSnapshot>;
-    recover(): Promise<UserPluginManagerSnapshot>;
+    applyPending(report?: (stage: UserPluginManagerBuildStage) => void): Promise<UserPluginManagerSnapshot>;
+    recover(report?: (stage: UserPluginManagerBuildStage) => void): Promise<UserPluginManagerSnapshot>;
     discardPending(): Promise<UserPluginManagerSnapshot>;
 }
 

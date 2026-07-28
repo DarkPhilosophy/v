@@ -96,7 +96,7 @@ def _read_discord_package(path: Path) -> dict[str, object] | None:
 
 
 def _is_discord_resources(path: Path) -> bool:
-    return _read_discord_package(path / "app.asar") is not None
+    return any(_read_discord_package(path / name) is not None for name in ("app.asar", "_app.asar"))
 
 
 def _version_key(path: Path) -> tuple[tuple[int, ...], str]:

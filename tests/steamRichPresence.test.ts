@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseSteamAppIds } from "../core/src/userplugins/steamRichPresence/native.ts";
+import { parseSteamAppIds } from "../core/src/userplugins/steamRichPresence/parse.ts";
 
 test("Steam process scan keeps unique game app IDs", () => {
     assert.deepEqual(

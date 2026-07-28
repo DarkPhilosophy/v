@@ -105,6 +105,21 @@ class DetectDiscordTests(unittest.TestCase):
         self.assertEqual(result.supported[0].resources, expected)
         self.assertEqual(result.supported[0].app_id, "com.discordapp.Discord")
 
+    def test_detects_an_already_managed_flatpak_installation(self) -> None:
+        resources = (
+            self.home
+            / ".var/app/com.discordapp.Discord/config/discord/app-0.0.101/resources"
+        )
+        resources.mkdir(parents=True)
+        (resources / "app.asar").write_text("Vencord loader")
+        write_discord_asar(resources / "_app.asar")
+
+        result = self.discover()
+
+        self.assertEqual(len(result.supported), 1)
+        self.assertEqual(result.supported[0].resources, resources)
+        self.assertEqual(result.supported[0].app_id, "com.discordapp.Discord")
+
     def test_deduplicates_symlinked_installations_by_canonical_resources_path(self) -> None:
         resources = self.root / "opt/discord/resources"
         write_discord_asar(resources / "app.asar")

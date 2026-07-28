@@ -12,7 +12,9 @@ import test from "node:test";
 
 import {
     materializeEmbeddedUserPluginsTree,
-    materializeUserPluginsTree
+    materializeUserPluginsTree,
+    restoreManagedEmbeddedUserPlugins,
+    selectEmbeddedUserPluginFiles
 } from "../../core/src/main/userPluginManager/buildSources.ts";
 
 test("repatch build replaces upstream userplugins with the embedded transaction tree", async t => {
@@ -47,4 +49,49 @@ test("runtime materializes bundled plugin sources without a seed directory", asy
 
     assert.equal(await readFile(join(destination, "_shared", "author.ts"), "utf8"), "export const author = 'test';\n");
     assert.equal(await readFile(join(destination, "questCompleter", "index.tsx"), "utf8"), "export default {};\n");
+});
+
+test("automatic rebuild keeps only UserPluginManager-owned sources from the installed runtime", () => {
+    const selected = selectEmbeddedUserPluginFiles({
+        "_shared/managed.ts": "managed shared\n",
+        "_shared/unmanaged.ts": "bundled shared\n",
+        "managed/index.ts": "managed plugin\n",
+        "managed/submodule.ts": "managed submodule\n",
+        "managed-old/index.ts": "prefix collision\n",
+        "bundled/index.ts": "bundled plugin\n"
+    }, ["managed", "_shared/managed.ts"]);
+
+    assert.deepEqual(selected, {
+        "_shared/managed.ts": "managed shared\n",
+        "managed/index.ts": "managed plugin\n",
+        "managed/submodule.ts": "managed submodule\n"
+    });
+});
+
+test("automatic rebuild overlays manager-owned sources without removing new bundled plugins", async t => {
+    const root = await mkdtemp(join(tmpdir(), "vencord-auto-update-userplugins-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+
+    const destination = join(root, "src", "userplugins");
+    await mkdir(join(destination, "managed"), { recursive: true });
+    await mkdir(join(destination, "bundled"), { recursive: true });
+    await mkdir(join(destination, "_shared"), { recursive: true });
+    await writeFile(join(destination, "managed", "index.ts"), "github replacement\n");
+    await writeFile(join(destination, "managed", "github-only.ts"), "remove with managed root\n");
+    await writeFile(join(destination, "bundled", "index.ts"), "new github plugin\n");
+    await writeFile(join(destination, "_shared", "managed.ts"), "github shared replacement\n");
+    await writeFile(join(destination, "_shared", "unmanaged.ts"), "new github shared file\n");
+
+    await restoreManagedEmbeddedUserPlugins(destination, ["managed", "_shared/managed.ts"], {
+        "managed/index.ts": "installed user version\n",
+        "_shared/managed.ts": "installed shared version\n",
+        "removed/index.ts": "not manager-owned\n"
+    });
+
+    assert.equal(await readFile(join(destination, "managed", "index.ts"), "utf8"), "installed user version\n");
+    await assert.rejects(readFile(join(destination, "managed", "github-only.ts")));
+    assert.equal(await readFile(join(destination, "bundled", "index.ts"), "utf8"), "new github plugin\n");
+    assert.equal(await readFile(join(destination, "_shared", "managed.ts"), "utf8"), "installed shared version\n");
+    assert.equal(await readFile(join(destination, "_shared", "unmanaged.ts"), "utf8"), "new github shared file\n");
+    await assert.rejects(readFile(join(destination, "removed", "index.ts")));
 });

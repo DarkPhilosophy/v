@@ -60,7 +60,6 @@ export function registerUserPluginManagerIpcHandlers(
     const isFlatpak = process.platform === "linux" && Boolean(process.env.FLATPAK_ID);
     const service = createUserPluginManagerService({
         dataRoot,
-        isFlatpak,
         host: isFlatpak
             ? createFlatpakUserPluginManagerHost(dataRoot, join(__dirname, "userPluginManagerHost.cjs"))
             : undefined,

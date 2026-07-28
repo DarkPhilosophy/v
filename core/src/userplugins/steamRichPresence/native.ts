@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import type { SteamGame } from ".";
+import { parseSteamAppIds } from "./parse";
 
 const execFileAsync = promisify(execFile);
 const gameCache = new Map<string, SteamGame>();
@@ -23,9 +24,6 @@ for environment in /proc/[0-9]*/environ; do
 done
 `;
 
-export function parseSteamAppIds(output: string): string[] {
-    return [...new Set(output.split(/\s+/).filter(value => /^\d+$/.test(value) && value !== "0" && value !== "7"))];
-}
 async function runningSteamAppIds(): Promise<string[]> {
     const flatpak = process.platform === "linux" && Boolean(process.env.FLATPAK_ID);
     const command = flatpak ? "flatpak-spawn" : "sh";
