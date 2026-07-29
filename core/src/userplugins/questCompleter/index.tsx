@@ -19,19 +19,47 @@ interface QuestTask { target: number; }
 
 interface Quest {
     id: string;
+    preview: boolean;
     config: {
+        id: string;
+        configVersion: number;
+        startsAt: string;
         expiresAt: string;
-        application: { id: string; name: string; };
-        messages: { questName: string; };
+        features: number[];
+        assets: Record<string, string>;
+        colors?: Record<string, string>;
+        messages: {
+            questName: string;
+            gameTitle?: string;
+            gamePublisher?: string;
+        };
         taskConfig?: { tasks: Record<string, QuestTask>; };
-        taskConfigV2?: { tasks: Record<string, QuestTask>; };
+        taskConfigV2?: { tasks: Record<string, QuestTask>; joinOperator?: string; };
+        rewardsConfig?: {
+            assignmentMethod: number;
+            rewards: Array<{ type: number; skuId: string; orbQuantity?: number; premiumOrbQuantity?: number; }>;
+            rewardsExpireAt: string;
+            platforms: number[];
+        };
+        cosponsorMetadata?: unknown;
+        sharePolicy?: string;
+        ctaConfig?: { link?: string; buttonLabel?: string; subtitle?: string; };
     };
     userStatus?: {
+        userId?: string;
+        questId?: string;
         enrolledAt?: string;
         completedAt?: string;
-        progress?: Record<string, { value: number; }>;
+        claimedAt?: string;
+        claimedTier?: number;
+        orbQuantityClaimed?: number;
+        lastStreamHeartbeatAt?: string;
         streamProgressSeconds?: number;
+        dismissedQuestContent?: unknown;
+        progress?: Record<string, { value: number; }>;
     } | null;
+    targetedContent?: unknown[];
+    trafficMetadataSealed?: string;
 }
 
 interface QuestsStore { quests: Map<string, Quest>; }
@@ -88,7 +116,7 @@ const settings = definePluginSettings({
     },
     doPlayQuests: {
         type: OptionType.BOOLEAN,
-        description: "Complete PLAY_ON_DESKTOP / STREAM_ON_DESKTOP quests (runs in real time via heartbeat spoof)",
+        description: "Complete PLAY_ON_DESKTOP / STREAM_ON_DESKTOP quests (runs in real time via heartbeat)",
         default: true,
     },
     notify: {
@@ -137,18 +165,28 @@ function getStore<T>(...props: string[]): T | null {
     }
 }
 
+// New Discord API: application.name is gone from QuestStore. Game names now live in messages.
+function getAppName(quest: Quest): string {
+    return quest.config.messages.gameTitle ?? quest.config.messages.questName;
+}
+
 async function completeQuest(quest: Quest): Promise<void> {
     const tasks = quest.config.taskConfigV2?.tasks ?? quest.config.taskConfig?.tasks ?? {};
     const taskName = TASK_ORDER.find(t => tasks[t] != null);
-    const appName = quest.config.application.name;
+    const appName = getAppName(quest);
 
     if (!taskName) {
         logger.warn("Unknown task type for quest", appName, Object.keys(tasks));
         return;
     }
 
-    const secondsNeeded = tasks[taskName].target;
-    const appId = quest.config.application.id;
+    const task = tasks[taskName];
+    if (!task || typeof task.target !== "number") {
+        logger.warn(`${appName}: malformed task ${taskName} (no target); skipping; task=${JSON.stringify(task)}`);
+        toast(`${appName}: could not read task target. Skipping.`, Toasts.Type.FAILURE);
+        return;
+    }
+    const secondsNeeded = task.target;
     logger.info(`Quest "${quest.config.messages.questName}" (${appName}): ${taskName}, target ${secondsNeeded}s`);
 
     if (taskName.startsWith("WATCH_VIDEO")) {
@@ -161,15 +199,16 @@ async function completeQuest(quest: Quest): Promise<void> {
         toast(`${appName}: watching video ${done}/${secondsNeeded}s`);
         while (done < secondsNeeded) {
             const maxByElapsed = Math.floor(Date.now() / 1000) - enrolledAt;
-            const next = Math.min(secondsNeeded, done + Math.floor(Math.random() * 7) + 1, maxByElapsed);
+            const jump = Math.floor(Math.random() * 12) + 1;
+            const next = Math.min(secondsNeeded, done + jump, maxByElapsed);
             if (next <= done) {
-                await sleep(1000);
+                await sleep(Math.floor(Math.random() * 3000) + 2000);
                 continue;
             }
             await RestAPI.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: next } });
             done = next;
             logger.info(`${appName} video ${done}/${secondsNeeded}s`);
-            await sleep(1000);
+            await sleep(Math.floor(Math.random() * 4000) + 3000);
         }
         await RestAPI.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: secondsNeeded } });
         logger.info(`${appName}: video complete (${secondsNeeded}s)`);
@@ -188,17 +227,26 @@ async function completeQuest(quest: Quest): Promise<void> {
             toast(`${appName}: game store unavailable. Open Discord's Quests tab first, then retry.`, Toasts.Type.FAILURE);
             return;
         }
-        const { body } = await RestAPI.get({ url: `/applications/public?application_ids=${appId}` });
+        // Discord v2 API: application no longer lives in QuestStore.quests[id].config.
+        // Fetch it from the per-quest REST endpoint, which still exposes application.id.
+        const appMeta = await RestAPI.get({ url: `/quests/${quest.id}` }).then(r => r.body as { application?: { id: string; name: string; }; } | undefined);
+        const realAppId = appMeta?.application?.id;
+        if (!realAppId) {
+            logger.warn(`${appName}: could not resolve application id from /quests/${quest.id}; skipping play quest`);
+            toast(`${appName}: failed to resolve game. Skipping (API changed).`, Toasts.Type.FAILURE);
+            return;
+        }
+        const { body } = await RestAPI.get({ url: `/applications/public?application_ids=${realAppId}` });
         const appData = (body as PublicApplication[])[0];
         const exe = (appData.executables?.find(x => x.os === "win32")?.name ?? `${appName}.exe`).replace(/^>/, "");
         const pid = Math.floor(Math.random() * 30000) + 1000;
-        const fakeGame: RunningGame = {
+        const gameEntry: RunningGame = {
             cmdLine: `C:\\Program Files\\${appData.name}\\${exe}`,
             exeName: exe,
             exePath: `c:/program files/${appData.name.toLowerCase()}/${exe}`,
             hidden: false,
             isLauncher: false,
-            id: appId,
+            id: realAppId,
             name: appData.name,
             pid,
             pidPath: [pid],
@@ -206,38 +254,57 @@ async function completeQuest(quest: Quest): Promise<void> {
             start: Date.now(),
         };
 
-        const realGames = store.getRunningGames();
-        const realGetRunning = store.getRunningGames;
-        const realGetForPID = store.getGameForPID;
-        const fake = [fakeGame];
-        store.getRunningGames = () => fake;
-        store.getGameForPID = (p: number) => fake.find(x => x.pid === p);
-        FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: fake });
-        logger.info(`${appName}: spoofed running game pid=${pid}, awaiting heartbeats`);
+        const existingGames = store.getRunningGames();
+        const getRunningSnapshot = store.getRunningGames;
+        const getForPIDSnapshot = store.getGameForPID;
+        const entries = [gameEntry];
+        store.getRunningGames = () => entries;
+        store.getGameForPID = (p: number) => entries.find(x => x.pid === p);
+        FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: existingGames, added: [gameEntry], games: entries });
+        logger.info(`${appName}: running game pid=${pid}, awaiting heartbeats`);
 
         toast(`${appName}: waiting for heartbeats (~${Math.ceil(secondsNeeded / 60)} min). Keep Discord open.`);
 
-        const { promise, resolve } = Promise.withResolvers<void>();
+        const { promise, resolve, reject } = Promise.withResolvers<void>();
+        // Restore the snapshot and unsubscribe — used on both success and heartbeat timeout.
+        function cleanup(): void {
+            store.getRunningGames = getRunningSnapshot;
+            store.getGameForPID = getForPIDSnapshot;
+            FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [gameEntry], added: [], games: [] });
+            FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onBeat);
+        }
         const onBeat = (data: HeartbeatEvent) => {
             if (data.questId !== quest.id) return;
             const value = Math.floor(data.userStatus?.progress?.[taskName]?.value ?? data.userStatus?.streamProgressSeconds ?? 0);
             logger.info(`${appName} play ${value}/${secondsNeeded}s`);
             if (value < secondsNeeded) return;
-            store.getRunningGames = realGetRunning;
-            store.getGameForPID = realGetForPID;
-            FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: [] });
-            FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onBeat);
+            clearTimeout(watchdog);
+            cleanup();
             logger.info(`${appName}: play complete (${secondsNeeded}s)`);
             toast(`${appName}: play quest complete`, Toasts.Type.SUCCESS);
             resolve();
         };
+        // Safety: if Discord stops sending heartbeats (server-side cancel, network drop,
+        // tab closed mid-run), restore the original game store and bail out instead of
+        // leaving the override in place forever.
+        const watchdog = setTimeout(() => {
+            cleanup();
+            logger.warn(`${appName}: heartbeat timeout (${secondsNeeded + 300}s), giving up`);
+            toast(`${appName}: heartbeat timeout. Try again later.`, Toasts.Type.FAILURE);
+            reject(new Error("heartbeat timeout"));
+        }, (secondsNeeded + 300) * 1000);
         FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onBeat);
-        await promise;
+        try { await promise; } finally { clearTimeout(watchdog); }
         return;
     }
 
-    logger.warn(`${appName}: task ${taskName} not automatable`);
-    toast(`${appName}: task ${taskName} not automatable (e.g. real stream)`, Toasts.Type.FAILURE);
+    const reason = taskName === "PLAY_ON_PLAYSTATION" || taskName === "PLAY_ON_XBOX"
+        ? "requires console connected"
+        : taskName === "ACHIEVEMENT_IN_ACTIVITY"
+            ? "requires Discord Activity"
+            : "not supported";
+    logger.warn(`${appName}: task ${taskName} not automatable (${reason})`);
+    toast(`${appName}: ${taskName} not automatable (${reason})`, Toasts.Type.FAILURE);
 }
 
 let running = false;
@@ -267,7 +334,7 @@ async function completeAll(silent = false): Promise<void> {
                 quest.userStatus = enrolled?.userStatus ?? { enrolledAt: new Date().toISOString() };
                 todo.push(quest);
                 logger.info(`Enrolled: ${quest.config.messages.questName}`);
-                if (!silent) toast(`${quest.config.application.name}: enrolled`);
+                if (!silent) toast(`${getAppName(quest)}: enrolled`);
             } catch (err) {
                 logger.error("Enroll failed", quest.config.messages.questName, err);
                 if (!silent) toast(`Enroll failed: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
@@ -306,7 +373,7 @@ let autoHandler: (() => void) | undefined;
 
 export default definePlugin({
     name: "QuestCompleter",
-    description: "Complete Discord Quests without the game installed (video + play/stream via heartbeat spoof).",
+    description: "Complete Discord Quests on Linux (where Quests lack full native support).",
     authors: [{ name: "Alex", id: 0n }],
     settings,
 
