@@ -183,6 +183,23 @@ class DetectDiscordTests(unittest.TestCase):
         selected = detector.select_target(result, first.parent)
         self.assertEqual(selected.resources, first)
 
+    def test_prefers_active_flatpak_package_over_its_updater_cache(self) -> None:
+        app_id = "com.discordapp.Discord"
+        package_resources = (
+            self.root
+            / f"var/lib/flatpak/app/{app_id}/current/active/files/discord/resources"
+        )
+        updater_resources = (
+            self.home
+            / f".var/app/{app_id}/config/discord/app-1.0.154/resources"
+        )
+        write_discord_asar(package_resources / "app.asar")
+        write_discord_asar(updater_resources / "app.asar")
+
+        selected = detector.select_target(self.discover())
+
+        self.assertEqual(selected.resources, package_resources)
+
     def test_override_accepts_a_resources_directory(self) -> None:
         resources = self.home / "Discord Custom/resources"
         write_discord_asar(resources / "app.asar")

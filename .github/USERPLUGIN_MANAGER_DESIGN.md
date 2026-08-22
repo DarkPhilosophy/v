@@ -105,7 +105,7 @@ The initial implementation does not attempt to infer arbitrary transitive files 
 The manager lists:
 
 - **Managed:** an installed entry owned by a source record.
-- **Bundled:** entries shipped by `vencord-custom` and seeded into manager state by installation.
+- **Bundled:** entries shipped by `v` and seeded into manager state by installation.
 - **Unmanaged:** pre-existing entries found under `src/userplugins` with no source record.
 
 No source may overwrite a path owned by another source or an unmanaged directory. The UI reports the exact conflict and offers a different destination. Existing directories can be adopted only through an explicit flow that records their chosen provenance and first creates a recoverable snapshot.
@@ -181,7 +181,7 @@ The Plugins-page renderer calls a dedicated `VencordNative.userPluginManager` AP
 
 The manager reuses Vencord's existing updater/build API for compilation so Flatpak/host execution and build-error behavior remain centralized. A writable Vencord source checkout and build toolchain are required for mutations. Without them, the integrated controls remain inventory-only and explicitly report that this installation cannot rebuild userplugins.
 
-`patches/userplugin-manager.patch` is a required overlay patch. `install.sh` copies the core source overlay before applying patches. The patch changes only tracked Vencord integration points; manager implementation files remain overlay-owned.
+`patches/userplugin-manager.patch` is a required overlay patch. `i` copies the core source overlay before applying patches. The patch changes only tracked Vencord integration points; manager implementation files remain overlay-owned.
 
 `patches/update.patch` must preserve these invariants:
 

@@ -24,7 +24,7 @@ The OpenAsar lifecycle and loader layout follow the compatibility model used by 
 - Copyright: GooseMod/OpenAsar contributors
 - License: AGPL-3.0
 
-`install.sh` downloads the official OpenAsar nightly artifact at runtime unless `OPENASAR_URL` is explicitly overridden. No OpenAsar binary or source file is committed to this repository.
+`i` downloads the official OpenAsar nightly artifact at runtime unless `OPENASAR_URL` is explicitly overridden. No OpenAsar binary or source file is committed to this repository.
 
 ## Repository license
 

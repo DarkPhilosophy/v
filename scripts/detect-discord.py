@@ -244,6 +244,16 @@ def select_target(discovery: Discovery, override: Path | None = None) -> Target:
                 return target
         return Target("native", resources)
 
+    if not discovery.unsupported and len(discovery.supported) > 1:
+        app_ids = {target.app_id for target in discovery.supported}
+        packaged = [
+            target
+            for target in discovery.supported
+            if target.kind == "flatpak" and target.resources.parts[-3:] == ("files", "discord", "resources")
+        ]
+        if len(app_ids) == 1 and None not in app_ids and len(packaged) == 1:
+            return packaged[0]
+
     installation_count = len(discovery.supported) + len(discovery.unsupported)
     if installation_count > 1:
         raise DetectionError(

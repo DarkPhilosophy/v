@@ -8,10 +8,10 @@ index 30191cb..d4c0eb0 100644
  
 +            <Flex className={Margins.bottom20} flexDirection="column" gap="1em">
 +                <Card variant="info">
-+                    <HeadingSecondary>Custom build — vencord-custom</HeadingSecondary>
++                    <HeadingSecondary>Custom build — v</HeadingSecondary>
 +                    <Paragraph>
 +                        This build centers on the User Plugin Manager and includes additional custom integrations plus
-+                        OpenAsar support from <Link href="https://github.com/DarkPhilosophy/vencord-custom">DarkPhilosophy/vencord-custom</Link>.
++                        OpenAsar support from <Link href="https://github.com/DarkPhilosophy/v">DarkPhilosophy/v</Link>.
 +                    </Paragraph>
 +                    <Paragraph className={Margins.top8}>
 +                        The updater rebuilds Vencord from disposable workspaces and atomically replaces the runtime only after a successful build.
@@ -50,12 +50,12 @@ index 1955f7d..42a226b 100644
  import { serializeErrors } from "./common";
  
 -const VENCORD_SRC_DIR = join(__dirname, "..");
-+const CUSTOM_REPO = "https://github.com/DarkPhilosophy/vencord-custom";
-+const OVERLAY_TARBALL = "https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz";
++const CUSTOM_REPO = "https://github.com/DarkPhilosophy/v";
++const OVERLAY_TARBALL = "https://codeload.github.com/DarkPhilosophy/v/tar.gz";
 +const UPSTREAM_REPO = process.env.VENCORD_UPSTREAM || "https://github.com/Vendicated/Vencord.git";
 +const RUNTIME_DIR = join(homedir(), ".config", "Vencord");
 +const RUNTIME_ASAR = join(RUNTIME_DIR, "app.asar");
-+const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch"] as const;
++const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch", "runtime-noise.patch"] as const;
  
  const execFile = promisify(cpExecFile);
  
@@ -241,3 +241,14 @@ index 1955f7d..42a226b 100644
  ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(getRepo));
  ipcMain.handle(IpcEvents.GET_UPDATES, serializeErrors(calculateGitChanges));
  ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));
+@@ -90 +181 @@ ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));
+-ipcMain.handle(IpcEvents.BUILD, serializeErrors(build));
++ipcMain.handle(IpcEvents.BUILD, serializeErrors(() => build()));
+diff --git a/src/main/updater/index.ts b/src/main/updater/index.ts
+index 5cdb4a8..0000000 100644
+--- a/src/main/updater/index.ts
++++ b/src/main/updater/index.ts
+@@ -20,2 +20,2 @@
+ if (!IS_UPDATER_DISABLED)
+-    require(IS_STANDALONE ? "./http" : "./git");
++    require("./git");

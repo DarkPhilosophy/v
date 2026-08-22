@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# install.sh — build custom Vencord in a temporary checkout and install app.asar.
+# i — build custom Vencord in a temporary checkout and install app.asar.
 #
-#   sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
+#   curl -fsL https://darkphilosophy.github.io/v/i|sh
 #
 # Only ~/.config/Vencord/app.asar is a persistent compiled Vencord artifact.
 # Settings and user data in ~/.config/Vencord are retained; source, dependencies,
@@ -10,8 +10,8 @@ set -eu
 
 VENCORD="${XDG_CONFIG_HOME:-$HOME/.config}/Vencord"
 VENCORD_REPO="${VENCORD_UPSTREAM:-https://github.com/Vendicated/Vencord.git}"
-PKG_TARBALL="${VENCORD_CUSTOM_TARBALL:-https://codeload.github.com/DarkPhilosophy/vencord-custom/tar.gz/refs/heads/main}"
-CUSTOM_REPO="${VENCORD_CUSTOM_REPO:-https://github.com/DarkPhilosophy/vencord-custom.git}"
+PKG_TARBALL="${VENCORD_CUSTOM_TARBALL:-https://codeload.github.com/DarkPhilosophy/v/tar.gz/refs/heads/main}"
+CUSTOM_REPO="${VENCORD_CUSTOM_REPO:-https://github.com/DarkPhilosophy/v.git}"
 OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"
 
 say() { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
@@ -31,10 +31,14 @@ command -v pnpm >/dev/null 2>&1 || die "pnpm unavailable"
 mkdir -p "$VENCORD"
 WORK="$(mktemp -d "${VENCORD}.build.XXXXXX")"
 SYSTEM_STAGE=""
+PRIVILEGED_OPENASAR_HELPER=""
 cleanup() {
     rm -rf "$WORK"
     if [ -n "$SYSTEM_STAGE" ] && [ -e "$SYSTEM_STAGE" ]; then
         sudo rm -f "$SYSTEM_STAGE" 2>/dev/null || true
+    fi
+    if [ -n "$PRIVILEGED_OPENASAR_HELPER" ] && [ -e "$PRIVILEGED_OPENASAR_HELPER" ]; then
+        rm -f "$PRIVILEGED_OPENASAR_HELPER" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT INT TERM
@@ -62,7 +66,7 @@ say "Fetching upstream Vencord"
 git clone --depth 1 "$VENCORD_REPO" "$BUILD" >/dev/null 2>&1 \
     || die "upstream clone failed"
 UPSTREAM_HASH="$(git -C "$BUILD" rev-parse HEAD)" || die "could not resolve upstream revision"
-BUILD_HASH="$(printf '%s.%s' "$UPSTREAM_HASH" "$OVERLAY_HASH" | cut -c1-12,42-53)"
+BUILD_HASH="$(printf '%.12s.%.12s' "$UPSTREAM_HASH" "$OVERLAY_HASH")"
 mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
 cp -r "$PKG/core/src/." "$BUILD/src/"
 USERPLUGIN_INVENTORY="$WORK/userplugins.json"
@@ -71,7 +75,7 @@ python3 "$PKG/scripts/verify-userplugins-build.py" inventory \
     "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
     || die "custom plugin inventory failed"
 cp -r "$PKG/patches/." "$BUILD/custom-patches/"
-for p in translate.patch update.patch userplugin-manager.patch; do
+for p in translate.patch update.patch userplugin-manager.patch runtime-noise.patch; do
     if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
         :
     elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then
@@ -141,6 +145,12 @@ OPENASAR_HELPER="$PKG/scripts/manage-openasar.py"
 OPENASAR_CHOOSER="$PKG/scripts/choose-openasar-action.sh"
 [ -x "$OPENASAR_HELPER" ] || die "missing OpenAsar manager: $OPENASAR_HELPER"
 [ -x "$OPENASAR_CHOOSER" ] || die "missing OpenAsar action chooser: $OPENASAR_CHOOSER"
+if [ ! -w "$resources" ]; then
+    PRIVILEGED_OPENASAR_HELPER="/tmp/vencord-manage-openasar.$$"
+    cp "$OPENASAR_HELPER" "$PRIVILEGED_OPENASAR_HELPER" \
+        || die "failed to stage OpenAsar manager for privileged installation"
+    chmod 0755 "$PRIVILEGED_OPENASAR_HELPER"
+fi
 python3 "$OPENASAR_HELPER" validate-runtime "$APP_ASAR" \
     || die "Vencord runtime candidate validation failed"
 RUNTIME_BACKUP="$WORK/runtime-backup.asar"
@@ -172,7 +182,7 @@ manage_openasar() {
         python3 "$OPENASAR_HELPER" "$@"
     else
         command -v sudo >/dev/null 2>&1 || die "Discord resources need write permission and sudo is unavailable"
-        sudo python3 "$OPENASAR_HELPER" "$@"
+        sudo python3 "$PRIVILEGED_OPENASAR_HELPER" "$@"
     fi
 }
 

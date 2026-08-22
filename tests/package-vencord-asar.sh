@@ -5,7 +5,8 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 HELPER="$ROOT/scripts/package-vencord-asar.sh"
 SEED_HELPER="$ROOT/scripts/stage-userplugin-seeds.sh"
 UPDATE_PATCH="$ROOT/patches/update.patch"
-INSTALLER="$ROOT/install.sh"
+INSTALLER="$ROOT/i"
+RUNTIME_NOISE_PATCH="$ROOT/patches/runtime-noise.patch"
 DETECTOR="$ROOT/scripts/detect-discord.py"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -108,19 +109,20 @@ if "$HELPER" "$WORK/missing" "$WORK/existing.asar" 2>/dev/null; then
     echo 'expected packaging failure' >&2
     exit 1
 fi
-python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" <<'PY'
+python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" "$RUNTIME_NOISE_PATCH" <<'PY'
 from pathlib import Path
 import sys
 
 patch = Path(sys.argv[1]).read_text(encoding="utf-8")
 installer = Path(sys.argv[2]).read_text(encoding="utf-8")
 detector = Path(sys.argv[3]).read_text(encoding="utf-8")
+runtime_noise_patch = Path(sys.argv[4]).read_text(encoding="utf-8")
 generator = 'join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")'
-build = 'await run("node", args, source);'
+build = 'await run("node", args, source, { VENCORD_HASH: buildHash });'
 assert generator in patch
 assert patch.index(generator) < patch.index(build)
 assert 'join(source, "dist", "userPluginSeeds")' not in patch
-assert 'await run("git", ["clone", "--depth", "1", UPSTREAM_REPO, source]);' in patch
+assert 'await run("git", ["fetch", "--depth", "1", "origin", upstreamHash], source);' in patch
 assert "UPSTREAM_TARBALL" not in patch
 assert 'import { cp, mkdir, mkdtemp, rm } from "fs/promises";' in patch
 assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });' in patch
@@ -131,6 +133,10 @@ assert patch.count('join(overlay, "scripts", "verify-userplugins-build.py")') ==
 assert './core/src/userplugins' in installer
 assert '$PKG/userplugins' not in installer
 assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
+assert "runtime-noise.patch" in installer
+assert 'event.error.message === "Sentry successfully disabled"' in runtime_noise_patch
+assert "event.preventDefault();" in runtime_noise_patch
+assert 'pushDirective("connect-src", "sentry-ipc:");' in runtime_noise_patch
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer
 assert 'OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"' in installer
 assert 'OPENASAR_ACTION="$("$OPENASAR_CHOOSER")"' in installer
@@ -167,11 +173,11 @@ assert "await packageRuntime(overlay, source);" in patch
 assert 'report?.("building");' in patch
 assert 'report?.("installing");' in patch
 assert 'import gitHash from "~git-hash";' in patch
-assert 'const buildHash = `${upstreamHash}.${overlayHash}`;' in patch
-assert 'return buildHash === gitHash ? [] :' in patch
+assert 'buildHash: `${upstreamHash.slice(0, 12)}.${overlayHash.slice(0, 12)}`' in patch
+assert 'if (gitHash === buildHash) return [];' in patch
 assert '`${OVERLAY_TARBALL}/${overlayHash}`' in patch
 assert 'VENCORD_HASH: buildHash' in patch
-assert 'VENCORD_HASH="$BUILD_HASH" pnpm build' in installer
+assert 'BUILD_HASH="$(printf \'%.12s.%.12s\' "$UPSTREAM_HASH" "$OVERLAY_HASH")"' in installer
 assert "waitForPackagedRuntime" not in patch
 assert "const candidate" not in patch
 PY

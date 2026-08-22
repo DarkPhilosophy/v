@@ -33,12 +33,12 @@ core/src/
 
 patches/userplugin-manager.patch
 tests/userPluginManager/
-install.sh
+i
 patches/update.patch
 .github/README.md
 ```
 
-`install.sh` copies `core/src/*` into the matching Vencord source paths. `patches/userplugin-manager.patch` changes only tracked upstream integration points: render the core control in the Plugins page, declare/bind IPC, and register the main-process handlers. `patches/update.patch` reapplies this required patch after upstream pulls.
+`i` copies `core/src/*` into the matching Vencord source paths. `patches/userplugin-manager.patch` changes only tracked upstream integration points: render the core control in the Plugins page, declare/bind IPC, and register the main-process handlers. `patches/update.patch` reapplies this required patch after upstream pulls.
 
 The manager is not in `src/userplugins`, does not appear as a plugin card, and cannot be removed through source-management operations.
 ## Fixed contracts
@@ -364,7 +364,7 @@ Behavioral scenarios:
 
 Files:
 
-- Update `install.sh`.
+- Update `i`.
 
 Work:
 
@@ -378,7 +378,7 @@ Work:
 Verification:
 
 ```sh
-sh -n install.sh
+sh -n i
 ```
 
 Run installer logic against a temporary HOME/config fixture with external effects disabled. Assert immutable provenance, the core overlay, both bundled userplugins, all required patches, and absence of credential-bearing locators.
@@ -428,12 +428,12 @@ Work:
 
 Record:
 
-- branch and exact commit of `vencord-custom`;
-- clean/dirty state of `vencord-custom` and installed Vencord separately;
+- branch and exact commit of `v`;
+- clean/dirty state of `v` and installed Vencord separately;
 - installed Vencord commit;
 - current targeted ESLint result for existing custom plugins;
 - current `pnpm testTsc` result;
-- current `sh -n install.sh` result.
+- current `sh -n i` result.
 
 Do not claim no regressions without comparing to this baseline.
 
@@ -443,7 +443,7 @@ Run:
 
 ```sh
 node --import tsx --test tests/userPluginManager/*.test.ts
-sh -n install.sh
+sh -n i
 pnpm testTsc
 pnpm eslint src/components/settings/tabs/plugins/UserPluginManager src/main/userPluginManager src/shared/userPluginManager.ts src/shared/userPluginManagerSafety.ts src/userplugins/platformSpoofer src/userplugins/questCompleter
 pnpm build --standalone --disable-updater
@@ -487,4 +487,4 @@ The feature is complete only when:
 
 ## Rollback boundary
 
-Until the live verification step, rollback is deleting only files created by this implementation and reverting minimal hunks in `install.sh`/`.github/README.md` while preserving unrelated work. Before touching the live Vencord installation, create timestamped backups of every destination and manager state file that the verification will replace. If verification fails, restore those exact files and rebuild the prior known-good bundle; never use a broad checkout/reset/clean operation.
+Until the live verification step, rollback is deleting only files created by this implementation and reverting minimal hunks in `i`/`.github/README.md` while preserving unrelated work. Before touching the live Vencord installation, create timestamped backups of every destination and manager state file that the verification will replace. If verification fails, restore those exact files and rebuild the prior known-good bundle; never use a broad checkout/reset/clean operation.

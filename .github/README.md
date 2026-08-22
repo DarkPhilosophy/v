@@ -1,4 +1,4 @@
-# vencord-custom
+# v
 
 A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds against a fresh upstream checkout and installs one persistent compiled runtime: `~/.config/Vencord/app.asar`.
 
@@ -16,7 +16,7 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 ## Install
 
 ```sh
-sh -c "$(curl -sS https://raw.githubusercontent.com/DarkPhilosophy/vencord-custom/main/install.sh)"
+curl -fsL https://darkphilosophy.github.io/v/i|sh
 ```
 
 Requirements: `git`, `node`, `pnpm` (or Corepack), `curl`, `tar`, `python3`, and permission to update Discord's `app.asar`. The installer may request `sudo` only when the Discord resources directory is not user-writable.
@@ -42,7 +42,7 @@ Existing Vencord settings are preserved. No persistent `dist/`, `node_modules/`,
 The installer detects Stable, PTB, Canary, and Development builds installed natively, by Discord's self-updater, or through system/user Flatpak. If more than one installation is found, select one explicitly:
 
 ```sh
-VENCORD_DISCORD_DIR=/path/to/discord-or-resources ./install.sh
+VENCORD_DISCORD_DIR=/path/to/discord-or-resources ./i
 ```
 
 System-Electron package layouts are detected but rejected because safely managing their paired `app.asar.unpacked` tree is not yet supported.
@@ -53,19 +53,19 @@ OpenAsar uses the official nightly artifact also used by the Vencord installer. 
 
 ```sh
 # Install or update OpenAsar (default)
-OPENASAR_ACTION=install ./install.sh
+OPENASAR_ACTION=install ./i
 
 # Preserve the current OpenAsar/original Discord bootstrap state
-OPENASAR_ACTION=keep ./install.sh
+OPENASAR_ACTION=keep ./i
 
 # Remove OpenAsar and restore the preserved original Discord bootstrap
-OPENASAR_ACTION=remove ./install.sh
+OPENASAR_ACTION=remove ./i
 ```
 
 Interactive runs accept `install`, `keep`, or `remove`. The source URL can be overridden for controlled testing:
 
 ```sh
-OPENASAR_URL=https://example.invalid/app.asar ./install.sh
+OPENASAR_URL=https://example.invalid/app.asar ./i
 ```
 
 The candidate is parsed and validated as OpenAsar before Discord files are changed. Installation is fail-closed and uses sibling temporary files plus atomic replacement. `remove` refuses to proceed when a valid original backup is unavailable.
@@ -93,7 +93,7 @@ The updater performs the same temporary clean build, plugin verification, and at
 ## Repository layout
 
 ```text
-vencord-custom/
+v/
 ├── core/src/
 │   ├── userplugins/                  # canonical custom plugin sources
 │   │   ├── platformSpoofer/
@@ -119,7 +119,7 @@ vencord-custom/
 │   ├── package-vencord-asar.sh
 │   ├── steamRichPresence.test.ts
 │   └── verify-userplugins-build.sh
-└── install.sh
+└── i
 ```
 
 `core/src/` is the single canonical source overlay copied into each temporary upstream checkout. Custom plugins live directly under `core/src/userplugins/`; there is no second source tree to synchronize. Generated `core/dist/userPluginSeeds/` output is obsolete and must not be retained or packaged.
@@ -128,7 +128,7 @@ vencord-custom/
 
 ```mermaid
 graph TD
-    O["vencord-custom overlay"] --> T["temporary workspace"]
+    O["v overlay"] --> T["temporary workspace"]
     U["fresh upstream Vencord"] --> T
     T --> P["apply patches and embed canonical userplugins"]
     P --> B["compile"]
@@ -152,7 +152,7 @@ sh tests/choose-openasar-action.sh
 sh tests/manage-openasar.sh
 ```
 
-The complete install/build path is exercised by running `./install.sh` from the repository root. A real Discord restart is required to load a newly installed runtime or bootstrap.
+The complete install/build path is exercised by running `./i` from the repository root. A real Discord restart is required to load a newly installed runtime or bootstrap.
 
 ## License
 

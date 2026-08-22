@@ -9,6 +9,8 @@ import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
 import { findByProps } from "@webpack";
 import { Button, FluxDispatcher, Forms, RestAPI, showToast, Toasts } from "@webpack/common";
+import { createDeferredHandler, type DeferredHandler } from "./deferredHandler";
+import { isAutomatableQuest } from "./taskSupport";
 
 
 const logger = new Logger("QuestCompleter");
@@ -322,8 +324,14 @@ async function completeAll(silent = false): Promise<void> {
 
     const now = new Date();
     const all = [...questsStore.quests.values()];
-    const notEnrolled = all.filter(q => !q.userStatus?.completedAt && !q.userStatus?.enrolledAt && new Date(q.config.expiresAt) >= now);
-    const todo = all.filter(q => !!q.userStatus?.enrolledAt && !q.userStatus?.completedAt && new Date(q.config.expiresAt) >= now);
+    const notEnrolled = all.filter(q => {
+        const tasks = q.config.taskConfigV2?.tasks ?? q.config.taskConfig?.tasks ?? {};
+        return isAutomatableQuest(tasks) && !q.userStatus?.completedAt && !q.userStatus?.enrolledAt && new Date(q.config.expiresAt) >= now;
+    });
+    const todo = all.filter(q => {
+        const tasks = q.config.taskConfigV2?.tasks ?? q.config.taskConfig?.tasks ?? {};
+        return isAutomatableQuest(tasks) && !!q.userStatus?.enrolledAt && !q.userStatus?.completedAt && new Date(q.config.expiresAt) >= now;
+    });
     logger.info(`Scan: ${todo.length} enrolled to complete, ${notEnrolled.length} not enrolled`);
 
     if (settings.store.autoEnroll) {
@@ -331,8 +339,11 @@ async function completeAll(silent = false): Promise<void> {
             try {
                 const res = await RestAPI.post({ url: `/quests/${quest.id}/enroll`, body: { location: 8 } });
                 const enrolled = res.body as { userStatus?: Quest["userStatus"]; } | undefined;
-                quest.userStatus = enrolled?.userStatus ?? { enrolledAt: new Date().toISOString() };
-                todo.push(quest);
+                if (!enrolled?.userStatus?.enrolledAt) {
+                    logger.warn(`Enroll response missing valid userStatus for ${quest.config.messages.questName}; skipping until next scan`);
+                    continue;
+                }
+                todo.push({ ...quest, userStatus: { ...enrolled.userStatus } });
                 logger.info(`Enrolled: ${quest.config.messages.questName}`);
                 if (!silent) toast(`${getAppName(quest)}: enrolled`);
             } catch (err) {
@@ -369,7 +380,7 @@ async function completeAll(silent = false): Promise<void> {
 }
 
 // Stored so start/stop can subscribe/unsubscribe the same reference.
-let autoHandler: (() => void) | undefined;
+let autoHandler: DeferredHandler | undefined;
 
 export default definePlugin({
     name: "QuestCompleter",
@@ -379,7 +390,10 @@ export default definePlugin({
 
     start() {
         if (!settings.store.autoComplete) return;
-        autoHandler = () => { completeAll(true); };
+        autoHandler = createDeferredHandler(
+            () => completeAll(true),
+            error => logger.error("Automatic completion failed", error),
+        );
         FluxDispatcher.subscribe("QUESTS_FETCH_CURRENT_QUESTS_SUCCESS", autoHandler);
         FluxDispatcher.subscribe("QUESTS_ENROLL_SUCCESS", autoHandler);
     },
@@ -388,6 +402,7 @@ export default definePlugin({
         if (!autoHandler) return;
         FluxDispatcher.unsubscribe("QUESTS_FETCH_CURRENT_QUESTS_SUCCESS", autoHandler);
         FluxDispatcher.unsubscribe("QUESTS_ENROLL_SUCCESS", autoHandler);
+        autoHandler.cancel();
         autoHandler = undefined;
     },
 });
