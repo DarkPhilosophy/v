@@ -11,7 +11,7 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 - **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
 - **User Plugin Manager** — transactionally installs and updates custom user plugins from Discord settings.
 - **Translate** — custom translation integration.
-- **OpenAsar** — installed or updated by default as Discord's optimized bootstrap while preserving Vencord's loader.
+- **OpenAsar** — installed or updated by default as Discord's optimized bootstrap, with Linux-safe runtime patches and Vencord's loader preserved.
 
 ## Install
 
@@ -50,6 +50,10 @@ System-Electron package layouts are detected but rejected because safely managin
 ### OpenAsar choices
 
 OpenAsar uses the official nightly artifact also used by the Vencord installer. The default is `install`, including for non-interactive installs.
+
+Before installation, the downloaded ASAR is patched in place without cloning or building OpenAsar. The patch keeps the `perf` preset and its other optimizations, but omits `EnableDrDc` on Linux because that forced feature crashes Discord's GPU subprocess on Wayland and triggers software-rendering fallback, video frame drops, and black flicker. Non-Linux behavior is unchanged. The existing Flatpak module-update correction is applied in the same validated transaction.
+
+Both transformations use exact source signatures and fail closed when OpenAsar changes upstream. The rewritten ASAR is reparsed, its integrity metadata is regenerated, and both patches are verified before Discord's active bootstrap is replaced.
 
 ```sh
 # Install or update OpenAsar (default)

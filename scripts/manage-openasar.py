@@ -21,6 +21,12 @@ BROKEN_OPENASAR_MODULE_SETUP = (
 PATCHED_OPENASAR_MODULE_SETUP = (
     b"skipModule||[fs.rmSync(downloadPath,{recursive:true,force:true}),mkdir(downloadPath)];"
 )
+BROKEN_OPENASAR_LINUX_GPU_FEATURES = (
+    b"--enable-features=EnableDrDc,CanvasOopRasterization"
+)
+PATCHED_OPENASAR_LINUX_GPU_FEATURES = (
+    b'--enable-features=${process.platform==="linux"?"":"EnableDrDc,"}CanvasOopRasterization'
+)
 
 
 def fail(message: str) -> NoReturn:
@@ -181,25 +187,43 @@ def rewrite_asar_entry(archive: Asar, target: str, replacement: bytes) -> None:
 def prepare_openasar(candidate: Path) -> None:
     validate_openasar(candidate)
     archive = Asar(candidate)
-    source = archive.read("updater/moduleUpdater.js")
-    if source.count(PATCHED_OPENASAR_MODULE_SETUP) == 1:
-        if BROKEN_OPENASAR_MODULE_SETUP in source:
+    updater = archive.read("updater/moduleUpdater.js")
+    if updater.count(PATCHED_OPENASAR_MODULE_SETUP) == 1:
+        if BROKEN_OPENASAR_MODULE_SETUP in updater:
             fail(f"ambiguous OpenAsar module updater in {candidate}")
-        print("OpenAsar Flatpak module-update fix already applied")
-        return
-    if source.count(BROKEN_OPENASAR_MODULE_SETUP) != 1:
+    elif updater.count(BROKEN_OPENASAR_MODULE_SETUP) == 1:
+        rewrite_asar_entry(
+            archive,
+            "updater/moduleUpdater.js",
+            updater.replace(BROKEN_OPENASAR_MODULE_SETUP, PATCHED_OPENASAR_MODULE_SETUP),
+        )
+    else:
         fail(f"unsupported OpenAsar module updater in {candidate}")
 
-    rewrite_asar_entry(
-        archive,
-        "updater/moduleUpdater.js",
-        source.replace(BROKEN_OPENASAR_MODULE_SETUP, PATCHED_OPENASAR_MODULE_SETUP),
-    )
+    archive = Asar(candidate)
+    switches = archive.read("cmdSwitches.js")
+    if switches.count(PATCHED_OPENASAR_LINUX_GPU_FEATURES) == 1:
+        if BROKEN_OPENASAR_LINUX_GPU_FEATURES in switches:
+            fail(f"ambiguous OpenAsar Linux GPU flags in {candidate}")
+    elif switches.count(BROKEN_OPENASAR_LINUX_GPU_FEATURES) == 1:
+        rewrite_asar_entry(
+            archive,
+            "cmdSwitches.js",
+            switches.replace(
+                BROKEN_OPENASAR_LINUX_GPU_FEATURES,
+                PATCHED_OPENASAR_LINUX_GPU_FEATURES,
+            ),
+        )
+    else:
+        fail(f"unsupported OpenAsar Linux GPU flags in {candidate}")
+
     validate_openasar(candidate)
-    patched = Asar(candidate).read("updater/moduleUpdater.js")
-    if patched.count(PATCHED_OPENASAR_MODULE_SETUP) != 1:
+    patched = Asar(candidate)
+    if patched.read("updater/moduleUpdater.js").count(PATCHED_OPENASAR_MODULE_SETUP) != 1:
         fail(f"OpenAsar module-update fix verification failed: {candidate}")
-    print("OpenAsar Flatpak module-update fix applied")
+    if patched.read("cmdSwitches.js").count(PATCHED_OPENASAR_LINUX_GPU_FEATURES) != 1:
+        fail(f"OpenAsar Linux GPU fix verification failed: {candidate}")
+    print("OpenAsar Flatpak module-update and Linux GPU fixes applied")
 
 
 def classify_discord_asar(path: Path) -> str:

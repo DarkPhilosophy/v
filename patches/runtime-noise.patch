@@ -2,19 +2,25 @@ diff --git a/src/plugins/_core/noTrack.ts b/src/plugins/_core/noTrack.ts
 index 30e3c77..0000000 100644
 --- a/src/plugins/_core/noTrack.ts
 +++ b/src/plugins/_core/noTrack.ts
-@@ -127,2 +127,8 @@ export default definePlugin({
+@@ -127,5 +127,11 @@ export default definePlugin({
                  Reflect.deleteProperty(Function.prototype, "d");
                  Reflect.deleteProperty(window, "DiscordSentry");
++
 +                window.addEventListener("error", event => {
 +                    if (event.error instanceof Error && event.error.message === "Sentry successfully disabled") {
 +                        event.preventDefault();
 +                    }
 +                }, { once: true });
-+
+ 
+                 throw new Error("Sentry successfully disabled");
+             }
 diff --git a/src/main/csp/index.ts b/src/main/csp/index.ts
 index c604059..0000000 100644
 --- a/src/main/csp/index.ts
 +++ b/src/main/csp/index.ts
-@@ -117 +117,2 @@ const patchCsp = (headers: PolicyMap) => {
+@@ -119,4 +119,5 @@ const patchCsp = (headers: PolicyMap) => {
          pushDirective("script-src", "'unsafe-inline'", "'unsafe-eval'");
 +        pushDirective("connect-src", "sentry-ipc:");
+ 
+         for (const directive of ["style-src", "connect-src", "img-src", "font-src", "media-src", "worker-src"]) {
+             pushDirective(directive, "blob:", "data:", "vencord:", "vesktop:");
