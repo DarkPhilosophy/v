@@ -1,44 +1,41 @@
 diff --git a/src/plugins/_core/noTrack.ts b/src/plugins/_core/noTrack.ts
-index 30e3c77..0000000 100644
+index 5ba03b4..8b02309 100644
 --- a/src/plugins/_core/noTrack.ts
 +++ b/src/plugins/_core/noTrack.ts
-@@ -127,5 +127,11 @@ export default definePlugin({
+@@ -127,6 +127,12 @@ export default definePlugin({
                  Reflect.deleteProperty(Function.prototype, "d");
                  Reflect.deleteProperty(window, "DiscordSentry");
-+
+ 
 +                window.addEventListener("error", event => {
 +                    if (event.error instanceof Error && event.error.message === "Sentry successfully disabled") {
 +                        event.preventDefault();
 +                    }
 +                }, { once: true });
- 
++
                  throw new Error("Sentry successfully disabled");
              }
+         });
 diff --git a/src/preload.ts b/src/preload.ts
-index 41a9cb9..0000000 100644
+index 5f7adb9..856314f 100644
 --- a/src/preload.ts
 +++ b/src/preload.ts
-@@ -29,6 +29,24 @@ if (location.protocol !== "data:") {
+@@ -21,6 +21,7 @@ import { IpcEvents } from "@shared/IpcEvents";
+ import { contextBridge, webFrame } from "electron/renderer";
+ 
+ import VencordNative, { invoke, sendSync } from "./VencordNative";
++import { installNoopSentryIpc } from "./sentryIpc";
+ 
+ contextBridge.exposeInMainWorld("VencordNative", VencordNative);
+ 
+@@ -29,6 +30,12 @@ if (location.protocol !== "data:") {
      invoke(IpcEvents.INIT_FILE_WATCHERS);
  
      if (IS_DISCORD_DESKTOP) {
 +        // Discord's preload initializes the Electron Sentry renderer before
-+        // NoTrack can abort the web-app Sentry bundle. Give the SDK its
-+        // supported preload IPC interface with inert methods so it neither
-+        // falls back to unsupported sentry-ipc:// fetches nor sends reports.
-+        Object.defineProperty(window, "__SENTRY_IPC__", {
-+            configurable: true,
-+            value: {
-+                "sentry-ipc": {
-+                    sendRendererStart() { },
-+                    sendScope() { },
-+                    sendEnvelope() { },
-+                    sendStatus() { },
-+                    sendStructuredLog() { },
-+                    sendMetric() { }
-+                }
-+            }
-+        });
++        // NoTrack can abort the web-app Sentry bundle. If no real preload IPC
++        // bridge exists, install an inert one so Sentry cannot fall back to
++        // unsupported sentry-ipc:// fetches or send reports.
++        installNoopSentryIpc(window as unknown as Record<string, unknown>);
 +
          webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
          // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
