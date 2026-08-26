@@ -7,11 +7,21 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 ## Included customizations
 
 - **PlatformSpoofer** — spoofs the Discord client platform (Desktop, Mobile, Web, or Console).
+- **PrivacyPruner** — automatically deletes your expired messages according to per-channel retention policies while preserving messages explicitly marked Keep.
 - **QuestCompleter** — completes supported Discord quests without installing the advertised game.
 - **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
 - **User Plugin Manager** — transactionally installs and updates custom user plugins from Discord settings.
 - **Translate** — custom translation integration.
 - **OpenAsar** — installed or updated by default as Discord's optimized bootstrap, with Linux-safe runtime patches and Vencord's loader preserved.
+
+### PrivacyPruner
+
+**PrivacyPruner** applies independent retention policies to messages authored by the current user. Configure it from **Settings → Plugins → PrivacyPruner**, the privacy button in the chat bar, or a channel context menu.
+
+- A channel must have an enabled policy before pruning starts; automatic application to new guilds, DMs, and group DMs is opt-in.
+- Set retention, maximum lookback, scan interval, and whether thread messages are included. The built-in template defaults to 1 day retention, 1 year maximum lookback, a 2-hour scan interval, and thread inclusion.
+- Use **Preview** before deletion and mark individual messages **Keep** from the message menu. Kept messages are excluded from future pruning.
+- Deletion is limited to your own eligible messages and is irreversible; existing policies are not changed when defaults are edited.
 
 ## Install
 
@@ -101,6 +111,7 @@ v/
 ├── core/src/
 │   ├── userplugins/                  # canonical custom plugin sources
 │   │   ├── platformSpoofer/
+│   │   ├── privacyPruner/
 │   │   ├── questCompleter/
 │   │   └── steamRichPresence/
 │   ├── main/userPluginManager/       # manager host implementation
@@ -121,6 +132,8 @@ v/
 │   ├── choose-openasar-action.sh
 │   ├── manage-openasar.sh
 │   ├── package-vencord-asar.sh
+│   ├── privacyPruner.test.ts
+│   ├── questCompleter.test.ts
 │   ├── steamRichPresence.test.ts
 │   └── verify-userplugins-build.sh
 └── i
@@ -149,6 +162,8 @@ graph TD
 Focused local checks:
 
 ```sh
+pnpm dlx tsx --test tests/privacyPruner.test.ts
+pnpm dlx tsx --test tests/questCompleter.test.ts
 pnpm dlx tsx --test tests/steamRichPresence.test.ts
 sh tests/verify-userplugins-build.sh
 sh tests/package-vencord-asar.sh
