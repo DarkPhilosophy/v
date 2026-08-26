@@ -1,8 +1,8 @@
 diff --git a/src/components/settings/tabs/updater/index.tsx b/src/components/settings/tabs/updater/index.tsx
-index 30191cb..d4c0eb0 100644
+index 52960c6..48ced8a 100644
 --- a/src/components/settings/tabs/updater/index.tsx
 +++ b/src/components/settings/tabs/updater/index.tsx
-@@ -81,6 +81,19 @@ function Updater() {
+@@ -81,6 +81,18 @@ function Updater() {
          <SettingsTab>
              <VesktopSection />
  
@@ -18,17 +18,16 @@ index 30191cb..d4c0eb0 100644
 +                    </Paragraph>
 +                </Card>
 +            </Flex>
-+
-             <FormSwitch
-                 title="Automatically update"
-                 description="Automatically update Vencord without confirmation prompt"
+             <div className="vc-settings-switches">
+                 <FormSwitch
+                     title="Automatically update"
 diff --git a/src/main/updater/git.ts b/src/main/updater/git.ts
-index 1955f7d..42a226b 100644
+index 1955f7d..124e75d 100644
 --- a/src/main/updater/git.ts
 +++ b/src/main/updater/git.ts
 @@ -16,15 +16,31 @@
   * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+  */
  
 +import {
 +    embeddedUserPluginFiles,
@@ -59,7 +58,7 @@ index 1955f7d..42a226b 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,58 +48,149 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,59 +48,150 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -170,22 +169,20 @@ index 1955f7d..42a226b 100644
  
 -async function build() {
 -    const opts = { cwd: VENCORD_SRC_DIR };
- 
--    const command = isFlatpak ? "flatpak-spawn" : "node";
--    const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
- 
--    if (IS_DEV) args.push("--dev");
++
++
 +async function applyOverlay(source: string) {
 +    for (const patch of CUSTOM_OVERLAY_PATCHES)
 +        await run("git", ["apply", join(source, "custom-patches", patch)], source);
 +}
  
--    const res = await execFile(command, args, opts);
+-    const command = isFlatpak ? "flatpak-spawn" : "node";
+-    const args = isFlatpak ? ["--host", "node", "scripts/build/build.mjs"] : ["scripts/build/build.mjs"];
 +async function packageRuntime(overlay: string, source: string) {
 +    await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);
 +}
  
--    return !res.stderr.includes("Build failed");
+-    if (IS_DEV) args.push("--dev");
 +async function build(userpluginsRoot?: string, report?: (stage: UserPluginManagerBuildStage) => void) {
 +    await mkdir(RUNTIME_DIR, { recursive: true });
 +    const work = await mkdtemp(join(RUNTIME_DIR, ".update-"));
@@ -234,21 +231,26 @@ index 1955f7d..42a226b 100644
 +            console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)
 +        );
 +    }
- }
++}
  
+-    const res = await execFile(command, args, opts);
 +registerUserPluginManagerIpcHandlers(build);
-+
+ 
+-    return !res.stderr.includes("Build failed");
+-}
+-
  ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(getRepo));
  ipcMain.handle(IpcEvents.GET_UPDATES, serializeErrors(calculateGitChanges));
  ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));
-@@ -90 +181 @@ ipcMain.handle(IpcEvents.UPDATE, serializeErrors(pull));
 -ipcMain.handle(IpcEvents.BUILD, serializeErrors(build));
 +ipcMain.handle(IpcEvents.BUILD, serializeErrors(() => build()));
 diff --git a/src/main/updater/index.ts b/src/main/updater/index.ts
-index 5cdb4a8..0000000 100644
+index 539b02a..a1f9c13 100644
 --- a/src/main/updater/index.ts
 +++ b/src/main/updater/index.ts
-@@ -20,2 +20,2 @@
+@@ -17,4 +17,4 @@
+  */
+ 
  if (!IS_UPDATER_DISABLED)
 -    require(IS_STANDALONE ? "./http" : "./git");
 +    require("./git");
