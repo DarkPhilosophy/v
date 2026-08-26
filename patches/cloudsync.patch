@@ -1,0 +1,21 @@
+diff --git a/src/plugins/_core/noTrack.ts b/src/plugins/_core/noTrack.ts
+index 5ba03b4..0000000 100644
+--- a/src/plugins/_core/noTrack.ts
++++ b/src/plugins/_core/noTrack.ts
+@@ -69,6 +69,16 @@ export default definePlugin({
+                 match: /(?=let \i=window;)/,
+                 replace: "return false;"
+             }
++        },
++        {
++            // Discord ships discord_cloudsync on Linux, but its current web
++            // capability gate initializes it only on macOS and non-ARM64
++            // Windows. Extend that gate without changing Gateway IDENTIFY.
++            find: "CloudSync is not supported on this platform",
++            replacement: {
++                match: /(\i)\.isPlatformEmbedded&&\(\(0,\1\.isMac\)\(\)\|\|\(0,\1\.isWindows\)\(\)&&"arm64"!==\i\.\i\.architecture(?=\))/,
++                replace: "$&||(0,$1.isLinux)()"
++            }
+         }
+     ],
+ 

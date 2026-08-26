@@ -109,7 +109,7 @@ if "$HELPER" "$WORK/missing" "$WORK/existing.asar" 2>/dev/null; then
     echo 'expected packaging failure' >&2
     exit 1
 fi
-python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" "$RUNTIME_NOISE_PATCH" "$ROOT/core/src/sentryIpc.ts" "$ROOT/core/src/userplugins/platformSpoofer/index.tsx" <<'PY'
+python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" "$RUNTIME_NOISE_PATCH" "$ROOT/core/src/sentryIpc.ts" "$ROOT/core/src/userplugins/platformSpoofer/index.tsx" "$ROOT/patches/cloudsync.patch" <<'PY'
 from pathlib import Path
 import sys
 
@@ -119,6 +119,7 @@ detector = Path(sys.argv[3]).read_text(encoding="utf-8")
 runtime_noise_patch = Path(sys.argv[4]).read_text(encoding="utf-8")
 sentry_ipc = Path(sys.argv[5]).read_text(encoding="utf-8")
 platform_spoofer = Path(sys.argv[6]).read_text(encoding="utf-8")
+cloudsync_patch = Path(sys.argv[7]).read_text(encoding="utf-8")
 generator = 'join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")'
 build = 'await run("node", args, source, { VENCORD_HASH: buildHash });'
 assert generator in patch
@@ -149,8 +150,9 @@ assert 'sendStructuredLog() { }' in sentry_ipc
 assert 'sendMetric() { }' in sentry_ipc
 assert 'playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Embedded" }' in platform_spoofer
 assert 'xbox: { label: "Xbox", os: "Xbox", browser: "Discord Embedded" }' in platform_spoofer
-assert 'find: "CloudSync is not supported on this platform"' in platform_spoofer
-assert 'replace: "$&||(0,$1.isLinux)()"' in platform_spoofer
+assert 'find: "CloudSync is not supported on this platform"' in cloudsync_patch
+assert 'replace: "$&||(0,$1.isLinux)()"' in cloudsync_patch
+assert "cloudsync.patch" in installer
 assert 'playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Client" }' not in platform_spoofer
 assert 'xbox: { label: "Xbox", os: "Xbox", browser: "Discord Client" }' not in platform_spoofer
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer

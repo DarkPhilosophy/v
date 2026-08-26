@@ -549,17 +549,6 @@ export default definePlugin({
     authors: [{ name: "Alex", id: 0n }],
     settings,
 
-    // Discord ships discord_cloudsync on Linux, but its current web gate only
-    // initializes the native module on macOS and non-ARM64 Windows. Extend that
-    // capability check without changing the platform sent in Gateway IDENTIFY.
-    patches: [{
-        find: "CloudSync is not supported on this platform",
-        replacement: {
-            match: /(\i)\.isPlatformEmbedded&&\(\(0,\1\.isMac\)\(\)\|\|\(0,\1\.isWindows\)\(\)&&"arm64"!==\i\.\i\.architecture(?=\))/,
-            replace: "$&||(0,$1.isLinux)()"
-        }
-    }],
-
     // Run at Init — waitForStore callback fires when webpack loads the store module.
     startAt: StartAt.Init,
 
