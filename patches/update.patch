@@ -27,7 +27,7 @@ index 1955f7d..124e75d 100644
 +++ b/src/main/updater/git.ts
 @@ -16,15 +16,31 @@
   * along with this program.  If not, see <https://www.gnu.org/licenses/>.
-  */
+ */
  
 +import {
 +    embeddedUserPluginFiles,
@@ -249,7 +249,7 @@ index 539b02a..a1f9c13 100644
 --- a/src/main/updater/index.ts
 +++ b/src/main/updater/index.ts
 @@ -17,4 +17,4 @@
-  */
+ */
  
  if (!IS_UPDATER_DISABLED)
 -    require(IS_STANDALONE ? "./http" : "./git");
