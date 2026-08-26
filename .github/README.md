@@ -12,6 +12,7 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 - **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
 - **User Plugin Manager** — transactionally installs and updates custom user plugins from Discord settings.
 - **Translate** — custom translation integration.
+- **NoTrack hardening** — keeps Discord analytics and Sentry disabled while satisfying the preload's local Sentry IPC contract with inert handlers, avoiding failed `sentry-ipc://` requests without restoring telemetry.
 - **OpenAsar** — installed or updated by default as Discord's optimized bootstrap, with Linux-safe runtime patches and Vencord's loader preserved.
 
 ### PrivacyPruner
@@ -119,6 +120,7 @@ v/
 │   └── shared/                       # shared manager contracts
 ├── patches/
 │   ├── translate.patch
+│   ├── runtime-noise.patch           # NoTrack/Sentry preload noise suppression
 │   ├── update.patch                  # temporary clean-build updater
 │   └── userplugin-manager.patch      # Vencord/Electron manager wiring
 ├── scripts/

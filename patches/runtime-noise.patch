@@ -14,13 +14,32 @@ index 30e3c77..0000000 100644
  
                  throw new Error("Sentry successfully disabled");
              }
-diff --git a/src/main/csp/index.ts b/src/main/csp/index.ts
-index c604059..0000000 100644
---- a/src/main/csp/index.ts
-+++ b/src/main/csp/index.ts
-@@ -119,4 +119,5 @@ const patchCsp = (headers: PolicyMap) => {
-         pushDirective("script-src", "'unsafe-inline'", "'unsafe-eval'");
-+        pushDirective("connect-src", "sentry-ipc:");
+diff --git a/src/preload.ts b/src/preload.ts
+index 41a9cb9..0000000 100644
+--- a/src/preload.ts
++++ b/src/preload.ts
+@@ -29,6 +29,24 @@ if (location.protocol !== "data:") {
+     invoke(IpcEvents.INIT_FILE_WATCHERS);
  
-         for (const directive of ["style-src", "connect-src", "img-src", "font-src", "media-src", "worker-src"]) {
-             pushDirective(directive, "blob:", "data:", "vencord:", "vesktop:");
+     if (IS_DISCORD_DESKTOP) {
++        // Discord's preload initializes the Electron Sentry renderer before
++        // NoTrack can abort the web-app Sentry bundle. Give the SDK its
++        // supported preload IPC interface with inert methods so it neither
++        // falls back to unsupported sentry-ipc:// fetches nor sends reports.
++        Object.defineProperty(window, "__SENTRY_IPC__", {
++            configurable: true,
++            value: {
++                "sentry-ipc": {
++                    sendRendererStart() { },
++                    sendScope() { },
++                    sendEnvelope() { },
++                    sendStatus() { },
++                    sendStructuredLog() { },
++                    sendMetric() { }
++                }
++            }
++        });
++
+         webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
+         // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
+         require(process.env.DISCORD_PRELOAD!);

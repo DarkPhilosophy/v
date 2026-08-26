@@ -136,7 +136,14 @@ assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
 assert "runtime-noise.patch" in installer
 assert 'event.error.message === "Sentry successfully disabled"' in runtime_noise_patch
 assert "event.preventDefault();" in runtime_noise_patch
-assert 'pushDirective("connect-src", "sentry-ipc:");' in runtime_noise_patch
+assert 'Object.defineProperty(window, "__SENTRY_IPC__"' in runtime_noise_patch
+assert 'sendRendererStart() { }' in runtime_noise_patch
+assert 'sendScope() { }' in runtime_noise_patch
+assert 'sendEnvelope() { }' in runtime_noise_patch
+assert 'sendStatus() { }' in runtime_noise_patch
+assert 'sendStructuredLog() { }' in runtime_noise_patch
+assert 'sendMetric() { }' in runtime_noise_patch
+assert 'pushDirective("connect-src", "sentry-ipc:");' not in runtime_noise_patch
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer
 assert 'OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"' in installer
 assert 'OPENASAR_ACTION="$("$OPENASAR_CHOOSER")"' in installer
