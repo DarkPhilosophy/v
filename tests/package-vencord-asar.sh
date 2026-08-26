@@ -138,6 +138,7 @@ assert "runtime-noise.patch" in installer
 assert 'event.error.message === "Sentry successfully disabled"' in runtime_noise_patch
 assert "event.preventDefault();" in runtime_noise_patch
 assert 'installNoopSentryIpc(window as unknown as Record<string, unknown>);' in runtime_noise_patch
+assert '"Could not find a View Model linked to Artboard BaseGlowRemapped."' in runtime_noise_patch
 assert 'pushDirective("connect-src", "sentry-ipc:");' not in runtime_noise_patch
 assert 'sendRendererStart() { }' in sentry_ipc
 assert 'sendScope() { }' in sentry_ipc

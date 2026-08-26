@@ -16,17 +16,17 @@ index 5ba03b4..8b02309 100644
              }
          });
 diff --git a/src/preload.ts b/src/preload.ts
-index 5f7adb9..856314f 100644
+index 5f7adb9..fd8aee2 100644
 --- a/src/preload.ts
 +++ b/src/preload.ts
-@@ -21,6 +21,7 @@ import { IpcEvents } from "@shared/IpcEvents";
+@@ -20,6 +20,7 @@ import { debounce } from "@shared/debounce";
+ import { IpcEvents } from "@shared/IpcEvents";
  import { contextBridge, webFrame } from "electron/renderer";
  
- import VencordNative, { invoke, sendSync } from "./VencordNative";
 +import { installNoopSentryIpc } from "./sentryIpc";
+ import VencordNative, { invoke, sendSync } from "./VencordNative";
  
  contextBridge.exposeInMainWorld("VencordNative", VencordNative);
- 
 @@ -29,6 +30,12 @@ if (location.protocol !== "data:") {
      invoke(IpcEvents.INIT_FILE_WATCHERS);
  
@@ -40,3 +40,33 @@ index 5f7adb9..856314f 100644
          webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
          // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
          require(process.env.DISCORD_PRELOAD!);
+diff --git a/src/plugins/consoleJanitor/index.tsx b/src/plugins/consoleJanitor/index.tsx
+index 4896766..0000000 100644
+--- a/src/plugins/consoleJanitor/index.tsx
++++ b/src/plugins/consoleJanitor/index.tsx
+@@ -27,6 +27,8 @@ const NoopLogger = {
+ };
+ 
+ const logAllow = new Set();
++const BROKEN_RIVE_VIEW_MODEL_ERROR = "Could not find a View Model linked to Artboard BaseGlowRemapped.";
++let originalConsoleError: typeof console.error | undefined;
+ 
+ interface AllowLevels {
+     error: boolean;
+@@ -89,6 +91,15 @@ export default definePlugin({
+     start() {
+         logAllow.clear();
+         this.settings.store.whitelistedLoggers?.split(";").map(x => x.trim()).forEach(logAllow.add.bind(logAllow));
++        originalConsoleError ??= console.error;
++        console.error = (...args: unknown[]) => {
++            if (args[0] === BROKEN_RIVE_VIEW_MODEL_ERROR) return;
++            originalConsoleError!(...args);
++        };
++    },
++
++    stop() {
++        if (originalConsoleError) console.error = originalConsoleError;
++        originalConsoleError = undefined;
+     },
+ 
+     Noop,
