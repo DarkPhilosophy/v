@@ -1,8 +1,39 @@
+diff --git a/src/api/Themes.ts b/src/api/Themes.ts
+index 9180faa..b094d18 100644
+--- a/src/api/Themes.ts
++++ b/src/api/Themes.ts
+@@ -95,7 +95,7 @@ async function initThemes() {
+ }
+
+ function applyToPopout(popoutWindow: Window | undefined, key: string) {
+-    if (!popoutWindow?.document) return;
++    if (!popoutWindow?.document || !vencordRootNode) return;
+     // skip game overlay cuz it needs to stay transparent, themes broke it
+     if (key === "DISCORD_OutOfProcessOverlay") return;
+
 diff --git a/src/plugins/_core/noTrack.ts b/src/plugins/_core/noTrack.ts
-index 5ba03b4..8b02309 100644
+index 5ba03b4..aad610d 100644
 --- a/src/plugins/_core/noTrack.ts
 +++ b/src/plugins/_core/noTrack.ts
-@@ -127,6 +127,12 @@ export default definePlugin({
+@@ -23,6 +23,8 @@ import definePlugin, { OptionType, StartAt } from "@utils/types";
+ import { WebpackRequire } from "@vencord/discord-types/webpack";
+ import { Flux, FluxDispatcher } from "@webpack/common";
+
++import { installDiscordKnownNoiseFilter } from "../../discordNoise";
++
+ const settings = definePluginSettings({
+     disableAnalytics: {
+         type: OptionType.BOOLEAN,
+@@ -83,6 +85,8 @@ export default definePlugin({
+
+     startAt: StartAt.Init,
+     start() {
++        installDiscordKnownNoiseFilter(console);
++
+         // Sentry is initialized in its own WebpackInstance.
+         // It has everything it needs preloaded, so, it doesn't include any chunk loading functionality.
+         // Because of that, its WebpackInstance doesnt export wreq.m or wreq.c
+@@ -127,6 +131,12 @@ export default definePlugin({
                  Reflect.deleteProperty(Function.prototype, "d");
                  Reflect.deleteProperty(window, "DiscordSentry");
  

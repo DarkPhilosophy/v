@@ -47,8 +47,8 @@ const PLATFORMS = {
     android: { label: "Android", os: "Android", browser: "Discord Android" },
     ios: { label: "iOS", os: "iOS", browser: "Discord iOS" },
     embedded: { label: "Embedded", os: "Other", browser: "Discord Embedded" },
-    playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Embedded" },
-    xbox: { label: "Xbox", os: "Xbox", browser: "Discord Embedded" },
+    playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Client" },
+    xbox: { label: "Xbox", os: "Xbox", browser: "Discord Client" },
 } as const;
 
 type PlatformKey = keyof typeof PLATFORMS;

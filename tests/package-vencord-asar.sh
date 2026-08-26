@@ -139,7 +139,11 @@ assert "runtime-noise.patch" in installer
 assert 'event.error.message === "Sentry successfully disabled"' in runtime_noise_patch
 assert "event.preventDefault();" in runtime_noise_patch
 assert 'installNoopSentryIpc(window as unknown as Record<string, unknown>);' in runtime_noise_patch
-assert 'installDiscordKnownNoiseFilter(console);' in runtime_noise_patch
+assert runtime_noise_patch.count('installDiscordKnownNoiseFilter(console);') == 2
+assert 'import { installDiscordKnownNoiseFilter } from "../../discordNoise";' in runtime_noise_patch
+assert 'SCRIPT_COST_WARNING = "[scriptCost] retained URL count exceeded maxUrls (1000); evicting lowest-cost entries.";' in discord_noise
+assert "MISSING_LOCALE_MESSAGE" in discord_noise
+assert 'if (!popoutWindow?.document || !vencordRootNode) return;' in runtime_noise_patch
 assert 'pushDirective("connect-src", "sentry-ipc:");' not in runtime_noise_patch
 assert 'sendRendererStart() { }' in sentry_ipc
 assert 'sendScope() { }' in sentry_ipc

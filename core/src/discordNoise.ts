@@ -17,15 +17,30 @@
 */
 
 const BASE_GLOW_WARNING = "Could not find a View Model linked to Artboard BaseGlowRemapped.";
+const SCRIPT_COST_WARNING = "[scriptCost] retained URL count exceeded maxUrls (1000); evicting lowest-cost entries.";
+const MISSING_LOCALE_MESSAGE = /^Requested message .+ does not have a value in the requested locale .+ nor the default locale .+$/;
 
-export interface ConsoleErrorLike {
+export interface ConsoleLike {
     error(...args: unknown[]): void;
+    warn(...args: unknown[]): void;
 }
 
-export function installDiscordKnownNoiseFilter(consoleObject: ConsoleErrorLike): void {
+export function installDiscordKnownNoiseFilter(consoleObject: ConsoleLike): void {
     const originalError = consoleObject.error.bind(consoleObject);
+    const originalWarn = consoleObject.warn.bind(consoleObject);
     consoleObject.error = (...args: unknown[]) => {
         if (args.length === 1 && args[0] === BASE_GLOW_WARNING) return;
         originalError(...args);
+    };
+    consoleObject.warn = (...args: unknown[]) => {
+        if (
+            args.length === 1
+            && typeof args[0] === "string"
+            && (
+                args[0] === SCRIPT_COST_WARNING
+                || MISSING_LOCALE_MESSAGE.test(args[0])
+            )
+        ) return;
+        originalWarn(...args);
     };
 }
