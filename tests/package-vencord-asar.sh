@@ -109,7 +109,7 @@ if "$HELPER" "$WORK/missing" "$WORK/existing.asar" 2>/dev/null; then
     echo 'expected packaging failure' >&2
     exit 1
 fi
-python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" "$RUNTIME_NOISE_PATCH" "$ROOT/core/src/sentryIpc.ts" <<'PY'
+python3 - "$UPDATE_PATCH" "$INSTALLER" "$DETECTOR" "$RUNTIME_NOISE_PATCH" "$ROOT/core/src/sentryIpc.ts" "$ROOT/core/src/discordNoise.ts" <<'PY'
 from pathlib import Path
 import sys
 
@@ -118,6 +118,7 @@ installer = Path(sys.argv[2]).read_text(encoding="utf-8")
 detector = Path(sys.argv[3]).read_text(encoding="utf-8")
 runtime_noise_patch = Path(sys.argv[4]).read_text(encoding="utf-8")
 sentry_ipc = Path(sys.argv[5]).read_text(encoding="utf-8")
+discord_noise = Path(sys.argv[6]).read_text(encoding="utf-8")
 generator = 'join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")'
 build = 'await run("node", args, source, { VENCORD_HASH: buildHash });'
 assert generator in patch
@@ -138,7 +139,7 @@ assert "runtime-noise.patch" in installer
 assert 'event.error.message === "Sentry successfully disabled"' in runtime_noise_patch
 assert "event.preventDefault();" in runtime_noise_patch
 assert 'installNoopSentryIpc(window as unknown as Record<string, unknown>);' in runtime_noise_patch
-assert '"Could not find a View Model linked to Artboard BaseGlowRemapped."' in runtime_noise_patch
+assert 'installDiscordKnownNoiseFilter(console);' in runtime_noise_patch
 assert 'pushDirective("connect-src", "sentry-ipc:");' not in runtime_noise_patch
 assert 'sendRendererStart() { }' in sentry_ipc
 assert 'sendScope() { }' in sentry_ipc
@@ -146,6 +147,8 @@ assert 'sendEnvelope() { }' in sentry_ipc
 assert 'sendStatus() { }' in sentry_ipc
 assert 'sendStructuredLog() { }' in sentry_ipc
 assert 'sendMetric() { }' in sentry_ipc
+assert 'BASE_GLOW_WARNING = "Could not find a View Model linked to Artboard BaseGlowRemapped.";' in discord_noise
+assert 'args.length === 1' in discord_noise
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer
 assert 'OPENASAR_URL="${OPENASAR_URL:-https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar}"' in installer
 assert 'OPENASAR_ACTION="$("$OPENASAR_CHOOSER")"' in installer
