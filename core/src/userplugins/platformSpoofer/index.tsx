@@ -47,8 +47,8 @@ const PLATFORMS = {
     android: { label: "Android", os: "Android", browser: "Discord Android" },
     ios: { label: "iOS", os: "iOS", browser: "Discord iOS" },
     embedded: { label: "Embedded", os: "Other", browser: "Discord Embedded" },
-    playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Client" },
-    xbox: { label: "Xbox", os: "Xbox", browser: "Discord Client" },
+    playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Embedded" },
+    xbox: { label: "Xbox", os: "Xbox", browser: "Discord Embedded" },
 } as const;
 
 type PlatformKey = keyof typeof PLATFORMS;
@@ -548,6 +548,17 @@ export default definePlugin({
     description: "Spoof your Discord client platform (Desktop, Mobile, Web, Console). Requires Discord restart for guaranteed effect.",
     authors: [{ name: "Alex", id: 0n }],
     settings,
+
+    // Discord ships discord_cloudsync on Linux, but its current web gate only
+    // initializes the native module on macOS and non-ARM64 Windows. Extend that
+    // capability check without changing the platform sent in Gateway IDENTIFY.
+    patches: [{
+        find: "CloudSync is not supported on this platform",
+        replacement: {
+            match: /(\i)\.isPlatformEmbedded&&\(\(0,\1\.isMac\)\(\)\|\|\(0,\1\.isWindows\)\(\)&&"arm64"!==\i\.\i\.architecture(?=\))/,
+            replace: "$&||(0,$1.isLinux)()"
+        }
+    }],
 
     // Run at Init — waitForStore callback fires when webpack loads the store module.
     startAt: StartAt.Init,

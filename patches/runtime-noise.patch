@@ -15,25 +15,7 @@ diff --git a/src/plugins/_core/noTrack.ts b/src/plugins/_core/noTrack.ts
 index 5ba03b4..aad610d 100644
 --- a/src/plugins/_core/noTrack.ts
 +++ b/src/plugins/_core/noTrack.ts
-@@ -23,6 +23,8 @@ import definePlugin, { OptionType, StartAt } from "@utils/types";
- import { WebpackRequire } from "@vencord/discord-types/webpack";
- import { Flux, FluxDispatcher } from "@webpack/common";
-
-+import { installDiscordKnownNoiseFilter } from "../../discordNoise";
-+
- const settings = definePluginSettings({
-     disableAnalytics: {
-         type: OptionType.BOOLEAN,
-@@ -83,6 +85,8 @@ export default definePlugin({
-
-     startAt: StartAt.Init,
-     start() {
-+        installDiscordKnownNoiseFilter(console);
-+
-         // Sentry is initialized in its own WebpackInstance.
-         // It has everything it needs preloaded, so, it doesn't include any chunk loading functionality.
-         // Because of that, its WebpackInstance doesnt export wreq.m or wreq.c
-@@ -127,6 +131,12 @@ export default definePlugin({
+@@ -127,6 +127,12 @@ export default definePlugin({
                  Reflect.deleteProperty(Function.prototype, "d");
                  Reflect.deleteProperty(window, "DiscordSentry");
  
@@ -50,16 +32,15 @@ diff --git a/src/preload.ts b/src/preload.ts
 index 5f7adb9..cefcbb7 100644
 --- a/src/preload.ts
 +++ b/src/preload.ts
-@@ -20,6 +20,8 @@ import { debounce } from "@shared/debounce";
+@@ -20,6 +20,7 @@ import { debounce } from "@shared/debounce";
  import { IpcEvents } from "@shared/IpcEvents";
  import { contextBridge, webFrame } from "electron/renderer";
  
-+import { installDiscordKnownNoiseFilter } from "./discordNoise";
 +import { installNoopSentryIpc } from "./sentryIpc";
  import VencordNative, { invoke, sendSync } from "./VencordNative";
  
  contextBridge.exposeInMainWorld("VencordNative", VencordNative);
-@@ -29,6 +31,13 @@ if (location.protocol !== "data:") {
+@@ -29,6 +30,13 @@ if (location.protocol !== "data:") {
      invoke(IpcEvents.INIT_FILE_WATCHERS);
  
      if (IS_DISCORD_DESKTOP) {
@@ -68,7 +49,6 @@ index 5f7adb9..cefcbb7 100644
 +        // bridge exists, install an inert one so Sentry cannot fall back to
 +        // unsupported sentry-ipc:// fetches or send reports.
 +        installNoopSentryIpc(window as unknown as Record<string, unknown>);
-+        installDiscordKnownNoiseFilter(console);
 +
          webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
          // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
