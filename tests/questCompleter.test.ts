@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createDeferredHandler } from "../core/src/userplugins/questCompleter/deferredHandler.ts";
 import { isAutomatableQuest } from "../core/src/userplugins/questCompleter/taskSupport.ts";
+import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, runConcurrentQuestBatch } from "../core/src/userplugins/questCompleter/resilience.ts";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -92,4 +93,99 @@ test("restarting Quest Store handling cannot revive stale scheduled work", async
 test("activity achievement quests are excluded from automatic completion", () => {
     assert.equal(isAutomatableQuest({ ACHIEVEMENT_IN_ACTIVITY: { target: 1 } }), false);
     assert.equal(isAutomatableQuest({ WATCH_VIDEO: { target: 60 } }), true);
+});
+
+test("Quest heartbeat wait rejects and cleans up when the gateway closes", async () => {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    const dispatcher = {
+        subscribe(event: string, listener: (event: unknown) => void) {
+            const eventListeners = listeners.get(event) ?? new Set();
+            eventListeners.add(listener);
+            listeners.set(event, eventListeners);
+        },
+        unsubscribe(event: string, listener: (event: unknown) => void) {
+            listeners.get(event)?.delete(listener);
+        }
+    };
+    let cleaned = 0;
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { cleaned++; });
+    listeners.get("CONNECTION_CLOSED")?.forEach(listener => listener({}));
+    await assert.rejects(wait.promise, /Gateway connection closed/);
+    assert.equal(cleaned, 1);
+    assert.equal([...listeners.values()].reduce((sum, entries) => sum + entries.size, 0), 0);
+});
+
+test("Quest heartbeat wait ignores other quests and resolves on target completion", async () => {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    const dispatcher = {
+        subscribe(event: string, listener: (event: unknown) => void) {
+            const eventListeners = listeners.get(event) ?? new Set();
+            eventListeners.add(listener);
+            listeners.set(event, eventListeners);
+        },
+        unsubscribe(event: string, listener: (event: unknown) => void) {
+            listeners.get(event)?.delete(listener);
+        }
+    };
+    let cleaned = 0;
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { cleaned++; });
+    listeners.get("QUESTS_SEND_HEARTBEAT_SUCCESS")?.forEach(listener =>
+        listener({ questId: "quest-2", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 60 } } } })
+    );
+    listeners.get("QUESTS_SEND_HEARTBEAT_SUCCESS")?.forEach(listener =>
+        listener({ questId: "quest-1", userStatus: { progress: { WATCH_VIDEO: { value: 60 }, PLAY_ON_DESKTOP: { value: 10 } } } })
+    );
+    assert.equal(cleaned, 0);
+    listeners.get("QUESTS_SEND_HEARTBEAT_SUCCESS")?.forEach(listener =>
+        listener({ questId: "quest-1", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 60 } } } })
+    );
+    await wait.promise;
+    assert.equal(cleaned, 1);
+});
+
+test("Quest auto-enroll honors Discord retry_after and ignores non-rate-limit errors", () => {
+    assert.equal(getRateLimitDelayMs({ status: 429, body: { retry_after: 2.5 } }), 2_500);
+    assert.equal(getRateLimitDelayMs({ status: 429, body: { retry_after: 0 } }), 1_000);
+    assert.equal(getRateLimitDelayMs({ status: 500, body: { retry_after: 2 } }), undefined);
+});
+
+test("Quest auto-enroll limits each scan to a bounded batch", () => {
+    assert.deepEqual(getEnrollmentBatch([1, 2, 3, 4, 5, 6, 7]), [1, 2, 3, 4, 5]);
+});
+
+test("automatic Quest completion includes video and play work in mixed batches", () => {
+    const quests = ["play-1", "play-2", "play-3", "play-4", "play-5", "video-1", "video-2"];
+    assert.deepEqual(
+        getCompletionBatch(quests, quest => quest.startsWith("video")),
+        ["video-1", "video-2", "play-1", "play-2", "play-3"]
+    );
+});
+
+test("automatic Quest completion backs off failed batches and resets after progress", () => {
+    assert.equal(getNextAutomationDelayMs(0, 5_000), 10_000);
+    assert.equal(getNextAutomationDelayMs(0, 60_000), 60_000);
+    assert.equal(getNextAutomationDelayMs(1, 40_000), 5_000);
+});
+
+test("video quests run concurrently while play quests stay serial", async () => {
+    const active: string[] = [];
+    const peak: string[][] = [];
+    const { promise: releaseVideos, resolve } = Promise.withResolvers<void>();
+    const worker = async (quest: string) => {
+        active.push(quest);
+        peak.push([...active]);
+        if (quest.startsWith("video")) await releaseVideos;
+        active.splice(active.indexOf(quest), 1);
+    };
+    const run = runConcurrentQuestBatch(
+        ["video-1", "play-1", "video-2", "play-2", "video-3", "video-4"],
+        quest => quest.startsWith("video"),
+        worker,
+        3
+    );
+    await flush();
+    assert.equal(peak.some(snapshot => snapshot.filter(quest => quest.startsWith("video")).length === 3), true);
+    assert.equal(peak.some(snapshot => snapshot.includes("play-1") && snapshot.includes("play-2")), false);
+    resolve();
+    await run;
 });

@@ -10,6 +10,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByProps } from "@webpack";
 import { Button, FluxDispatcher, Forms, RestAPI, showToast, Toasts } from "@webpack/common";
 import { createDeferredHandler, type DeferredHandler } from "./deferredHandler";
+import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, runConcurrentQuestBatch } from "./resilience";
 import { isAutomatableQuest } from "./taskSupport";
 
 
@@ -90,15 +91,8 @@ interface PublicApplication {
     executables?: { os: string; name: string; }[];
 }
 
-interface HeartbeatEvent {
-    questId: string;
-    userStatus?: {
-        progress?: Record<string, { value: number; }>;
-        streamProgressSeconds?: number;
-    };
-}
 
-const TASK_ORDER = ["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY"] as const;
+const TASK_ORDER = ["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "PLAY_ON_PLAYSTATION", "PLAY_ON_XBOX", "ACHIEVEMENT_IN_ACTIVITY"] as const;
 
 const settings = definePluginSettings({
     autoComplete: {
@@ -170,6 +164,11 @@ function getStore<T>(...props: string[]): T | null {
 // New Discord API: application.name is gone from QuestStore. Game names now live in messages.
 function getAppName(quest: Quest): string {
     return quest.config.messages.gameTitle ?? quest.config.messages.questName;
+}
+
+function isVideoQuest(quest: Quest): boolean {
+    const tasks = quest.config.taskConfigV2?.tasks ?? quest.config.taskConfig?.tasks ?? {};
+    return TASK_ORDER.find(taskName => tasks[taskName] != null)?.startsWith("WATCH_VIDEO") ?? false;
 }
 
 async function completeQuest(quest: Quest): Promise<void> {
@@ -256,47 +255,44 @@ async function completeQuest(quest: Quest): Promise<void> {
             start: Date.now(),
         };
 
-        const existingGames = store.getRunningGames();
-        const getRunningSnapshot = store.getRunningGames;
-        const getForPIDSnapshot = store.getGameForPID;
+        const runningGameStore = store;
+        const existingGames = runningGameStore.getRunningGames();
+        const getRunningSnapshot = runningGameStore.getRunningGames.bind(runningGameStore);
+        const getForPIDSnapshot = runningGameStore.getGameForPID.bind(runningGameStore);
         const entries = [gameEntry];
-        store.getRunningGames = () => entries;
-        store.getGameForPID = (p: number) => entries.find(x => x.pid === p);
+        runningGameStore.getRunningGames = () => entries;
+        runningGameStore.getGameForPID = (p: number) => entries.find(x => x.pid === p);
         FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: existingGames, added: [gameEntry], games: entries });
         logger.info(`${appName}: running game pid=${pid}, awaiting heartbeats`);
 
         toast(`${appName}: waiting for heartbeats (~${Math.ceil(secondsNeeded / 60)} min). Keep Discord open.`);
 
-        const { promise, resolve, reject } = Promise.withResolvers<void>();
-        // Restore the snapshot and unsubscribe — used on both success and heartbeat timeout.
+        // Restore the snapshot when completion succeeds, the heartbeat fails, the
+        // Gateway closes, or the watchdog expires.
         function cleanup(): void {
-            store.getRunningGames = getRunningSnapshot;
-            store.getGameForPID = getForPIDSnapshot;
+            runningGameStore.getRunningGames = getRunningSnapshot;
+            runningGameStore.getGameForPID = getForPIDSnapshot;
             FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [gameEntry], added: [], games: [] });
-            FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onBeat);
         }
-        const onBeat = (data: HeartbeatEvent) => {
-            if (data.questId !== quest.id) return;
-            const value = Math.floor(data.userStatus?.progress?.[taskName]?.value ?? data.userStatus?.streamProgressSeconds ?? 0);
-            logger.info(`${appName} play ${value}/${secondsNeeded}s`);
-            if (value < secondsNeeded) return;
-            clearTimeout(watchdog);
-            cleanup();
-            logger.info(`${appName}: play complete (${secondsNeeded}s)`);
-            toast(`${appName}: play quest complete`, Toasts.Type.SUCCESS);
-            resolve();
-        };
-        // Safety: if Discord stops sending heartbeats (server-side cancel, network drop,
-        // tab closed mid-run), restore the original game store and bail out instead of
-        // leaving the override in place forever.
+        const heartbeat = createHeartbeatWait(
+            FluxDispatcher,
+            quest.id,
+            taskName,
+            secondsNeeded,
+            cleanup
+        );
         const watchdog = setTimeout(() => {
-            cleanup();
             logger.warn(`${appName}: heartbeat timeout (${secondsNeeded + 300}s), giving up`);
             toast(`${appName}: heartbeat timeout. Try again later.`, Toasts.Type.FAILURE);
-            reject(new Error("heartbeat timeout"));
+            heartbeat.cancel(new Error("heartbeat timeout"));
         }, (secondsNeeded + 300) * 1000);
-        FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onBeat);
-        try { await promise; } finally { clearTimeout(watchdog); }
+        try {
+            await heartbeat.promise;
+            logger.info(`${appName}: play complete (${secondsNeeded}s)`);
+            toast(`${appName}: play quest complete`, Toasts.Type.SUCCESS);
+        } finally {
+            clearTimeout(watchdog);
+        }
         return;
     }
 
@@ -310,6 +306,7 @@ async function completeQuest(quest: Quest): Promise<void> {
 }
 
 let running = false;
+let autoEnrollBlockedUntil = 0;
 async function completeAll(silent = false): Promise<void> {
     if (running) {
         if (!silent) toast("Already running.", Toasts.Type.FAILURE);
@@ -335,20 +332,36 @@ async function completeAll(silent = false): Promise<void> {
     logger.info(`Scan: ${todo.length} enrolled to complete, ${notEnrolled.length} not enrolled`);
 
     if (settings.store.autoEnroll) {
-        for (const quest of notEnrolled) {
-            try {
-                const res = await RestAPI.post({ url: `/quests/${quest.id}/enroll`, body: { location: 8 } });
-                const enrolled = res.body as { userStatus?: Quest["userStatus"]; } | undefined;
-                if (!enrolled?.userStatus?.enrolledAt) {
-                    logger.warn(`Enroll response missing valid userStatus for ${quest.config.messages.questName}; skipping until next scan`);
-                    continue;
+        if (Date.now() < autoEnrollBlockedUntil) {
+            logger.info(`Auto-enroll paused for ${Math.ceil((autoEnrollBlockedUntil - Date.now()) / 1000)}s after rate limit`);
+        } else {
+            const enrollmentBatch = getEnrollmentBatch(notEnrolled);
+            for (const [index, quest] of enrollmentBatch.entries()) {
+                try {
+                    const res = await RestAPI.post({ url: `/quests/${quest.id}/enroll`, body: { location: 8 } });
+                    const enrolled = res.body as { userStatus?: Quest["userStatus"]; } | undefined;
+                    if (!enrolled?.userStatus?.enrolledAt) {
+                        logger.warn(`Enroll response missing valid userStatus for ${quest.config.messages.questName}; skipping until next scan`);
+                        continue;
+                    }
+                    todo.push({ ...quest, userStatus: { ...enrolled.userStatus } });
+                    logger.info(`Enrolled: ${quest.config.messages.questName}`);
+                    if (!silent) toast(`${getAppName(quest)}: enrolled`);
+                } catch (err) {
+                    const retryDelayMs = getRateLimitDelayMs(err);
+                    logger.error("Enroll failed", quest.config.messages.questName, err);
+                    if (!silent) toast(`Enroll failed: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
+                    if (retryDelayMs !== undefined) {
+                        autoEnrollBlockedUntil = Date.now() + retryDelayMs;
+                        logger.warn(`Auto-enroll rate limited; pausing for ${Math.ceil(retryDelayMs / 1000)}s`);
+                        break;
+                    }
                 }
-                todo.push({ ...quest, userStatus: { ...enrolled.userStatus } });
-                logger.info(`Enrolled: ${quest.config.messages.questName}`);
-                if (!silent) toast(`${getAppName(quest)}: enrolled`);
-            } catch (err) {
-                logger.error("Enroll failed", quest.config.messages.questName, err);
-                if (!silent) toast(`Enroll failed: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
+                if (index + 1 < enrollmentBatch.length) {
+                    const { promise, resolve } = Promise.withResolvers<void>();
+                    setTimeout(resolve, 750);
+                    await promise;
+                }
             }
         }
     } else if (notEnrolled.length && !silent) {
@@ -360,27 +373,43 @@ async function completeAll(silent = false): Promise<void> {
         return;
     }
 
+    const completionBatch = silent ? getCompletionBatch(todo, isVideoQuest) : todo;
+    const hasDeferredQuests = completionBatch.length < todo.length;
     running = true;
-    toast(`Completing ${todo.length} quest(s)...`);
-    logger.info(`Starting completion of ${todo.length} quest(s): ${todo.map(q => q.config.messages.questName).join(", ")}`);
+    if (!silent) toast(`Completing ${completionBatch.length} quest(s)...`);
+    logger.info(`Starting completion of ${completionBatch.length}/${todo.length} quest(s): ${completionBatch.map(q => q.config.messages.questName).join(", ")}`);
+    let successfulQuests = 0;
     try {
-        for (const quest of todo) {
-            try {
-                await completeQuest(quest);
-            } catch (err) {
-                logger.error("Failed for quest", quest.config.messages.questName, err);
-                toast(`Error: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
-            }
-        }
-        logger.info("All quests processed");
-        toast("Done. Check Gift Inventory.", Toasts.Type.SUCCESS);
+        await runConcurrentQuestBatch(
+            completionBatch,
+            isVideoQuest,
+            async quest => {
+                try {
+                    await completeQuest(quest);
+                    successfulQuests++;
+                } catch (err) {
+                    logger.error("Failed for quest", quest.config.messages.questName, err);
+                    if (!silent) toast(`Error: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
+                }
+            },
+            3
+        );
+        logger.info("Quest batch processed");
+        if (!silent) toast("Done. Check Gift Inventory.", Toasts.Type.SUCCESS);
     } finally {
         running = false;
+        if (silent && hasDeferredQuests && autoHandler) {
+            autoContinuationDelayMs = getNextAutomationDelayMs(successfulQuests, autoContinuationDelayMs);
+            clearTimeout(autoContinuationTimer);
+            autoContinuationTimer = setTimeout(autoHandler, autoContinuationDelayMs);
+        }
     }
 }
 
 // Stored so start/stop can subscribe/unsubscribe the same reference.
 let autoHandler: DeferredHandler | undefined;
+let autoContinuationTimer: ReturnType<typeof setTimeout> | undefined;
+let autoContinuationDelayMs = 5_000;
 
 export default definePlugin({
     name: "QuestCompleter",
@@ -389,6 +418,7 @@ export default definePlugin({
     settings,
 
     start() {
+        autoContinuationDelayMs = 5_000;
         if (!settings.store.autoComplete) return;
         autoHandler = createDeferredHandler(
             () => completeAll(true),
@@ -399,6 +429,9 @@ export default definePlugin({
     },
 
     stop() {
+        clearTimeout(autoContinuationTimer);
+        autoContinuationTimer = undefined;
+        autoContinuationDelayMs = 5_000;
         if (!autoHandler) return;
         FluxDispatcher.unsubscribe("QUESTS_FETCH_CURRENT_QUESTS_SUCCESS", autoHandler);
         FluxDispatcher.unsubscribe("QUESTS_ENROLL_SUCCESS", autoHandler);
