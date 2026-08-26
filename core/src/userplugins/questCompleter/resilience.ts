@@ -17,7 +17,6 @@ export interface HeartbeatWait {
 }
 
 const HEARTBEAT_SUCCESS = "QUESTS_SEND_HEARTBEAT_SUCCESS";
-const HEARTBEAT_FAILURE = "QUESTS_SEND_HEARTBEAT_FAILURE";
 const CONNECTION_CLOSED = "CONNECTION_CLOSED";
 const AUTOMATION_BATCH_SIZE = 5;
 
@@ -34,7 +33,6 @@ export function createHeartbeatWait(
 
     const unsubscribe = () => {
         dispatcher.unsubscribe(HEARTBEAT_SUCCESS, onHeartbeat);
-        dispatcher.unsubscribe(HEARTBEAT_FAILURE, onHeartbeatFailure);
         dispatcher.unsubscribe(CONNECTION_CLOSED, onConnectionClosed);
     };
     const settle = (error?: Error) => {
@@ -51,17 +49,11 @@ export function createHeartbeatWait(
         const value = Math.floor(event.userStatus?.progress?.[taskName]?.value ?? event.userStatus?.streamProgressSeconds ?? 0);
         if (value >= secondsNeeded) settle();
     };
-    const onHeartbeatFailure = (rawEvent: unknown) => {
-        const event = rawEvent as HeartbeatEvent;
-        if (event.questId && event.questId !== questId) return;
-        settle(new Error("Quest heartbeat failed"));
-    };
     const onConnectionClosed = () => settle(new Error("Gateway connection closed"));
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     resolvePromise = resolve;
     rejectPromise = reject;
     dispatcher.subscribe(HEARTBEAT_SUCCESS, onHeartbeat);
-    dispatcher.subscribe(HEARTBEAT_FAILURE, onHeartbeatFailure);
     dispatcher.subscribe(CONNECTION_CLOSED, onConnectionClosed);
 
     return { promise, cancel: error => settle(error ?? new Error("Quest heartbeat cancelled")) };

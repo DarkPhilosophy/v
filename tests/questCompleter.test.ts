@@ -143,6 +143,31 @@ test("Quest heartbeat wait ignores other quests and resolves on target completio
     assert.equal(cleaned, 1);
 });
 
+test("transient Quest heartbeat failures keep waiting for later progress", async () => {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    const dispatcher = {
+        subscribe(event: string, listener: (event: unknown) => void) {
+            const eventListeners = listeners.get(event) ?? new Set();
+            eventListeners.add(listener);
+            listeners.set(event, eventListeners);
+        },
+        unsubscribe(event: string, listener: (event: unknown) => void) {
+            listeners.get(event)?.delete(listener);
+        }
+    };
+    let cleaned = 0;
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { cleaned++; });
+    listeners.get("QUESTS_SEND_HEARTBEAT_FAILURE")?.forEach(listener =>
+        listener({ questId: "quest-1", status: 500 })
+    );
+    assert.equal(cleaned, 0);
+    listeners.get("QUESTS_SEND_HEARTBEAT_SUCCESS")?.forEach(listener =>
+        listener({ questId: "quest-1", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 60 } } } })
+    );
+    await wait.promise;
+    assert.equal(cleaned, 1);
+});
+
 test("Quest auto-enroll honors Discord retry_after and ignores non-rate-limit errors", () => {
     assert.equal(getRateLimitDelayMs({ status: 429, body: { retry_after: 2.5 } }), 2_500);
     assert.equal(getRateLimitDelayMs({ status: 429, body: { retry_after: 0 } }), 1_000);
