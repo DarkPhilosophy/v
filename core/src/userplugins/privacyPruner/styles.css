@@ -1,0 +1,149 @@
+.vc-privacy-pruner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.vc-privacy-pruner-duration {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 0.55fr);
+    gap: 8px;
+    align-items: center;
+}
+
+.vc-privacy-pruner-defaults {
+    padding: 4px 0 12px;
+}
+
+@media (max-width: 520px) {
+    .vc-privacy-pruner-duration {
+        grid-template-columns: 1fr;
+    }
+}
+
+.vc-privacy-pruner-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.vc-privacy-pruner-switch-row > div:first-child {
+    min-width: 0;
+}
+
+.vc-privacy-pruner-preview {
+    padding: 12px;
+    margin-top: 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--background-secondary);
+}
+
+.vc-privacy-pruner-scan-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-top: 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--background-secondary);
+}
+
+.vc-privacy-pruner-spinner {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    border: 2px solid var(--background-modifier-accent);
+    border-top-color: var(--brand-experiment);
+    border-radius: 50%;
+    animation: vc-privacy-pruner-spin 800ms linear infinite;
+}
+
+@keyframes vc-privacy-pruner-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.vc-privacy-pruner-warning {
+    padding: 10px;
+    margin-bottom: 16px;
+    border-radius: 6px;
+    color: var(--text-warning);
+    background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+}
+
+.vc-privacy-pruner-danger {
+    margin-top: 8px;
+    color: var(--text-danger);
+}
+
+.vc-privacy-pruner-success {
+    margin-top: 8px;
+    color: var(--text-positive);
+}
+
+.vc-privacy-pruner-kept {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.vc-privacy-pruner-kept-copy {
+    min-width: 0;
+}
+
+.vc-privacy-pruner-message-content {
+    color: var(--text-normal);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.vc-privacy-pruner-kept-meta {
+    margin-top: 4px;
+    color: var(--text-muted);
+}
+
+.vc-privacy-pruner-delete-preview {
+    padding: 12px;
+    margin-top: 12px;
+    border-radius: 8px;
+    background: var(--background-secondary);
+}
+
+.vc-privacy-pruner-kept .vc-privacy-pruner-row-actions {
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+
+
+.vc-privacy-pruner-message-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.vc-privacy-pruner-message-copy {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.vc-privacy-pruner-row-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+}
+
+.vc-privacy-pruner-icon-active {
+    color: var(--status-positive);
+}
+
+.vc-privacy-pruner-icon-paused {
+    color: var(--status-warning);
+}
