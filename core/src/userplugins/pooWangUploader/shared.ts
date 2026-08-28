@@ -74,20 +74,23 @@ const DISCORD_PREVIEWABLE_CONTENT_TYPES = new Set([
     "video/x-m4v"
 ]);
 
+const INVISIBLE_MEDIA_LABEL = "\u2065";
 
-export function formatUploadLinks(files: readonly PooWangUploadFile[]): string {
-    return files.map(file => {
-        const contentType = file.contentType?.toLowerCase();
-        const previewable = (file.mediaKind === "image" || file.mediaKind === "video")
-            && contentType != null
-            && DISCORD_PREVIEWABLE_CONTENT_TYPES.has(contentType);
-        return previewable ? `[${file.mediaKind}](${file.url})` : file.url;
-    }).join("\n");
+export function formatUploadLink(file: PooWangUploadFile): string {
+    const contentType = file.contentType?.toLowerCase();
+    const previewable = (file.mediaKind === "image" || file.mediaKind === "video")
+        && contentType != null
+        && DISCORD_PREVIEWABLE_CONTENT_TYPES.has(contentType);
+    return previewable ? `[${INVISIBLE_MEDIA_LABEL}](${file.url})` : file.url;
 }
 
-export function composeUploadMessage(content: string, links: string): string {
+export function formatUploadLinks(files: readonly PooWangUploadFile[]): string {
+    return files.map(formatUploadLink).join("\n");
+}
+
+export function composeUploadMessages(content: string, links: readonly string[]): string[] {
     const existing = content.trimEnd();
-    return existing ? `${existing}\n${links}` : links;
+    return existing ? [existing, ...links] : [...links];
 }
 
 export function selectUploadRoute(input: {

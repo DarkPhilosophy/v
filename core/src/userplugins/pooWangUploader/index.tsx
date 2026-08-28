@@ -15,7 +15,7 @@ import type { CloudUpload, RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
 import { findByProps, findByPropsLazy } from "@webpack";
 import { closeModal, ComponentDispatch, ContextMenuApi, FluxDispatcher, Forms, Menu, MessageActions, Modal, openModal, showToast, TextInput, Toasts, useEffect, useState } from "@webpack/common";
-import { composeUploadMessage, formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadFile, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
+import { composeUploadMessages, formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadFile, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
 const logger = new Logger("PooWangUploader");
@@ -445,7 +445,7 @@ const plugin = definePlugin({
     },
 
 
-    async uploadExternally(files: File[]): Promise<string | undefined> {
+    async uploadExternally(files: File[]): Promise<PooWangUploadFile[] | undefined> {
         const uploadedFiles: PooWangUploadFile[] = [];
         let failure: PooWangUploadResult | undefined;
 
@@ -508,7 +508,7 @@ const plugin = definePlugin({
         }
 
         showToast(`Uploaded ${uploadedFiles.length} file(s) to poo.wang.`, Toasts.Type.SUCCESS);
-        return formatUploadLinks(uploadedFiles);
+        return uploadedFiles;
     },
 
     async onBeforeMessageSend(
@@ -519,6 +519,7 @@ const plugin = definePlugin({
     ) {
         const store = findByProps("getUploads", "getUploadCount") as {
             getUploads(channelId: string, draftType: DraftType): CloudUpload[];
+            clearAll?(channelId: string, draftType: DraftType): void;
         } | null;
         const uploads = store?.getUploads(channelId, DraftType.ChannelMessage)
             .filter(upload => !upload.isThumbnail && upload.item?.file instanceof File) ?? [];
@@ -539,37 +540,69 @@ const plugin = definePlugin({
         if (route === "prompt") {
             const reroute = await askUploadRoute(files, tokenConfigured);
             if (reroute === undefined) {
-                uploads.forEach(upload => upload.removeFromMsgDraft());
+                uploads.forEach(upload => {
+                    upload.cancel();
+                    upload.removeFromMsgDraft();
+                });
+                store?.clearAll?.(channelId, DraftType.ChannelMessage);
+                window.setTimeout(() => store?.clearAll?.(channelId, DraftType.ChannelMessage), 0);
                 logger.info("Cleared draft attachments after upload route cancellation", { files: uploads.length, channelId });
                 return { cancel: true };
             }
             if (!reroute) return;
         }
 
-        const links = await this.uploadExternally(files);
-        if (!links) return { cancel: true };
-        const outgoingMessage = { ...message, content: composeUploadMessage(message.content, links) };
-        const outgoingOptions = { ...options, attachmentsToUpload: [] };
+        const uploadedFiles = await this.uploadExternally(files);
+        if (!uploadedFiles) return { cancel: true };
+        const messageContents = composeUploadMessages(message.content, uploadedFiles.map(file => formatUploadLinks([file])));
+        const originalOptions = { ...options, attachmentsToUpload: [] };
+        let sentMessages = 0;
         try {
-            await MessageActions.sendMessage(channelId, outgoingMessage, true, outgoingOptions);
+            for (const content of messageContents) {
+                const carriesOriginalOptions = sentMessages === 0;
+                await MessageActions.sendMessage(
+                    channelId,
+                    carriesOriginalOptions
+                        ? { ...message, content }
+                        : { content, invalidEmojis: [], tts: false, validNonShortcutEmojis: [] },
+                    true,
+                    carriesOriginalOptions
+                        ? originalOptions
+                        : { location: options.location, attachmentsToUpload: [] }
+                );
+                sentMessages++;
+            }
         } catch (error) {
-            logger.error("Could not send poo.wang links", error);
-            showToast("The file uploaded, but Discord could not send its link. Your draft was kept.", Toasts.Type.FAILURE);
-            return { cancel: true };
+            logger.error("Could not send poo.wang message sequence", error);
+            showToast(
+                sentMessages > 0
+                    ? `Sent ${sentMessages} message(s), but the remaining poo.wang previews failed.`
+                    : "The files uploaded, but Discord could not send their links. Your draft was kept.",
+                Toasts.Type.FAILURE
+            );
+            if (sentMessages === 0) return { cancel: true };
         }
+
         const handledUploadIds = new Set(uploads.map(upload => upload.id));
         const clearHandledUploads = () => {
             const currentUploads = store?.getUploads(channelId, DraftType.ChannelMessage) ?? [];
-            currentUploads
-                .filter(upload => handledUploadIds.has(upload.id))
-                .forEach(upload => upload.removeFromMsgDraft());
+            for (const upload of [...uploads, ...currentUploads]) {
+                if (!handledUploadIds.has(upload.id)) continue;
+                upload.cancel();
+                upload.removeFromMsgDraft();
+            }
         };
         DraftManager.clearDraft(channelId, DraftType.ChannelMessage);
         ComponentDispatch.dispatchToLastSubscribed("CLEAR_TEXT");
         FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId });
         clearHandledUploads();
-        window.setTimeout(clearHandledUploads, 0);
-        logger.info("Sent poo.wang links and scheduled composer cleanup", { files: uploads.length, channelId });
+        store?.clearAll?.(channelId, DraftType.ChannelMessage);
+        window.setTimeout(() => {
+            clearHandledUploads();
+            store?.clearAll?.(channelId, DraftType.ChannelMessage);
+        }, 0);
+        window.setTimeout(clearHandledUploads, 250);
+        logger.info("Sent split poo.wang previews and scheduled composer cleanup", { files: uploads.length, channelId, sentMessages });
         return { cancel: true };
     }
 });
