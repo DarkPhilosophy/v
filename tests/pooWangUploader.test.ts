@@ -72,6 +72,7 @@ test("random upload names use configured printable ASCII and preserve extensions
 
 test("plugin registers runtime hooks for plus, drop, paste, and an explicit chat button", () => {
     const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/index.tsx", import.meta.url), "utf8");
+    assert.match(source, /import \{ definePluginSettings \} from "@api\/Settings"/);
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.match(source, /document\.addEventListener\("click"/);
     assert.match(source, /document\.addEventListener\("drop"/);
