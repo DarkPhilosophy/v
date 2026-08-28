@@ -38,7 +38,7 @@ test("previewable images and videos use an invisible U+2065 masked-link label", 
     assert.equal(formatUploadLinks([
         { id: "a", name: "photo[1].webp", url: "https://poo.wang/f/a", contentType: "image/webp", mediaKind: "image" },
         { id: "b", name: "clip.mp4", url: "https://poo.wang/f/b", contentType: "video/mp4", mediaKind: "video" }
-    ]), "[\u2065](https://poo.wang/f/a)\n[\u2065](https://poo.wang/f/b)");
+    ]), "[\u2065](https://poo.wang/f/a) [\u2065](https://poo.wang/f/b)");
 });
 
 test("unsupported media and regular files preserve raw URLs", () => {
@@ -46,13 +46,14 @@ test("unsupported media and regular files preserve raw URLs", () => {
         { id: "a", name: "vector.svg", url: "https://poo.wang/f/a", contentType: "image/svg+xml", mediaKind: "unsafe-image" },
         { id: "b", name: "movie.mkv", url: "https://poo.wang/f/b", contentType: "video/x-matroska", mediaKind: "video" },
         { id: "c", name: "archive.zip", url: "https://poo.wang/f/c", contentType: "application/zip", mediaKind: "file" }
-    ]), "https://poo.wang/f/a\nhttps://poo.wang/f/b\nhttps://poo.wang/f/c");
+    ]), "https://poo.wang/f/a https://poo.wang/f/b https://poo.wang/f/c");
 });
 
-test("send-time rerouting separates draft text and every preview link", () => {
+test("send-time rerouting separates text from one grouped preview message", () => {
     const links = ["[\u2065](https://poo.wang/f/a)", "[\u2065](https://poo.wang/f/b)"];
-    assert.deepEqual(composeUploadMessages("hello  ", links), ["hello", ...links]);
-    assert.deepEqual(composeUploadMessages("", links), links);
+    const groupedMedia = links.join(" ");
+    assert.deepEqual(composeUploadMessages("hello  ", links), ["hello", groupedMedia]);
+    assert.deepEqual(composeUploadMessages("", links), [groupedMedia]);
 });
 
 test("default routing is silent while opt-in routing prompts", () => {
@@ -108,19 +109,14 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /document\.addEventListener\("contextmenu"/);
     assert.match(source, /async onBeforeMessageSend/);
     assert.match(source, /getUploads\(channelId, DraftType\.ChannelMessage\)/);
-    assert.match(source, /upload\.removeFromMsgDraft\(\)/);
-    assert.match(source, /const messageContents = composeUploadMessages\(message\.content/);
+    assert.match(source, /const messageContents = composeUploadMessages\(message\.content, \[formatUploadLinks\(uploadedFiles\)\]\)/);
     assert.match(source, /for \(const content of messageContents\)/);
-    assert.match(source, /uploadedFiles\.map\(file => formatUploadLinks\(\[file\]\)\)/);
-    assert.match(source, /const handledUploadIds = new Set\(uploads\.map\(upload => upload\.id\)\)/);
+    assert.match(source, /const handledUploadIds = uploads\.map\(upload => upload\.id\)/);
     assert.match(source, /upload\.cancel\(\)/);
-    assert.match(source, /window\.setTimeout\(clearHandledUploads, 250\)/);
-    assert.match(source, /clearAll\?\(channelId: string, draftType: DraftType\): void/);
-    assert.match(source, /store\?\.clearAll\?\.\(channelId, DraftType\.ChannelMessage\)/);
-    assert.match(source, /DraftManager\.clearDraft\(channelId, DraftType\.ChannelMessage\)/);
-    assert.match(source, /ComponentDispatch\.dispatchToLastSubscribed\("CLEAR_TEXT"\)/);
-    assert.match(source, /FluxDispatcher\.dispatch\(\{ type: "DELETE_PENDING_REPLY", channelId \}\)/);
-    assert.match(source, /return \{ cancel: true \}/);
+    assert.match(source, /type: "UPLOAD_ATTACHMENT_REMOVE_FILES"/);
+    assert.match(source, /attachmentIds: handledUploadIds/);
+    assert.match(source, /window\.setTimeout\(removeHandledUploads, 250\)/);
+    assert.match(source, /if \(reroute === undefined\) \{[\s\S]*?scheduleUploadRemoval\(\)/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
     assert.match(source, /poo-wang-default/);
@@ -129,7 +125,6 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /data-vc-poo-wang-settings/);
     assert.match(source, /poo\.wang quick settings/);
     assert.match(source, />Cancel</);
-    assert.match(source, /if \(reroute === undefined\) \{[\s\S]*?upload\.cancel\(\)[\s\S]*?clearAll/);
     assert.match(source, /Cleared draft attachments after upload route cancellation/);
     assert.match(source, />Upload with Discord</);
     assert.match(source, />Upload with poo\.wang</);

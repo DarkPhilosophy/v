@@ -85,12 +85,13 @@ export function formatUploadLink(file: PooWangUploadFile): string {
 }
 
 export function formatUploadLinks(files: readonly PooWangUploadFile[]): string {
-    return files.map(formatUploadLink).join("\n");
+    return files.map(formatUploadLink).join(" ");
 }
 
 export function composeUploadMessages(content: string, links: readonly string[]): string[] {
     const existing = content.trimEnd();
-    return existing ? [existing, ...links] : [...links];
+    const media = links.join(" ").trim();
+    return [existing, media].filter(Boolean);
 }
 
 export function selectUploadRoute(input: {
