@@ -5,12 +5,11 @@
  */
 
 import { definePluginSettings } from "@api/Settings";
-import { ChatBarButton, type ChatBarButtonFactory } from "@api/ChatButtons";
 import { Button } from "@components/Button";
 import { Switch } from "@components/Switch";
 import { copyWithToast, insertTextIntoChatInputBox } from "@utils/discord";
 import { Logger } from "@utils/Logger";
-import definePlugin, { type IconComponent, OptionType, PluginNative } from "@utils/types";
+import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
 import { ChannelStore, closeModal, Forms, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
@@ -30,24 +29,6 @@ interface UploadOptions {
     requireConfirm?: boolean;
 }
 
-const UploadIcon: IconComponent = ({ height = 20, width = 20, className }) => (
-    <svg width={width} height={height} className={className} viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor" d="M12 2a1 1 0 0 1 .7.29l4 4a1 1 0 0 1-1.4 1.42L13 5.41V15a1 1 0 1 1-2 0V5.41L8.7 7.71a1 1 0 0 1-1.4-1.42l4-4A1 1 0 0 1 12 2ZM5 14a1 1 0 0 1 1 1v4h12v-4a1 1 0 1 1 2 0v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" />
-    </svg>
-);
-
-const PooWangChatButton: ChatBarButtonFactory = props => {
-    if (!props.isAnyChat || !settings.store.enabled) return null;
-
-    return (
-        <ChatBarButton
-            tooltip="Upload files through poo.wang"
-            onClick={() => void plugin.pickAndUpload(props.channel, props.type.drafts.type)}
-        >
-            <UploadIcon />
-        </ChatBarButton>
-    );
-};
 
 function AccessTokenSetting() {
     const [token, setToken] = useState("");
@@ -248,7 +229,7 @@ const settings = definePluginSettings({
     },
     hookPlusButton: {
         type: OptionType.BOOLEAN,
-        description: "Use left click on Discord's plus attachment button for a direct poo.wang file picker",
+        description: "Reroute files selected from Discord's + → Upload a File action",
         default: true
     },
     showChoice: {
@@ -320,12 +301,7 @@ const plugin = definePlugin({
     tags: ["Privacy", "Utility"],
     settings,
 
-    chatBarButton: {
-        icon: UploadIcon,
-        render: PooWangChatButton
-    },
-
-    clickListener: undefined as ((event: MouseEvent) => void) | undefined,
+    changeListener: undefined as ((event: Event) => void) | undefined,
     dropListener: undefined as ((event: DragEvent) => void) | undefined,
     pasteListener: undefined as ((event: ClipboardEvent) => void) | undefined,
 
@@ -335,38 +311,34 @@ const plugin = definePlugin({
             .then(value => { tokenConfigured = value; })
             .catch(error => logger.error("Could not read poo.wang token state", error));
 
-        this.clickListener = event => this.handleDocumentClick(event);
+        this.changeListener = event => this.handleFileSelection(event);
         this.dropListener = event => this.handleDocumentDrop(event);
         this.pasteListener = event => this.handleDocumentPaste(event);
-        document.addEventListener("click", this.clickListener, true);
+        document.addEventListener("change", this.changeListener, true);
         document.addEventListener("drop", this.dropListener, true);
         document.addEventListener("paste", this.pasteListener, true);
     },
 
     stop() {
         tokenConfigured = false;
-        if (this.clickListener) document.removeEventListener("click", this.clickListener, true);
+        if (this.changeListener) document.removeEventListener("change", this.changeListener, true);
         if (this.dropListener) document.removeEventListener("drop", this.dropListener, true);
         if (this.pasteListener) document.removeEventListener("paste", this.pasteListener, true);
-        this.clickListener = this.dropListener = this.pasteListener = undefined;
+        this.changeListener = this.dropListener = this.pasteListener = undefined;
     },
 
     currentChannel(): UploadChannel | undefined {
         return ChannelStore.getChannel(SelectedChannelStore.getChannelId());
     },
 
-    handleDocumentClick(event: MouseEvent) {
-        if (!settings.store.enabled || !settings.store.hookPlusButton || event.button !== 0) return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (!target?.closest('[class*="attachButton"]')) return;
+    handleFileSelection(event: Event) {
+        if (!settings.store.hookPlusButton) return;
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
+        const files = Array.from(input.files ?? []);
+        this.routeDomFiles(files, event);
 
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        const channel = this.currentChannel();
-        if (channel) void this.pickAndUpload(channel, DraftType.ChannelMessage);
     },
-
     routeDomFiles(files: File[], event: Event): boolean {
         const channel = this.currentChannel();
         if (!channel || files.length === 0) return false;
