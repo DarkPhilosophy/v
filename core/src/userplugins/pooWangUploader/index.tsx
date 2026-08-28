@@ -13,7 +13,7 @@ import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { closeModal, Forms, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
 import type * as NativeModule from "./native";
-import { formatUploadLinks, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
+import { formatUploadLinks, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute, shouldHookPlusButton } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
 const logger = new Logger("PooWangUploader");
@@ -102,9 +102,10 @@ function UploadRouteModal(props: {
     rootProps: RenderModalProps;
     files: readonly File[];
     defaultReroute: boolean;
+    tokenConfigured: boolean;
     resolve(value: boolean | undefined): void;
 }) {
-    const [reroute, setReroute] = useState(props.defaultReroute);
+    const [reroute, setReroute] = useState(props.defaultReroute && props.tokenConfigured);
     const totalMb = props.files.reduce((total, file) => total + file.size, 0) / 1024 / 1024;
     const close = (value: boolean | undefined) => {
         props.resolve(value);
@@ -121,8 +122,11 @@ function UploadRouteModal(props: {
                     <Forms.FormTitle>Reroute upload through poo.wang</Forms.FormTitle>
                     <Forms.FormText>Replace Discord attachments with retention-controlled poo.wang links.</Forms.FormText>
                 </div>
-                <Switch checked={reroute} onChange={setReroute} />
+                <Switch checked={reroute} onChange={setReroute} disabled={!props.tokenConfigured} />
             </label>
+            {!props.tokenConfigured && (
+                <Forms.FormText style={{ marginTop: 12 }}>Configure a registered-account machine token in the plugin settings to enable poo.wang.</Forms.FormText>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
                 <Button onClick={() => close(undefined)}>Cancel</Button>
                 <Button onClick={() => close(reroute)}>{reroute ? "Upload to poo.wang" : "Use Discord upload"}</Button>
@@ -131,7 +135,7 @@ function UploadRouteModal(props: {
     );
 }
 
-function askUploadRoute(files: readonly File[], defaultReroute: boolean): Promise<boolean | undefined> {
+function askUploadRoute(files: readonly File[], defaultReroute: boolean, hasToken: boolean): Promise<boolean | undefined> {
     const { promise, resolve } = Promise.withResolvers<boolean | undefined>();
     let settled = false;
     const settle = (value: boolean | undefined) => {
@@ -140,7 +144,7 @@ function askUploadRoute(files: readonly File[], defaultReroute: boolean): Promis
         resolve(value);
     };
     openModal(rootProps => (
-        <UploadRouteModal rootProps={rootProps} files={files} defaultReroute={defaultReroute} resolve={settle} />
+        <UploadRouteModal rootProps={rootProps} files={files} defaultReroute={defaultReroute} tokenConfigured={hasToken} resolve={settle} />
     ));
     return promise;
 }
@@ -205,6 +209,11 @@ const settings = definePluginSettings({
     enabled: {
         type: OptionType.BOOLEAN,
         description: "Enable poo.wang upload routing for normal chat attachments",
+        default: true
+    },
+    hookPlusButton: {
+        type: OptionType.BOOLEAN,
+        description: "Use left click on the plus button for poo.wang and right click for the original Discord upload menu",
         default: true
     },
     showChoice: {
@@ -276,15 +285,25 @@ export default definePlugin({
     tags: ["Privacy", "Utility"],
     settings,
 
-    patches: [{
-        find: "Unexpected mismatch between files and file metadata",
-        replacement: {
-            match: /async function \i\((\i),(\i),(\i)\)\{(?=let\{filesMetadata:)/,
-            replace: "$&if($self.interceptUploads($1,$2,$3,arguments[3]))return;"
+    patches: [
+        {
+            find: "Unexpected mismatch between files and file metadata",
+            replacement: {
+                match: /async function \i\((\i),(\i),(\i)\)\{(?=let\{filesMetadata:)/,
+                replace: "$&if($self.interceptUploads($1,$2,$3,arguments[3]))return;"
+            }
+        },
+        {
+            find: ".CHAT_INPUT_BUTTON_NOTIFICATION,",
+            replacement: {
+                match: /onDoubleClick:(\i\?void 0:\i)(?=,onMouseEnter:)/,
+                replace: "$&,...$self.getPlusButtonOverrides(arguments[0],arguments[0].onClick,arguments[0].onDoubleClick)"
+            }
         }
-    }],
+    ],
 
     bypassNextUpload: false,
+    forcePooWangUntil: 0,
 
     start() {
         if (!IS_DISCORD_DESKTOP) return;
@@ -295,6 +314,28 @@ export default definePlugin({
 
     stop() {
         tokenConfigured = false;
+        this.forcePooWangUntil = 0;
+    },
+
+    getPlusButtonOverrides(props: any, openDiscord: ((event: unknown) => void) | undefined, openFilePicker: ((event: unknown) => void) | undefined) {
+        if (!shouldHookPlusButton({
+            enabled: settings.store.enabled,
+            hookPlusButton: settings.store.hookPlusButton,
+            disabled: props?.disabled === true,
+            className: props?.className
+        })) return {};
+        return {
+            onClick: (event: unknown) => {
+                if (!tokenConfigured) {
+                    showToast("Configure the poo.wang machine token in plugin settings first.", Toasts.Type.FAILURE);
+                    openDiscord?.(event);
+                    return;
+                }
+                this.forcePooWangUntil = Date.now() + 60_000;
+                openFilePicker?.(event);
+            },
+            onContextMenu: openDiscord
+        };
     },
 
     interceptUploads(
@@ -310,7 +351,9 @@ export default definePlugin({
 
         const files = Array.from(rawFiles);
         if (files.some(file => !(file instanceof File))) return false;
-        const route = selectUploadRoute({
+        const forcedPooWang = tokenConfigured && Date.now() <= this.forcePooWangUntil;
+        this.forcePooWangUntil = 0;
+        const route = forcedPooWang ? "poo-wang" : selectUploadRoute({
             enabled: settings.store.enabled,
             tokenConfigured,
             isThumbnail: options?.isThumbnail === true,
@@ -354,7 +397,7 @@ export default definePlugin({
         options?: UploadOptions
     ) {
         if (route === "prompt") {
-            const reroute = await askUploadRoute(files, settings.store.rerouteByDefault);
+            const reroute = await askUploadRoute(files, settings.store.rerouteByDefault, tokenConfigured);
             if (reroute === undefined) return;
             if (!reroute) {
                 this.restoreDiscordUpload(files, channel, draftType, options);

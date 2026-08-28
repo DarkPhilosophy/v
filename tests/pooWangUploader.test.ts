@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { formatUploadLinks, getUploadError, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
+import { formatUploadLinks, getUploadError, parseUploadFile, randomizeUploadName, selectUploadRoute, shouldHookPlusButton } from "../core/src/userplugins/pooWangUploader/shared.ts";
 
 test("poo.wang upload response maps a public file link", () => {
     assert.deepEqual(parseUploadFile({
@@ -41,7 +42,8 @@ test("normal uploads prompt while oversized files reroute automatically", () => 
     };
     assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024] }), "prompt");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [25 * 1024 * 1024] }), "poo-wang");
-    assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], tokenConfigured: false }), "discord");
+    assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], tokenConfigured: false }), "prompt");
+    assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], tokenConfigured: false, showChoice: false }), "discord");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], isThumbnail: true }), "discord");
 });
 
@@ -65,4 +67,20 @@ test("random upload names use configured printable ASCII and preserve extensions
     assert.equal(randomizeUploadName("archive.tar.gz", 4, "ab_!c/💥", () => indices[next++]), "ab_!.tar.gz");
     assert.equal(randomizeUploadName("photo.png", 3, "x", () => 0), "xxx.png");
     assert.throws(() => randomizeUploadName("file.txt", 8, "💥/\\:*?", () => 0), /printable ASCII/);
+});
+
+
+test("plus upload hook targets only the enabled attachment button", () => {
+    assert.equal(shouldHookPlusButton({ enabled: true, hookPlusButton: true, disabled: false, className: "button attachButton_xyz" }), true);
+    assert.equal(shouldHookPlusButton({ enabled: false, hookPlusButton: true, disabled: false, className: "attachButton_xyz" }), false);
+    assert.equal(shouldHookPlusButton({ enabled: true, hookPlusButton: true, disabled: true, className: "attachButton_xyz" }), false);
+    assert.equal(shouldHookPlusButton({ enabled: true, hookPlusButton: true, disabled: false, className: "emojiButton" }), false);
+});
+
+test("plugin registers both promptToUpload and direct plus-button patches", () => {
+    const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/index.tsx", import.meta.url), "utf8");
+    assert.match(source, /Unexpected mismatch between files and file metadata/);
+    assert.match(source, /CHAT_INPUT_BUTTON_NOTIFICATION/);
+    assert.match(source, /getPlusButtonOverrides/);
+    assert.match(source, /onContextMenu: openDiscord/);
 });

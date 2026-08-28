@@ -21,7 +21,8 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 **PooWangUploader** hooks normal chat attachments from the file picker, paste, and drag-and-drop. Its per-upload dialog provides a **Reroute upload through poo.wang** checkbox; selected files are sent through `POST https://poo.wang/api/upload` and replaced with the returned `/f/{id}` links without changing existing message text.
 
 - Configure a registered-account machine access token from **Settings → Plugins → PooWangUploader**. Anonymous uploads are intentionally not used. The token is encrypted with Electron `safeStorage`; it is never written to Vencord settings or Settings Sync.
-- Choose whether the reroute checkbox starts enabled, or disable the dialog and select a default destination.
+- The plus attachment button is hooked directly: left click opens the poo.wang file picker; right click opens Discord's original upload menu. Without a configured token, left click reports the missing setup and keeps Discord available.
+- Drag-and-drop, paste, and other file-picker paths still show the per-upload reroute checkbox. Choose whether it starts enabled, or disable the dialog and select a default destination.
 - Oversized files can bypass Discord automatically at a configurable MB threshold and use poo.wang before Discord rejects them.
 - Select burn-after-read, 1 hour, 24 hours, 7 days (default), 30 days, or permanent retention where the poo.wang account policy permits it.
 - Optional random filenames preserve the original extension while using a configurable length and safe ASCII character set.

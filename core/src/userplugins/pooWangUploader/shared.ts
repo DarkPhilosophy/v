@@ -59,7 +59,8 @@ export function selectUploadRoute(input: {
     autoRerouteLargeFiles: boolean;
     largeFileThresholdBytes: number;
 }): UploadRoute {
-    if (!input.enabled || !input.tokenConfigured || input.isThumbnail || input.fileSizes.length === 0) return "discord";
+    if (!input.enabled || input.isThumbnail || input.fileSizes.length === 0) return "discord";
+    if (!input.tokenConfigured) return input.showChoice ? "prompt" : "discord";
     if (
         input.autoRerouteLargeFiles
         && input.fileSizes.some(size => size >= input.largeFileThresholdBytes)
@@ -98,4 +99,17 @@ export function secureRandomIndex(upperBound: number): number {
     const sample = new Uint32Array(1);
     crypto.getRandomValues(sample);
     return sample[0] % upperBound;
+}
+
+export function shouldHookPlusButton(input: {
+    enabled: boolean;
+    hookPlusButton: boolean;
+    disabled: boolean;
+    className: unknown;
+}): boolean {
+    return input.enabled
+        && input.hookPlusButton
+        && !input.disabled
+        && typeof input.className === "string"
+        && input.className.includes("attachButton");
 }
