@@ -302,6 +302,7 @@ const plugin = definePlugin({
     tags: ["Privacy", "Utility"],
     settings,
 
+    plusClickListener: undefined as ((event: MouseEvent) => void) | undefined,
     changeListener: undefined as ((event: Event) => void) | undefined,
     dropListener: undefined as ((event: DragEvent) => void) | undefined,
     pasteListener: undefined as ((event: ClipboardEvent) => void) | undefined,
@@ -315,9 +316,11 @@ const plugin = definePlugin({
             })
             .catch(error => logger.error("Could not read poo.wang token state", error));
 
+        this.plusClickListener = event => this.handlePlusButtonClick(event);
         this.changeListener = event => this.handleFileSelection(event);
         this.dropListener = event => this.handleDocumentDrop(event);
         this.pasteListener = event => this.handleDocumentPaste(event);
+        document.addEventListener("click", this.plusClickListener, true);
         document.addEventListener("change", this.changeListener, true);
         document.addEventListener("drop", this.dropListener, true);
         document.addEventListener("paste", this.pasteListener, true);
@@ -325,15 +328,36 @@ const plugin = definePlugin({
 
     stop() {
         tokenConfigured = false;
+        if (this.plusClickListener) document.removeEventListener("click", this.plusClickListener, true);
         if (this.changeListener) document.removeEventListener("change", this.changeListener, true);
         if (this.dropListener) document.removeEventListener("drop", this.dropListener, true);
         if (this.pasteListener) document.removeEventListener("paste", this.pasteListener, true);
-        this.changeListener = this.dropListener = this.pasteListener = undefined;
+        this.plusClickListener = this.changeListener = this.dropListener = this.pasteListener = undefined;
     },
 
     currentChannel(): UploadChannel | undefined {
         return ChannelStore.getChannel(SelectedChannelStore.getChannelId());
     },
+    handlePlusButtonClick(event: MouseEvent) {
+        if (!settings.store.enabled || !settings.store.hookPlusButton || event.button !== 0) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const plusButton = target?.closest('[class*="attachButtonPlus"]');
+        if (!plusButton) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        logger.info("Opening Discord attachment menu");
+        plusButton.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            button: 2,
+            buttons: 2
+        }));
+    },
+
     handleFileSelection(event: Event) {
         if (!settings.store.hookPlusButton) return;
         const input = event.target;
