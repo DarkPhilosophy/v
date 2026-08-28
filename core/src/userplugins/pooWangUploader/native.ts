@@ -6,6 +6,7 @@
 
 import { app, dialog, IpcMainInvokeEvent, safeStorage } from "electron";
 import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -13,6 +14,40 @@ import { basename, dirname, join } from "node:path";
 import { getUploadError, parseUploadFile, POO_WANG_BASE_URL, type PooWangUploadResult } from "./shared";
 
 const TOKEN_PATH = () => join(app.getPath("userData"), "Vencord", "poo-wang-token.bin");
+const SECRET_SERVICE_ATTRIBUTES = ["service", "poo.wang", "account", "vencord-uploader"];
+
+function runSecretTool(args: string[], input?: string): Promise<string> {
+    const { promise, resolve, reject } = Promise.withResolvers<string>();
+    const child = spawn("secret-tool", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", chunk => stdout.push(chunk));
+    child.stderr.on("data", chunk => stderr.push(chunk));
+    child.once("error", reject);
+    child.once("close", code => {
+        if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
+        else reject(new Error(Buffer.concat(stderr).toString("utf8").trim() || `secret-tool exited with ${code}`));
+    });
+    child.stdin.end(input);
+    return promise;
+}
+
+async function readSecretServiceToken(): Promise<string | undefined> {
+    try {
+        const token = (await runSecretTool(["lookup", ...SECRET_SERVICE_ATTRIBUTES])).trim();
+        return token || undefined;
+    } catch {
+        return;
+    }
+}
+
+async function storeSecretServiceToken(token: string): Promise<void> {
+    if (!token) {
+        await runSecretTool(["clear", ...SECRET_SERVICE_ATTRIBUTES]).catch(() => undefined);
+        return;
+    }
+    await runSecretTool(["store", "--label=poo.wang Vencord uploader", ...SECRET_SERVICE_ATTRIBUTES], token);
+}
 const uploadProgress = new Map<string, UploadProgress>();
 
 export interface UploadInput {
@@ -37,15 +72,16 @@ export interface PickedUploadFile {
 async function readAccessToken(): Promise<string | undefined> {
     const environmentToken = process.env.POO_WANG_ACCESS_TOKEN?.trim();
     if (environmentToken) return environmentToken;
-    if (!safeStorage.isEncryptionAvailable()) return;
-
-    try {
-        const encrypted = await readFile(TOKEN_PATH());
-        const token = safeStorage.decryptString(encrypted).trim();
-        return token || undefined;
-    } catch {
-        return;
+    if (safeStorage.isEncryptionAvailable()) {
+        try {
+            const encrypted = await readFile(TOKEN_PATH());
+            const token = safeStorage.decryptString(encrypted).trim();
+            if (token) return token;
+        } catch {
+            // Fall through to the desktop Secret Service.
+        }
     }
+    return readSecretServiceToken();
 }
 
 export async function hasAccessToken(_: IpcMainInvokeEvent): Promise<boolean> {
@@ -69,16 +105,17 @@ export async function setAccessToken(_: IpcMainInvokeEvent, rawToken: string): P
     try {
         if (!token) {
             await rm(TOKEN_PATH(), { force: true });
+            await storeSecretServiceToken("");
             return { ok: true };
         }
-        if (!safeStorage.isEncryptionAvailable()) {
-            return { ok: false, error: "Electron secure storage is unavailable on this system." };
+        if (safeStorage.isEncryptionAvailable()) {
+            const path = TOKEN_PATH();
+            await mkdir(dirname(path), { recursive: true });
+            await writeFile(path, safeStorage.encryptString(token), { mode: 0o600 });
+            await chmod(path, 0o600);
+        } else {
+            await storeSecretServiceToken(token);
         }
-
-        const path = TOKEN_PATH();
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, safeStorage.encryptString(token), { mode: 0o600 });
-        await chmod(path, 0o600);
         return { ok: true };
     } catch (error) {
         return { ok: false, error: String(error) };
