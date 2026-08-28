@@ -98,6 +98,8 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /data-vc-poo-wang-settings/);
     assert.match(source, /poo\.wang quick settings/);
     assert.match(source, />Cancel</);
+    assert.match(source, /if \(reroute === undefined\) \{\s*uploads\.forEach\(upload => upload\.removeFromMsgDraft\(\)\)/);
+    assert.match(source, /Cleared draft attachments after upload route cancellation/);
     assert.match(source, />Upload with Discord</);
     assert.match(source, />Upload with poo\.wang</);
 });

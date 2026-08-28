@@ -530,7 +530,11 @@ const plugin = definePlugin({
         if (route === "discord") return;
         if (route === "prompt") {
             const reroute = await askUploadRoute(files, tokenConfigured);
-            if (reroute === undefined) return { cancel: true };
+            if (reroute === undefined) {
+                uploads.forEach(upload => upload.removeFromMsgDraft());
+                logger.info("Cleared draft attachments after upload route cancellation", { files: uploads.length, channelId });
+                return { cancel: true };
+            }
             if (!reroute) return;
         }
 
