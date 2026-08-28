@@ -215,16 +215,32 @@ test("video quests run concurrently while play quests stay serial", async () => 
     await run;
 });
 
-test("enrollment falls back to store status, then to a synthetic enrolledAt", () => {
-    const now = new Date("2026-08-27T10:00:00.000Z");
-    const fromResponse = resolveEnrolledStatus({ enrolledAt: "2026-08-27T09:00:00.000Z" }, undefined, now);
-    assert.equal(fromResponse?.enrolledAt, "2026-08-27T09:00:00.000Z");
+test("enrollment maps Discord's current raw user-status response", () => {
+    const status = resolveEnrolledStatus({
+        user_id: "user-1",
+        quest_id: "quest-1",
+        enrolled_at: "2026-08-27T09:00:00.000Z",
+        completed_at: null,
+        progress: {
+            WATCH_VIDEO: { value: 7, event_name: "WATCH_VIDEO", updated_at: "2026-08-27T09:00:07.000Z" }
+        }
+    }, undefined);
 
-    const fromStore = resolveEnrolledStatus(undefined, { enrolledAt: "2026-08-27T09:30:00.000Z" }, now);
+    assert.deepEqual(status, {
+        userId: "user-1",
+        questId: "quest-1",
+        enrolledAt: "2026-08-27T09:00:00.000Z",
+        progress: { WATCH_VIDEO: { value: 7 } }
+    });
+});
+
+test("enrollment accepts legacy wrapped status and falls back to the Quest store", () => {
+    const wrapped = resolveEnrolledStatus({ userStatus: { enrolledAt: "2026-08-27T09:00:00.000Z" } }, undefined);
+    assert.equal(wrapped?.enrolledAt, "2026-08-27T09:00:00.000Z");
+
+    const fromStore = resolveEnrolledStatus(undefined, { enrolledAt: "2026-08-27T09:30:00.000Z" });
     assert.equal(fromStore?.enrolledAt, "2026-08-27T09:30:00.000Z");
 
-    const synthetic = resolveEnrolledStatus(undefined, undefined, now);
-    assert.equal(synthetic?.enrolledAt, now.toISOString());
-
-    assert.equal(resolveEnrolledStatus({ completedAt: now.toISOString() }, undefined, now), undefined);
+    assert.equal(resolveEnrolledStatus({}, undefined), undefined);
+    assert.equal(resolveEnrolledStatus({ completed_at: "2026-08-27T10:00:00.000Z" }, undefined), undefined);
 });

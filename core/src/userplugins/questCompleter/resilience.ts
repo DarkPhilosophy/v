@@ -92,23 +92,92 @@ export function getNextAutomationDelayMs(successfulQuests: number, currentDelayM
     return successfulQuests > 0 ? 5_000 : Math.min(currentDelayMs * 2, 60_000);
 }
 
-interface EnrollmentStatus {
+export interface EnrollmentStatus {
+    userId?: string;
+    questId?: string;
     enrolledAt?: string;
     completedAt?: string;
+    claimedAt?: string;
+    claimedTier?: number;
+    orbQuantityClaimed?: number;
+    lastStreamHeartbeatAt?: string;
+    streamProgressSeconds?: number;
+    progress?: Record<string, { value: number; }>;
 }
 
-/** Discord's enroll response omits userStatus for some quests; the store copy or
- * the enrollment moment itself is an equally valid start time. */
-export function resolveEnrolledStatus<T extends EnrollmentStatus>(
-    fromResponse: T | undefined,
-    fromStore: T | undefined,
-    now: Date
-): T | { enrolledAt: string; } | undefined {
-    for (const candidate of [fromResponse, fromStore]) {
-        if (candidate?.completedAt) return undefined;
-        if (candidate?.enrolledAt) return candidate;
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+    return value != null && typeof value === "object" && !Array.isArray(value)
+        ? value as UnknownRecord
+        : undefined;
+}
+
+function readString(record: UnknownRecord, camelCase: string, snakeCase: string): string | undefined {
+    const value = record[camelCase] ?? record[snakeCase];
+    return typeof value === "string" ? value : undefined;
+}
+
+function readNumber(record: UnknownRecord, camelCase: string, snakeCase: string): number | undefined {
+    const value = record[camelCase] ?? record[snakeCase];
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function mapEnrollmentStatus(value: unknown): EnrollmentStatus | undefined {
+    const response = asRecord(value);
+    if (!response) return;
+    const record = asRecord(
+        response.userStatus
+        ?? response.enrolledQuestUserStatus
+        ?? response.user_status
+        ?? response.enrolled_quest_user_status
+    ) ?? response;
+
+    const enrolledAt = readString(record, "enrolledAt", "enrolled_at");
+    const completedAt = readString(record, "completedAt", "completed_at");
+    if (completedAt || !enrolledAt) return;
+
+    const status: EnrollmentStatus = { enrolledAt };
+    const stringFields = [
+        ["userId", "user_id"],
+        ["questId", "quest_id"],
+        ["claimedAt", "claimed_at"],
+        ["lastStreamHeartbeatAt", "last_stream_heartbeat_at"]
+    ] as const;
+    for (const [camelCase, snakeCase] of stringFields) {
+        const field = readString(record, camelCase, snakeCase);
+        if (field !== undefined) status[camelCase] = field;
     }
-    return { enrolledAt: now.toISOString() };
+    const numberFields = [
+        ["claimedTier", "claimed_tier"],
+        ["orbQuantityClaimed", "orb_quantity_claimed"],
+        ["streamProgressSeconds", "stream_progress_seconds"]
+    ] as const;
+    for (const [camelCase, snakeCase] of numberFields) {
+        const field = readNumber(record, camelCase, snakeCase);
+        if (field !== undefined) status[camelCase] = field;
+    }
+
+    const rawProgress = asRecord(record.progress);
+    if (rawProgress) {
+        const progress: Record<string, { value: number; }> = {};
+        for (const [taskName, rawTask] of Object.entries(rawProgress)) {
+            const task = asRecord(rawTask);
+            if (task && typeof task.value === "number" && Number.isFinite(task.value))
+                progress[taskName] = { value: task.value };
+        }
+        status.progress = progress;
+    }
+    return status;
+}
+
+/** Discord currently returns a raw snake_case QuestUserStatus from /enroll;
+ * older builds wrapped the status. Fall back to the already-updated store. */
+export function resolveEnrolledStatus(
+    responseBody: unknown,
+    fromStore: EnrollmentStatus | null | undefined
+): EnrollmentStatus | undefined {
+    return mapEnrollmentStatus(responseBody) ?? mapEnrollmentStatus(fromStore);
 }
 
 async function runWithConcurrency<T>(

@@ -339,11 +339,10 @@ async function completeAll(silent = false): Promise<void> {
             for (const [index, quest] of enrollmentBatch.entries()) {
                 try {
                     const res = await RestAPI.post({ url: `/quests/${quest.id}/enroll`, body: { location: 8 } });
-                    const enrolled = res.body as { userStatus?: Quest["userStatus"]; } | undefined;
                     const storeQuest = questsStore.quests.get(quest.id);
-                    const userStatus = resolveEnrolledStatus(enrolled?.userStatus, storeQuest?.userStatus, new Date());
+                    const userStatus = resolveEnrolledStatus(res.body, storeQuest?.userStatus);
                     if (!userStatus) {
-                        logger.info(`${quest.config.messages.questName} already completed; nothing to do`);
+                        logger.warn(`Enroll response contained no enrolled status for ${quest.config.messages.questName}; skipping until next scan`);
                         continue;
                     }
                     todo.push({ ...quest, userStatus: { ...userStatus } });
