@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createDeferredHandler } from "../core/src/userplugins/questCompleter/deferredHandler.ts";
 import { isAutomatableQuest } from "../core/src/userplugins/questCompleter/taskSupport.ts";
-import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, runConcurrentQuestBatch } from "../core/src/userplugins/questCompleter/resilience.ts";
+import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, resolveEnrolledStatus, runConcurrentQuestBatch } from "../core/src/userplugins/questCompleter/resilience.ts";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -213,4 +213,18 @@ test("video quests run concurrently while play quests stay serial", async () => 
     assert.equal(peak.some(snapshot => snapshot.includes("play-1") && snapshot.includes("play-2")), false);
     resolve();
     await run;
+});
+
+test("enrollment falls back to store status, then to a synthetic enrolledAt", () => {
+    const now = new Date("2026-08-27T10:00:00.000Z");
+    const fromResponse = resolveEnrolledStatus({ enrolledAt: "2026-08-27T09:00:00.000Z" }, undefined, now);
+    assert.equal(fromResponse?.enrolledAt, "2026-08-27T09:00:00.000Z");
+
+    const fromStore = resolveEnrolledStatus(undefined, { enrolledAt: "2026-08-27T09:30:00.000Z" }, now);
+    assert.equal(fromStore?.enrolledAt, "2026-08-27T09:30:00.000Z");
+
+    const synthetic = resolveEnrolledStatus(undefined, undefined, now);
+    assert.equal(synthetic?.enrolledAt, now.toISOString());
+
+    assert.equal(resolveEnrolledStatus({ completedAt: now.toISOString() }, undefined, now), undefined);
 });

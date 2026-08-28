@@ -92,6 +92,25 @@ export function getNextAutomationDelayMs(successfulQuests: number, currentDelayM
     return successfulQuests > 0 ? 5_000 : Math.min(currentDelayMs * 2, 60_000);
 }
 
+interface EnrollmentStatus {
+    enrolledAt?: string;
+    completedAt?: string;
+}
+
+/** Discord's enroll response omits userStatus for some quests; the store copy or
+ * the enrollment moment itself is an equally valid start time. */
+export function resolveEnrolledStatus<T extends EnrollmentStatus>(
+    fromResponse: T | undefined,
+    fromStore: T | undefined,
+    now: Date
+): T | { enrolledAt: string; } | undefined {
+    for (const candidate of [fromResponse, fromStore]) {
+        if (candidate?.completedAt) return undefined;
+        if (candidate?.enrolledAt) return candidate;
+    }
+    return { enrolledAt: now.toISOString() };
+}
+
 async function runWithConcurrency<T>(
     items: readonly T[],
     concurrency: number,

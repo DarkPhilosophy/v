@@ -10,7 +10,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByProps } from "@webpack";
 import { Button, FluxDispatcher, Forms, RestAPI, showToast, Toasts } from "@webpack/common";
 import { createDeferredHandler, type DeferredHandler } from "./deferredHandler";
-import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, runConcurrentQuestBatch } from "./resilience";
+import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, resolveEnrolledStatus, runConcurrentQuestBatch } from "./resilience";
 import { isAutomatableQuest } from "./taskSupport";
 
 
@@ -340,11 +340,13 @@ async function completeAll(silent = false): Promise<void> {
                 try {
                     const res = await RestAPI.post({ url: `/quests/${quest.id}/enroll`, body: { location: 8 } });
                     const enrolled = res.body as { userStatus?: Quest["userStatus"]; } | undefined;
-                    if (!enrolled?.userStatus?.enrolledAt) {
-                        logger.warn(`Enroll response missing valid userStatus for ${quest.config.messages.questName}; skipping until next scan`);
+                    const storeQuest = questsStore.quests.get(quest.id);
+                    const userStatus = resolveEnrolledStatus(enrolled?.userStatus, storeQuest?.userStatus, new Date());
+                    if (!userStatus) {
+                        logger.info(`${quest.config.messages.questName} already completed; nothing to do`);
                         continue;
                     }
-                    todo.push({ ...quest, userStatus: { ...enrolled.userStatus } });
+                    todo.push({ ...quest, userStatus: { ...userStatus } });
                     logger.info(`Enrolled: ${quest.config.messages.questName}`);
                     if (!silent) toast(`${getAppName(quest)}: enrolled`);
                 } catch (err) {
