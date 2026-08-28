@@ -34,11 +34,11 @@ test("poo.wang API errors remain visible", () => {
     assert.equal(getUploadError({}, "fallback"), "fallback");
 });
 
-test("previewable images and videos use Discord masked links", () => {
+test("previewable images and videos use extensionless Discord masked links", () => {
     assert.equal(formatUploadLinks([
         { id: "a", name: "photo[1].webp", url: "https://poo.wang/f/a", contentType: "image/webp", mediaKind: "image" },
         { id: "b", name: "clip.mp4", url: "https://poo.wang/f/b", contentType: "video/mp4", mediaKind: "video" }
-    ]), "[photo\\[1\\].webp](https://poo.wang/f/a)\n[clip.mp4](https://poo.wang/f/b)");
+    ]), "[image](https://poo.wang/f/a)\n[video](https://poo.wang/f/b)");
 });
 
 test("unsupported media and regular files preserve raw URLs", () => {
@@ -111,7 +111,8 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /const outgoingMessage = \{ \.\.\.message, content: composeUploadMessage\(message\.content, links\) \}/);
     assert.match(source, /const outgoingOptions = \{ \.\.\.options, attachmentsToUpload: \[\] \}/);
     assert.match(source, /await MessageActions\.sendMessage\(channelId, outgoingMessage, true, outgoingOptions\)/);
-    assert.match(source, /uploads\.forEach\(upload => upload\.removeFromMsgDraft\(\)\)/);
+    assert.match(source, /const handledUploadIds = new Set\(uploads\.map\(upload => upload\.id\)\)/);
+    assert.match(source, /window\.setTimeout\(clearHandledUploads, 0\)/);
     assert.match(source, /DraftManager\.clearDraft\(channelId, DraftType\.ChannelMessage\)/);
     assert.match(source, /ComponentDispatch\.dispatchToLastSubscribed\("CLEAR_TEXT"\)/);
     assert.match(source, /FluxDispatcher\.dispatch\(\{ type: "DELETE_PENDING_REPLY", channelId \}\)/);

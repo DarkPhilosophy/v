@@ -557,11 +557,19 @@ const plugin = definePlugin({
             showToast("The file uploaded, but Discord could not send its link. Your draft was kept.", Toasts.Type.FAILURE);
             return { cancel: true };
         }
+        const handledUploadIds = new Set(uploads.map(upload => upload.id));
+        const clearHandledUploads = () => {
+            const currentUploads = store?.getUploads(channelId, DraftType.ChannelMessage) ?? [];
+            currentUploads
+                .filter(upload => handledUploadIds.has(upload.id))
+                .forEach(upload => upload.removeFromMsgDraft());
+        };
         DraftManager.clearDraft(channelId, DraftType.ChannelMessage);
         ComponentDispatch.dispatchToLastSubscribed("CLEAR_TEXT");
         FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId });
-        uploads.forEach(upload => upload.removeFromMsgDraft());
-        logger.info("Sent poo.wang links and cleared composer state", { files: uploads.length, channelId });
+        clearHandledUploads();
+        window.setTimeout(clearHandledUploads, 0);
+        logger.info("Sent poo.wang links and scheduled composer cleanup", { files: uploads.length, channelId });
         return { cancel: true };
     }
 });

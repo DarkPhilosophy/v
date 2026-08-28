@@ -74,9 +74,6 @@ const DISCORD_PREVIEWABLE_CONTENT_TYPES = new Set([
     "video/x-m4v"
 ]);
 
-function escapeMaskedLinkLabel(value: string): string {
-    return value.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
-}
 
 export function formatUploadLinks(files: readonly PooWangUploadFile[]): string {
     return files.map(file => {
@@ -84,7 +81,7 @@ export function formatUploadLinks(files: readonly PooWangUploadFile[]): string {
         const previewable = (file.mediaKind === "image" || file.mediaKind === "video")
             && contentType != null
             && DISCORD_PREVIEWABLE_CONTENT_TYPES.has(contentType);
-        return previewable ? `[${escapeMaskedLinkLabel(file.name)}](${file.url})` : file.url;
+        return previewable ? `[${file.mediaKind}](${file.url})` : file.url;
     }).join("\n");
 }
 
