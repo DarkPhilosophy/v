@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { definePluginSettings } from "@api/Settings";
+import { ChatBarButton, type ChatBarButtonFactory } from "@api/ChatButtons";
 import { Button } from "@components/Button";
 import { Switch } from "@components/Switch";
 import { copyWithToast, insertTextIntoChatInputBox } from "@utils/discord";
 import { Logger } from "@utils/Logger";
-import definePlugin, { OptionType, PluginNative } from "@utils/types";
+import definePlugin, { type IconComponent, OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { closeModal, Forms, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
 import type * as NativeModule from "./native";
@@ -27,6 +27,25 @@ interface UploadOptions {
     isThumbnail?: boolean;
     requireConfirm?: boolean;
 }
+
+const UploadIcon: IconComponent = ({ height = 20, width = 20, className }) => (
+    <svg width={width} height={height} className={className} viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M12 2a1 1 0 0 1 .7.29l4 4a1 1 0 0 1-1.4 1.42L13 5.41V15a1 1 0 1 1-2 0V5.41L8.7 7.71a1 1 0 0 1-1.4-1.42l4-4A1 1 0 0 1 12 2ZM5 14a1 1 0 0 1 1 1v4h12v-4a1 1 0 1 1 2 0v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" />
+    </svg>
+);
+
+const PooWangChatButton: ChatBarButtonFactory = props => {
+    if (!props.isAnyChat || !settings.store.enabled) return null;
+
+    return (
+        <ChatBarButton
+            tooltip="Upload files through poo.wang"
+            onClick={() => void plugin.pickAndUpload(props.channel, props.type.drafts.type)}
+        >
+            <UploadIcon />
+        </ChatBarButton>
+    );
+};
 
 function AccessTokenSetting() {
     const [token, setToken] = useState("");
@@ -278,12 +297,17 @@ const settings = definePluginSettings({
     }
 });
 
-export default definePlugin({
+const plugin = definePlugin({
     name: "PooWangUploader",
     description: "Reroutes selected or oversized Discord chat attachments through poo.wang",
     authors: [{ name: "Alex", id: 0n }],
     tags: ["Privacy", "Utility"],
     settings,
+
+    chatBarButton: {
+        icon: UploadIcon,
+        render: PooWangChatButton
+    },
 
     patches: [
         {
@@ -317,6 +341,23 @@ export default definePlugin({
         this.forcePooWangUntil = 0;
     },
 
+
+    async pickAndUpload(channel: UploadChannel, draftType: number) {
+        if (!tokenConfigured) {
+            showToast("Configure the poo.wang machine token in plugin settings first.", Toasts.Type.FAILURE);
+            return;
+        }
+
+        try {
+            const picked = await Native.pickUploadFiles();
+            if (!picked.length) return;
+            const files = picked.map(file => new File([file.data], file.name));
+            await this.routeUpload("poo-wang", files, channel, draftType);
+        } catch (error) {
+            logger.error("Could not select files for poo.wang upload", error);
+            showToast("Could not select files for poo.wang upload.", Toasts.Type.FAILURE);
+        }
+    },
     getPlusButtonOverrides(props: any, openDiscord: ((event: unknown) => void) | undefined, openFilePicker: ((event: unknown) => void) | undefined) {
         if (!shouldHookPlusButton({
             enabled: settings.store.enabled,
@@ -481,3 +522,5 @@ export default definePlugin({
         showToast(`Uploaded ${urls.length} file(s) to poo.wang.`, Toasts.Type.SUCCESS);
     }
 });
+
+export default plugin;

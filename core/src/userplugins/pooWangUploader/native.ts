@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { app, IpcMainInvokeEvent, safeStorage } from "electron";
+import { app, dialog, IpcMainInvokeEvent, safeStorage } from "electron";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { request } from "node:https";
-import { dirname, join } from "node:path";
-import { randomBytes } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 
 import { getUploadError, parseUploadFile, POO_WANG_BASE_URL, type PooWangUploadResult } from "./shared";
 
@@ -30,6 +29,11 @@ export interface UploadProgress {
     state: "uploading" | "complete" | "error";
 }
 
+export interface PickedUploadFile {
+    name: string;
+    data: Uint8Array;
+}
+
 async function readAccessToken(): Promise<string | undefined> {
     const environmentToken = process.env.POO_WANG_ACCESS_TOKEN?.trim();
     if (environmentToken) return environmentToken;
@@ -46,6 +50,18 @@ async function readAccessToken(): Promise<string | undefined> {
 
 export async function hasAccessToken(_: IpcMainInvokeEvent): Promise<boolean> {
     return Boolean(await readAccessToken());
+}
+
+export async function pickUploadFiles(_: IpcMainInvokeEvent): Promise<PickedUploadFile[]> {
+    const result = await dialog.showOpenDialog({
+        properties: ["openFile", "multiSelections"]
+    });
+    if (result.canceled) return [];
+
+    return Promise.all(result.filePaths.map(async path => ({
+        name: basename(path),
+        data: new Uint8Array(await readFile(path))
+    })));
 }
 
 export async function setAccessToken(_: IpcMainInvokeEvent, rawToken: string): Promise<{ ok: boolean; error?: string; }> {
