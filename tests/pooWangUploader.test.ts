@@ -81,3 +81,11 @@ test("plugin preserves the plus menu and reroutes selected files", () => {
     assert.match(source, /document\.addEventListener\("paste"/);
     assert.match(source, /input\.type !== "file"/);
 });
+
+test("Linux token storage falls back to Secret Service without plaintext files", () => {
+    const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/native.ts", import.meta.url), "utf8");
+    assert.match(source, /safeStorage\.isEncryptionAvailable\(\)/);
+    assert.match(source, /spawn\("secret-tool"/);
+    assert.match(source, /\["store", "--label=poo\.wang Vencord uploader"/);
+    assert.match(source, /\["lookup", \.\.\.SECRET_SERVICE_ATTRIBUTES\]/);
+});
