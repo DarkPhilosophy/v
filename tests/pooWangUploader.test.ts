@@ -75,12 +75,14 @@ test("plugin preserves the plus menu and reroutes selected files", () => {
     assert.match(source, /import \{ definePluginSettings \} from "@api\/Settings"/);
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.doesNotMatch(source, /chatBarButton:/);
-    assert.doesNotMatch(source, /document\.addEventListener\("click"/);
+    assert.match(source, /document\.addEventListener\("click"/);
     assert.match(source, /document\.addEventListener\("change"/);
     assert.match(source, /document\.addEventListener\("drop"/);
     assert.match(source, /document\.addEventListener\("paste"/);
     assert.match(source, /input\.type !== "file"/);
     assert.doesNotMatch(source, /pickAndUpload|Native\.pickUploadFiles/);
+    assert.match(source, /dispatchEvent\(new MouseEvent\("contextmenu"/);
+    assert.match(source, /await sendMessage\(channel\.id, \{ content: links \}\)/);
 });
 
 test("Linux token storage falls back to Secret Service without plaintext files", () => {

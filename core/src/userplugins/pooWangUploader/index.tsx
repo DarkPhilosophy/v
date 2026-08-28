@@ -7,7 +7,7 @@
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Switch } from "@components/Switch";
-import { copyWithToast, insertTextIntoChatInputBox } from "@utils/discord";
+import { copyWithToast, sendMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
@@ -303,6 +303,7 @@ const plugin = definePlugin({
     settings,
 
     changeListener: undefined as ((event: Event) => void) | undefined,
+    plusClickListener: undefined as ((event: MouseEvent) => void) | undefined,
     dropListener: undefined as ((event: DragEvent) => void) | undefined,
     pasteListener: undefined as ((event: ClipboardEvent) => void) | undefined,
 
@@ -315,9 +316,11 @@ const plugin = definePlugin({
             })
             .catch(error => logger.error("Could not read poo.wang token state", error));
 
+        this.plusClickListener = event => this.handlePlusButtonClick(event);
         this.changeListener = event => this.handleFileSelection(event);
         this.dropListener = event => this.handleDocumentDrop(event);
         this.pasteListener = event => this.handleDocumentPaste(event);
+        document.addEventListener("click", this.plusClickListener, true);
         document.addEventListener("change", this.changeListener, true);
         document.addEventListener("drop", this.dropListener, true);
         document.addEventListener("paste", this.pasteListener, true);
@@ -325,14 +328,33 @@ const plugin = definePlugin({
 
     stop() {
         tokenConfigured = false;
+        if (this.plusClickListener) document.removeEventListener("click", this.plusClickListener, true);
         if (this.changeListener) document.removeEventListener("change", this.changeListener, true);
         if (this.dropListener) document.removeEventListener("drop", this.dropListener, true);
         if (this.pasteListener) document.removeEventListener("paste", this.pasteListener, true);
-        this.changeListener = this.dropListener = this.pasteListener = undefined;
+        this.changeListener = this.dropListener = this.pasteListener = this.plusClickListener = undefined;
     },
 
     currentChannel(): UploadChannel | undefined {
         return ChannelStore.getChannel(SelectedChannelStore.getChannelId());
+    },
+    handlePlusButtonClick(event: MouseEvent) {
+        if (!settings.store.hookPlusButton || event.button !== 0) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const plusButton = target?.closest('[class*="attachButtonPlus"]');
+        if (!plusButton) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        logger.info("Opening native Discord attachment menu");
+        plusButton.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            view: window
+        }));
     },
 
     handleFileSelection(event: Event) {
@@ -483,7 +505,8 @@ const plugin = definePlugin({
         const links = formatUploadLinks(urls);
         if (links) {
             if (SelectedChannelStore.getChannelId() === channel.id) {
-                insertTextIntoChatInputBox(`\n${links}\n`);
+                logger.info("Sending poo.wang links", { files: urls.length, channelId: channel.id });
+                await sendMessage(channel.id, { content: links });
             } else {
                 await copyWithToast(links, "poo.wang links copied; the upload channel changed.");
             }
