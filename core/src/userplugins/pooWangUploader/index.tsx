@@ -5,15 +5,16 @@
  */
 
 import { addGlobalContextMenuPatch, type GlobalContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
+import type { MessageObject } from "@api/MessageEvents";
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Switch } from "@components/Switch";
-import { copyWithToast, sendMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
-import type { RenderModalProps } from "@vencord/discord-types";
+import type { CloudUpload, RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
-import { ChannelStore, closeModal, ContextMenuApi, Forms, Menu, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
+import { findByProps } from "@webpack";
+import { closeModal, ContextMenuApi, Forms, Menu, Modal, openModal, showToast, TextInput, Toasts, useEffect, useState } from "@webpack/common";
 import { formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
@@ -412,11 +413,7 @@ const plugin = definePlugin({
     tags: ["Privacy", "Utility"],
     settings,
 
-    changeListener: undefined as ((event: Event) => void) | undefined,
-    dropListener: undefined as ((event: DragEvent) => void) | undefined,
     plusContextListener: undefined as ((event: MouseEvent) => void) | undefined,
-
-    pasteListener: undefined as ((event: ClipboardEvent) => void) | undefined,
 
     start() {
         if (!IS_DISCORD_DESKTOP) return;
@@ -427,8 +424,6 @@ const plugin = definePlugin({
             })
             .catch(error => logger.error("Could not read poo.wang token state", error));
 
-        this.changeListener = event => this.handleFileSelection(event);
-        this.dropListener = event => this.handleDocumentDrop(event);
         this.plusContextListener = event => {
             const attachmentButton = event.composedPath().find(node =>
                 node instanceof Element
@@ -441,12 +436,8 @@ const plugin = definePlugin({
             attachmentMenuRequestedAt = Date.now();
             scheduleAttachmentMenuInjection(existingMenus);
         };
-        this.pasteListener = event => this.handleDocumentPaste(event);
-        document.addEventListener("change", this.changeListener, true);
-        document.addEventListener("drop", this.dropListener, true);
         document.addEventListener("contextmenu", this.plusContextListener, true);
         addGlobalContextMenuPatch(attachmentMenuPatch);
-        document.addEventListener("paste", this.pasteListener, true);
     },
 
     stop() {
@@ -457,82 +448,8 @@ const plugin = definePlugin({
         attachmentMenuInjectionTimer = undefined;
         if (this.plusContextListener) document.removeEventListener("contextmenu", this.plusContextListener, true);
         removeGlobalContextMenuPatch(attachmentMenuPatch);
-        if (this.changeListener) document.removeEventListener("change", this.changeListener, true);
-        if (this.dropListener) document.removeEventListener("drop", this.dropListener, true);
-        if (this.pasteListener) document.removeEventListener("paste", this.pasteListener, true);
-        this.plusContextListener = this.changeListener = this.dropListener = this.pasteListener = undefined;
     },
 
-    currentChannel(): UploadChannel | undefined {
-        return ChannelStore.getChannel(SelectedChannelStore.getChannelId());
-    },
-
-    handleFileSelection(event: Event) {
-        if (!settings.store.hookPlusButton) return;
-        const input = event.target;
-        if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
-        const files = Array.from(input.files ?? []);
-        logger.info("Discord file picker selection", { files: files.length, tokenConfigured });
-        this.routeDomFiles(files, event);
-
-    },
-    routeDomFiles(files: File[], event: Event): boolean {
-        const channel = this.currentChannel();
-        if (!channel || files.length === 0) return false;
-        const route = selectUploadRoute({
-            enabled: settings.store.enabled,
-            tokenConfigured,
-            isThumbnail: false,
-            fileSizes: files.map(file => file.size),
-            rerouteByDefault: settings.store.rerouteByDefault,
-            autoRerouteLargeFiles: settings.store.autoRerouteLargeFiles,
-            largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024
-        });
-        logger.info("Upload route selected", {
-            route,
-            files: files.length,
-            tokenConfigured,
-            rerouteByDefault: settings.store.rerouteByDefault
-        });
-        if (route === "discord") return false;
-
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        void this.routeUpload(route, files, channel, DraftType.ChannelMessage, { requireConfirm: true });
-        return true;
-    },
-
-    handleDocumentDrop(event: DragEvent) {
-        if (!document.querySelector('[class*="channelTextArea"]')) return;
-        const files = Array.from(event.dataTransfer?.files ?? []);
-        this.routeDomFiles(files, event);
-    },
-
-    handleDocumentPaste(event: ClipboardEvent) {
-        const target = event.target instanceof Element ? event.target : null;
-        if (!target?.closest('[contenteditable="true"]')) return;
-        const files = Array.from(event.clipboardData?.files ?? []);
-        this.routeDomFiles(files, event);
-    },
-
-    restoreDiscordUpload(
-        files: File[],
-        channel: UploadChannel,
-        draftType: number,
-        options?: UploadOptions,
-        forceConfirmation = false
-    ) {
-        if (!files.length) return;
-        try {
-            UploadHandler.promptToUpload(files, channel, draftType, forceConfirmation
-                ? { ...options, requireConfirm: true }
-                : options);
-        } catch (error) {
-            logger.error("Could not restore Discord upload", error);
-            showToast("The attachment could not be restored to the Discord composer.", Toasts.Type.FAILURE);
-        }
-    },
 
     async routeUpload(
         route: "prompt" | "poo-wang",
@@ -543,16 +460,12 @@ const plugin = definePlugin({
     ) {
         if (route === "prompt") {
             const reroute = await askUploadRoute(files, tokenConfigured);
-            if (reroute === undefined) return;
-            if (!reroute) {
-                this.restoreDiscordUpload(files, channel, draftType, options);
-                return;
-            }
+            if (reroute !== true) return;
         }
-        await this.uploadExternally(files, channel, draftType, options);
+        await this.uploadExternally(files, channel, draftType, options, true);
     },
 
-    async uploadExternally(files: File[], channel: UploadChannel, draftType: number, options?: UploadOptions) {
+    async uploadExternally(files: File[], channel: UploadChannel, draftType: number, options?: UploadOptions, sendLinks = true): Promise<string | undefined> {
         const urls: string[] = [];
         let failure: PooWangUploadResult | undefined;
         let failedIndex = files.length;
@@ -611,22 +524,51 @@ const plugin = definePlugin({
         });
 
         const links = formatUploadLinks(urls);
-        if (links) {
-            if (SelectedChannelStore.getChannelId() === channel.id) {
-                logger.info("Sending poo.wang links", { files: urls.length, channelId: channel.id });
-                await sendMessage(channel.id, { content: links });
-            } else {
-                await copyWithToast(links, "poo.wang links copied; the upload channel changed.");
-            }
+        if (sendLinks && links) {
+            logger.info("Sending poo.wang links", { files: urls.length, channelId: channel.id });
+            await sendMessage(channel.id, { content: links });
         }
 
         if (failure) {
             logger.warn("poo.wang upload failed", failure.status, failure.error);
             showToast(`Uploaded ${urls.length}/${files.length}. ${failure.error ?? "A file failed."}`, Toasts.Type.FAILURE);
-            this.restoreDiscordUpload(files.slice(failedIndex), channel, draftType, options, true);
             return;
         }
         showToast(`Uploaded ${urls.length} file(s) to poo.wang.`, Toasts.Type.SUCCESS);
+        return links;
+    },
+
+    async onBeforeMessageSend(channelId: string, message: MessageObject) {
+        const store = findByProps("getUploads", "getUploadCount") as {
+            getUploads(channelId: string, draftType: DraftType): CloudUpload[];
+        } | null;
+        const uploads = store?.getUploads(channelId, DraftType.ChannelMessage)
+            .filter(upload => !upload.isThumbnail && upload.item?.file instanceof File) ?? [];
+        if (!uploads.length) return;
+
+        const files = uploads.map(upload => upload.item.file);
+        const route = selectUploadRoute({
+            enabled: settings.store.enabled,
+            tokenConfigured,
+            isThumbnail: false,
+            fileSizes: files.map(file => file.size),
+            rerouteByDefault: settings.store.rerouteByDefault,
+            autoRerouteLargeFiles: settings.store.autoRerouteLargeFiles,
+            largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024
+        });
+        logger.info("Send-time upload route selected", { route, files: files.length, tokenConfigured });
+        if (route === "discord") return;
+        if (route === "prompt") {
+            const reroute = await askUploadRoute(files, tokenConfigured);
+            if (reroute === undefined) return { cancel: true };
+            if (!reroute) return;
+        }
+
+        const links = await this.uploadExternally(files, { id: channelId }, DraftType.ChannelMessage, undefined, false);
+        if (!links) return { cancel: true };
+        uploads.forEach(upload => upload.removeFromMsgDraft());
+        message.content = [message.content.trim(), links].filter(Boolean).join("\n");
+        logger.info("Replaced draft attachments with poo.wang links", { files: uploads.length, channelId });
     }
 });
 

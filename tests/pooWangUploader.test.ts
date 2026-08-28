@@ -74,18 +74,17 @@ test("attachment menu detection accepts current Discord plus classes", () => {
 
 
 
-test("plugin preserves the plus menu and reroutes only selected files", () => {
+test("plugin keeps native draft previews and reroutes only when sending", () => {
     const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/index.tsx", import.meta.url), "utf8");
-    assert.match(source, /import \{ definePluginSettings \} from "@api\/Settings"/);
+    assert.match(source, /import type \{ MessageObject \} from "@api\/MessageEvents"/);
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.doesNotMatch(source, /chatBarButton:/);
-    assert.doesNotMatch(source, /document\.addEventListener\("click"/);
+    assert.doesNotMatch(source, /document\.addEventListener\("(?:click|change|drop|paste)"/);
     assert.match(source, /document\.addEventListener\("contextmenu"/);
-    assert.match(source, /document\.addEventListener\("change"/);
-    assert.match(source, /document\.addEventListener\("drop"/);
-    assert.match(source, /document\.addEventListener\("paste"/);
-    assert.match(source, /input\.type !== "file"/);
-    assert.doesNotMatch(source, /handlePlusButtonClick|pickAndUpload|Native\.pickUploadFiles/);
+    assert.match(source, /async onBeforeMessageSend/);
+    assert.match(source, /getUploads\(channelId, DraftType\.ChannelMessage\)/);
+    assert.match(source, /upload\.removeFromMsgDraft\(\)/);
+    assert.match(source, /message\.content = \[message\.content\.trim\(\), links\]/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
     assert.match(source, /poo-wang-default/);
@@ -93,11 +92,9 @@ test("plugin preserves the plus menu and reroutes only selected files", () => {
     assert.match(source, /injectQuickSettingsIntoAttachmentMenu/);
     assert.match(source, /data-vc-poo-wang-settings/);
     assert.match(source, /poo\.wang quick settings/);
-    assert.doesNotMatch(source, /showChoice/);
     assert.match(source, />Cancel</);
     assert.match(source, />Upload with Discord</);
     assert.match(source, />Upload with poo\.wang</);
-    assert.match(source, /await sendMessage\(channel\.id, \{ content: links \}\)/);
 });
 
 test("Linux token storage falls back to Secret Service without plaintext files", () => {
