@@ -80,12 +80,17 @@ test("plugin preserves the plus menu and reroutes selected files", () => {
     assert.match(source, /document\.addEventListener\("drop"/);
     assert.match(source, /document\.addEventListener\("paste"/);
     assert.match(source, /input\.type !== "file"/);
+    assert.doesNotMatch(source, /pickAndUpload|Native\.pickUploadFiles/);
 });
 
 test("Linux token storage falls back to Secret Service without plaintext files", () => {
     const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/native.ts", import.meta.url), "utf8");
     assert.match(source, /safeStorage\.isEncryptionAvailable\(\)/);
-    assert.match(source, /spawn\("secret-tool"/);
+    assert.doesNotMatch(source, /dialog\.showOpenDialog/);
+    assert.match(source, /existsSync\("\/.flatpak-info"\)/);
+    assert.match(source, /"flatpak-spawn"/);
+    assert.match(source, /"--host", "secret-tool"/);
+    assert.match(source, /from "node:https"/);
     assert.match(source, /\["store", "--label=poo\.wang Vencord uploader"/);
     assert.match(source, /\["lookup", \.\.\.SECRET_SERVICE_ATTRIBUTES\]/);
 });

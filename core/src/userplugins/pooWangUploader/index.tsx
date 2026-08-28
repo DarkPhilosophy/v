@@ -386,22 +386,6 @@ const plugin = definePlugin({
         this.routeDomFiles(files, event);
     },
 
-    async pickAndUpload(channel: UploadChannel, draftType: number) {
-        if (!tokenConfigured) {
-            openTokenConfiguration();
-            return;
-        }
-
-        try {
-            const picked = await Native.pickUploadFiles();
-            if (!picked.length) return;
-            const files = picked.map(file => new File([file.data], file.name));
-            await this.routeUpload("poo-wang", files, channel, draftType);
-        } catch (error) {
-            logger.error("Could not select files for poo.wang upload", error);
-            showToast("Could not select files for poo.wang upload.", Toasts.Type.FAILURE);
-        }
-    },
     restoreDiscordUpload(
         files: File[],
         channel: UploadChannel,

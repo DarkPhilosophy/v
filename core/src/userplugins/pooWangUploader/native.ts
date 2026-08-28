@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { app, dialog, IpcMainInvokeEvent, safeStorage } from "electron";
+import { app, IpcMainInvokeEvent, safeStorage } from "electron";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
+import { request } from "node:https";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { getUploadError, parseUploadFile, POO_WANG_BASE_URL, type PooWangUploadResult } from "./shared";
 
@@ -18,7 +20,17 @@ const SECRET_SERVICE_ATTRIBUTES = ["service", "poo.wang", "account", "vencord-up
 
 function runSecretTool(args: string[], input?: string): Promise<string> {
     const { promise, resolve, reject } = Promise.withResolvers<string>();
-    const child = spawn("secret-tool", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const isFlatpak = Boolean(process.env.FLATPAK_ID) || existsSync("/.flatpak-info");
+    const command = isFlatpak ? "flatpak-spawn" : "secret-tool";
+    const commandArgs = isFlatpak ? ["--host", "secret-tool", ...args] : args;
+    const runtimeDirectory = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid()}`;
+    const child = spawn(command, commandArgs, {
+        env: {
+            ...process.env,
+            DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS ?? `unix:path=${runtimeDirectory}/bus`
+        },
+        stdio: ["pipe", "pipe", "pipe"]
+    });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", chunk => stdout.push(chunk));
@@ -26,7 +38,7 @@ function runSecretTool(args: string[], input?: string): Promise<string> {
     child.once("error", reject);
     child.once("close", code => {
         if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
-        else reject(new Error(Buffer.concat(stderr).toString("utf8").trim() || `secret-tool exited with ${code}`));
+        else reject(new Error(Buffer.concat(stderr).toString("utf8").trim() || `${command} exited with ${code}`));
     });
     child.stdin.end(input);
     return promise;
@@ -64,11 +76,6 @@ export interface UploadProgress {
     state: "uploading" | "complete" | "error";
 }
 
-export interface PickedUploadFile {
-    name: string;
-    data: Uint8Array;
-}
-
 async function readAccessToken(): Promise<string | undefined> {
     const environmentToken = process.env.POO_WANG_ACCESS_TOKEN?.trim();
     if (environmentToken) return environmentToken;
@@ -86,18 +93,6 @@ async function readAccessToken(): Promise<string | undefined> {
 
 export async function hasAccessToken(_: IpcMainInvokeEvent): Promise<boolean> {
     return Boolean(await readAccessToken());
-}
-
-export async function pickUploadFiles(_: IpcMainInvokeEvent): Promise<PickedUploadFile[]> {
-    const result = await dialog.showOpenDialog({
-        properties: ["openFile", "multiSelections"]
-    });
-    if (result.canceled) return [];
-
-    return Promise.all(result.filePaths.map(async path => ({
-        name: basename(path),
-        data: new Uint8Array(await readFile(path))
-    })));
 }
 
 export async function setAccessToken(_: IpcMainInvokeEvent, rawToken: string): Promise<{ ok: boolean; error?: string; }> {
