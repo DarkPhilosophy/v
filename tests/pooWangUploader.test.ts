@@ -74,6 +74,7 @@ test("plugin preserves the plus menu and reroutes only selected files", () => {
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.doesNotMatch(source, /chatBarButton:/);
     assert.doesNotMatch(source, /document\.addEventListener\("click"/);
+    assert.match(source, /document\.addEventListener\("contextmenu"/);
     assert.match(source, /document\.addEventListener\("change"/);
     assert.match(source, /document\.addEventListener\("drop"/);
     assert.match(source, /document\.addEventListener\("paste"/);
@@ -81,6 +82,9 @@ test("plugin preserves the plus menu and reroutes only selected files", () => {
     assert.doesNotMatch(source, /handlePlusButtonClick|pickAndUpload|Native\.pickUploadFiles/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
+    assert.match(source, /poo-wang-default/);
+    assert.match(source, /poo-wang-large-files/);
+    assert.doesNotMatch(source, /showChoice/);
     assert.match(source, />Cancel</);
     assert.match(source, />Upload with Discord</);
     assert.match(source, />Upload with poo\.wang</);
