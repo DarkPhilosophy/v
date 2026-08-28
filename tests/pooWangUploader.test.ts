@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { formatUploadLinks, getUploadError, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
+import { formatUploadLinks, getUploadError, isAttachmentPlusClassName, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
 
 test("poo.wang upload response maps a public file link", () => {
     assert.deepEqual(parseUploadFile({
@@ -66,6 +66,12 @@ test("random upload names use configured printable ASCII and preserve extensions
     assert.equal(randomizeUploadName("photo.png", 3, "x", () => 0), "xxx.png");
     assert.throws(() => randomizeUploadName("file.txt", 8, "💥/\\:*?", () => 0), /printable ASCII/);
 });
+test("attachment menu detection accepts current Discord plus classes", () => {
+    assert.equal(isAttachmentPlusClassName("attachButtonPlus__0923f"), true);
+    assert.equal(isAttachmentPlusClassName("attachButton__0923f"), true);
+    assert.equal(isAttachmentPlusClassName("emojiButton__0923f"), false);
+});
+
 
 
 test("plugin preserves the plus menu and reroutes only selected files", () => {

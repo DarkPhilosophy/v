@@ -13,7 +13,7 @@ import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
 import { ChannelStore, closeModal, Forms, Menu, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
-import { formatUploadLinks, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
+import { formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
 const logger = new Logger("PooWangUploader");
@@ -335,8 +335,12 @@ const plugin = definePlugin({
         this.changeListener = event => this.handleFileSelection(event);
         this.dropListener = event => this.handleDocumentDrop(event);
         this.plusContextListener = event => {
-            const target = event.target instanceof Element ? event.target : null;
-            if (target?.closest('[class*="attachButtonPlus"]')) attachmentMenuRequestedAt = Date.now();
+            const attachmentButton = event.composedPath().find(node =>
+                node instanceof Element
+                && typeof node.className === "string"
+                && isAttachmentPlusClassName(node.className)
+            );
+            if (attachmentButton) attachmentMenuRequestedAt = Date.now();
         };
         this.pasteListener = event => this.handleDocumentPaste(event);
         document.addEventListener("change", this.changeListener, true);

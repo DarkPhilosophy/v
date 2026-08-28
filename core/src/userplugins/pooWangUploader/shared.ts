@@ -67,6 +67,9 @@ export function selectUploadRoute(input: {
     ) return "poo-wang";
     return "prompt";
 }
+export function isAttachmentPlusClassName(className: string): boolean {
+    return className.includes("attachButtonPlus") || className.includes("attachButton_");
+}
 
 const TAR_EXTENSION = /\.tar\.[^.]+$/i;
 
