@@ -7,6 +7,7 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 ## Included customizations
 
 - **PlatformSpoofer** — spoofs the Discord client platform (Desktop, Mobile, Web, or Console).
+- **PooWangUploader** — redirects chat attachments to `poo.wang` and inserts retention-controlled share links instead of storing the files on Discord.
 - **PrivacyPruner** — automatically deletes your expired messages according to per-channel retention policies while preserving messages explicitly marked Keep.
 - **QuestCompleter** — completes supported Discord quests without installing the advertised game.
 - **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
@@ -14,6 +15,18 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 - **Translate** — custom translation integration.
 - **NoTrack hardening** — keeps Discord analytics and Sentry disabled while satisfying the preload's local Sentry IPC contract with inert handlers, avoiding failed `sentry-ipc://` requests without restoring telemetry.
 - **OpenAsar** — installed or updated by default as Discord's optimized bootstrap, with Linux-safe runtime patches and Vencord's loader preserved.
+
+### PooWangUploader
+
+**PooWangUploader** hooks normal chat attachments from the file picker, paste, and drag-and-drop. Its per-upload dialog provides a **Reroute upload through poo.wang** checkbox; selected files are sent through `POST https://poo.wang/api/upload` and replaced with the returned `/f/{id}` links without changing existing message text.
+
+- Configure a registered-account machine access token from **Settings → Plugins → PooWangUploader**. Anonymous uploads are intentionally not used. The token is encrypted with Electron `safeStorage`; it is never written to Vencord settings or Settings Sync.
+- Choose whether the reroute checkbox starts enabled, or disable the dialog and select a default destination.
+- Oversized files can bypass Discord automatically at a configurable MB threshold and use poo.wang before Discord rejects them.
+- Select burn-after-read, 1 hour, 24 hours, 7 days (default), 30 days, or permanent retention where the poo.wang account policy permits it.
+- Optional random filenames preserve the original extension while using a configurable length and safe ASCII character set.
+- A byte-progress modal shows the active filename, file number, and percentage. If an external upload fails, successful links remain and the failed plus remaining files are restored to the Discord composer for retry; they are not sent automatically.
+- Thumbnail/internal upload paths are excluded. Disabling the plugin restores Discord's native uploader.
 
 ### PrivacyPruner
 
@@ -112,6 +125,7 @@ v/
 ├── core/src/
 │   ├── userplugins/                  # canonical custom plugin sources
 │   │   ├── platformSpoofer/
+│   │   ├── pooWangUploader/
 │   │   ├── privacyPruner/
 │   │   ├── questCompleter/
 │   │   └── steamRichPresence/
@@ -164,6 +178,7 @@ graph TD
 Focused local checks:
 
 ```sh
+pnpm dlx tsx --test tests/pooWangUploader.test.ts
 pnpm dlx tsx --test tests/privacyPruner.test.ts
 pnpm dlx tsx --test tests/questCompleter.test.ts
 pnpm dlx tsx --test tests/steamRichPresence.test.ts
