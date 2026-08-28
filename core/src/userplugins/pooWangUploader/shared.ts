@@ -1,9 +1,13 @@
 export const POO_WANG_BASE_URL = "https://poo.wang";
 
+export type PooWangMediaKind = "image" | "video" | "audio" | "unsafe-image" | "file";
+
 export interface PooWangUploadFile {
     id: string;
     name: string;
     url: string;
+    contentType?: string;
+    mediaKind?: PooWangMediaKind;
 }
 
 export interface PooWangUploadResult {
@@ -26,13 +30,26 @@ function asRecord(value: unknown): UnknownRecord | undefined {
 export function parseUploadFile(payload: unknown, baseUrl = POO_WANG_BASE_URL): PooWangUploadFile | undefined {
     const response = asRecord(payload);
     const first = Array.isArray(response?.files) ? asRecord(response.files[0]) : undefined;
-    if (!first || typeof first.id !== "string" || typeof first.name !== "string" || typeof first.url !== "string") return;
+    if (
+        !first
+        || typeof first.id !== "string"
+        || typeof first.name !== "string"
+        || typeof first.url !== "string"
+        || (first.contentType != null && typeof first.contentType !== "string")
+        || (first.mediaKind != null && !["image", "video", "audio", "unsafe-image", "file"].includes(String(first.mediaKind)))
+    ) return;
 
     try {
         const expectedOrigin = new URL(baseUrl).origin;
         const url = new URL(first.url);
         if (url.origin !== expectedOrigin || !url.pathname.startsWith("/f/")) return;
-        return { id: first.id, name: first.name, url: url.href };
+        return {
+            id: first.id,
+            name: first.name,
+            url: url.href,
+            contentType: first.contentType as string | undefined,
+            mediaKind: first.mediaKind as PooWangMediaKind | undefined
+        };
     } catch {
         return;
     }
@@ -45,8 +62,30 @@ export function getUploadError(payload: unknown, fallback: string): string {
         : fallback;
 }
 
-export function formatUploadLinks(urls: readonly string[]): string {
-    return urls.join("\n");
+const DISCORD_PREVIEWABLE_CONTENT_TYPES = new Set([
+    "image/avif",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "video/x-m4v"
+]);
+
+function escapeMaskedLinkLabel(value: string): string {
+    return value.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
+}
+
+export function formatUploadLinks(files: readonly PooWangUploadFile[]): string {
+    return files.map(file => {
+        const contentType = file.contentType?.toLowerCase();
+        const previewable = (file.mediaKind === "image" || file.mediaKind === "video")
+            && contentType != null
+            && DISCORD_PREVIEWABLE_CONTENT_TYPES.has(contentType);
+        return previewable ? `[${escapeMaskedLinkLabel(file.name)}](${file.url})` : file.url;
+    }).join("\n");
 }
 
 export function composeUploadMessage(content: string, links: string): string {

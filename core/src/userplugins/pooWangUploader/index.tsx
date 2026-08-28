@@ -5,7 +5,7 @@
  */
 
 import { addGlobalContextMenuPatch, type GlobalContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
-import type { MessageObject } from "@api/MessageEvents";
+import type { MessageObject, SendMessageOptions, SendMessageProps } from "@api/MessageEvents";
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Switch } from "@components/Switch";
@@ -13,12 +13,15 @@ import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { CloudUpload, RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
-import { findByProps } from "@webpack";
-import { closeModal, ContextMenuApi, Forms, Menu, Modal, openModal, showToast, TextInput, Toasts, useEffect, useState } from "@webpack/common";
-import { composeUploadMessage, formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
+import { findByProps, findByPropsLazy } from "@webpack";
+import { closeModal, ComponentDispatch, ContextMenuApi, FluxDispatcher, Forms, Menu, MessageActions, Modal, openModal, showToast, TextInput, Toasts, useEffect, useState } from "@webpack/common";
+import { composeUploadMessage, formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadFile, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
 const logger = new Logger("PooWangUploader");
+const DraftManager = findByPropsLazy("clearDraft", "saveDraft") as {
+    clearDraft(channelId: string, draftType: DraftType): void;
+};
 let tokenConfigured = false;
 let attachmentMenuRequestedAt = 0;
 let attachmentMenuNavId: string | undefined;
@@ -443,7 +446,7 @@ const plugin = definePlugin({
 
 
     async uploadExternally(files: File[]): Promise<string | undefined> {
-        const urls: string[] = [];
+        const uploadedFiles: PooWangUploadFile[] = [];
         let failure: PooWangUploadResult | undefined;
 
         await withUploadProgress(files, async report => {
@@ -494,21 +497,26 @@ const plugin = definePlugin({
                     failure = result;
                     break;
                 }
-                urls.push(result.file.url);
+                uploadedFiles.push(result.file);
             }
         });
 
         if (failure) {
             logger.warn("poo.wang upload failed", failure.status, failure.error);
-            showToast(`Uploaded ${urls.length}/${files.length}. ${failure.error ?? "A file failed."}`, Toasts.Type.FAILURE);
+            showToast(`Uploaded ${uploadedFiles.length}/${files.length}. ${failure.error ?? "A file failed."}`, Toasts.Type.FAILURE);
             return;
         }
 
-        showToast(`Uploaded ${urls.length} file(s) to poo.wang.`, Toasts.Type.SUCCESS);
-        return formatUploadLinks(urls);
+        showToast(`Uploaded ${uploadedFiles.length} file(s) to poo.wang.`, Toasts.Type.SUCCESS);
+        return formatUploadLinks(uploadedFiles);
     },
 
-    async onBeforeMessageSend(channelId: string, message: MessageObject) {
+    async onBeforeMessageSend(
+        channelId: string,
+        message: MessageObject,
+        options: SendMessageOptions & { attachmentsToUpload?: CloudUpload[]; },
+        _props: SendMessageProps
+    ) {
         const store = findByProps("getUploads", "getUploadCount") as {
             getUploads(channelId: string, draftType: DraftType): CloudUpload[];
         } | null;
@@ -540,9 +548,21 @@ const plugin = definePlugin({
 
         const links = await this.uploadExternally(files);
         if (!links) return { cancel: true };
+        const outgoingMessage = { ...message, content: composeUploadMessage(message.content, links) };
+        const outgoingOptions = { ...options, attachmentsToUpload: [] };
+        try {
+            await MessageActions.sendMessage(channelId, outgoingMessage, true, outgoingOptions);
+        } catch (error) {
+            logger.error("Could not send poo.wang links", error);
+            showToast("The file uploaded, but Discord could not send its link. Your draft was kept.", Toasts.Type.FAILURE);
+            return { cancel: true };
+        }
+        DraftManager.clearDraft(channelId, DraftType.ChannelMessage);
+        ComponentDispatch.dispatchToLastSubscribed("CLEAR_TEXT");
+        FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId });
         uploads.forEach(upload => upload.removeFromMsgDraft());
-        message.content = composeUploadMessage(message.content, links);
-        logger.info("Replaced draft attachments with poo.wang links", { files: uploads.length, channelId });
+        logger.info("Sent poo.wang links and cleared composer state", { files: uploads.length, channelId });
+        return { cancel: true };
     }
 });
 

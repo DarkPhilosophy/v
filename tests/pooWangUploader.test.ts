@@ -7,11 +7,19 @@ import { composeUploadMessage, formatUploadLinks, getUploadError, isAttachmentPl
 test("poo.wang upload response maps a public file link", () => {
     assert.deepEqual(parseUploadFile({
         success: true,
-        files: [{ id: "file-1", name: "photo.webp", url: "https://poo.wang/f/file-1" }]
+        files: [{
+            id: "file-1",
+            name: "photo.webp",
+            url: "https://poo.wang/f/file-1",
+            contentType: "image/webp",
+            mediaKind: "image"
+        }]
     }), {
         id: "file-1",
         name: "photo.webp",
-        url: "https://poo.wang/f/file-1"
+        url: "https://poo.wang/f/file-1",
+        contentType: "image/webp",
+        mediaKind: "image"
     });
 });
 
@@ -26,8 +34,19 @@ test("poo.wang API errors remain visible", () => {
     assert.equal(getUploadError({}, "fallback"), "fallback");
 });
 
-test("multiple poo.wang links are inserted on separate lines", () => {
-    assert.equal(formatUploadLinks(["https://poo.wang/f/a", "https://poo.wang/f/b"]), "https://poo.wang/f/a\nhttps://poo.wang/f/b");
+test("previewable images and videos use Discord masked links", () => {
+    assert.equal(formatUploadLinks([
+        { id: "a", name: "photo[1].webp", url: "https://poo.wang/f/a", contentType: "image/webp", mediaKind: "image" },
+        { id: "b", name: "clip.mp4", url: "https://poo.wang/f/b", contentType: "video/mp4", mediaKind: "video" }
+    ]), "[photo\\[1\\].webp](https://poo.wang/f/a)\n[clip.mp4](https://poo.wang/f/b)");
+});
+
+test("unsupported media and regular files preserve raw URLs", () => {
+    assert.equal(formatUploadLinks([
+        { id: "a", name: "vector.svg", url: "https://poo.wang/f/a", contentType: "image/svg+xml", mediaKind: "unsafe-image" },
+        { id: "b", name: "movie.mkv", url: "https://poo.wang/f/b", contentType: "video/x-matroska", mediaKind: "video" },
+        { id: "c", name: "archive.zip", url: "https://poo.wang/f/c", contentType: "application/zip", mediaKind: "file" }
+    ]), "https://poo.wang/f/a\nhttps://poo.wang/f/b\nhttps://poo.wang/f/c");
 });
 
 test("send-time rerouting preserves existing draft text", () => {
@@ -81,7 +100,7 @@ test("attachment menu detection accepts current Discord plus classes", () => {
 
 test("plugin keeps native draft previews and reroutes only when sending", () => {
     const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/index.tsx", import.meta.url), "utf8");
-    assert.match(source, /import type \{ MessageObject \} from "@api\/MessageEvents"/);
+    assert.match(source, /import type \{ MessageObject, SendMessageOptions, SendMessageProps \} from "@api\/MessageEvents"/);
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.doesNotMatch(source, /chatBarButton:/);
     assert.doesNotMatch(source, /document\.addEventListener\("(?:click|change|drop|paste)"/);
@@ -89,7 +108,14 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /async onBeforeMessageSend/);
     assert.match(source, /getUploads\(channelId, DraftType\.ChannelMessage\)/);
     assert.match(source, /upload\.removeFromMsgDraft\(\)/);
-    assert.match(source, /message\.content = composeUploadMessage\(message\.content, links\)/);
+    assert.match(source, /const outgoingMessage = \{ \.\.\.message, content: composeUploadMessage\(message\.content, links\) \}/);
+    assert.match(source, /const outgoingOptions = \{ \.\.\.options, attachmentsToUpload: \[\] \}/);
+    assert.match(source, /await MessageActions\.sendMessage\(channelId, outgoingMessage, true, outgoingOptions\)/);
+    assert.match(source, /uploads\.forEach\(upload => upload\.removeFromMsgDraft\(\)\)/);
+    assert.match(source, /DraftManager\.clearDraft\(channelId, DraftType\.ChannelMessage\)/);
+    assert.match(source, /ComponentDispatch\.dispatchToLastSubscribed\("CLEAR_TEXT"\)/);
+    assert.match(source, /FluxDispatcher\.dispatch\(\{ type: "DELETE_PENDING_REPLY", channelId \}\)/);
+    assert.match(source, /return \{ cancel: true \}/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
     assert.match(source, /poo-wang-default/);
