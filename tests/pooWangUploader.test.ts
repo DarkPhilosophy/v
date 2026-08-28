@@ -30,20 +30,19 @@ test("multiple poo.wang links are inserted on separate lines", () => {
     assert.equal(formatUploadLinks(["https://poo.wang/f/a", "https://poo.wang/f/b"]), "https://poo.wang/f/a\nhttps://poo.wang/f/b");
 });
 
-test("normal uploads prompt while oversized files reroute automatically", () => {
+test("default routing is silent while opt-in routing prompts", () => {
     const base = {
         enabled: true,
         tokenConfigured: true,
         isThumbnail: false,
-        showChoice: true,
         rerouteByDefault: false,
         autoRerouteLargeFiles: true,
         largeFileThresholdBytes: 25 * 1024 * 1024
     };
     assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024] }), "prompt");
+    assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024], rerouteByDefault: true }), "poo-wang");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [25 * 1024 * 1024] }), "poo-wang");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], tokenConfigured: false }), "prompt");
-    assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], tokenConfigured: false, showChoice: false }), "discord");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], isThumbnail: true }), "discord");
 });
 
@@ -53,12 +52,11 @@ test("disabled choice follows the configured default route", () => {
         tokenConfigured: true,
         isThumbnail: false,
         fileSizes: [1024],
-        showChoice: false,
         autoRerouteLargeFiles: false,
         largeFileThresholdBytes: 25 * 1024 * 1024
     };
     assert.equal(selectUploadRoute({ ...base, rerouteByDefault: true }), "poo-wang");
-    assert.equal(selectUploadRoute({ ...base, rerouteByDefault: false }), "discord");
+    assert.equal(selectUploadRoute({ ...base, rerouteByDefault: false }), "prompt");
 });
 
 test("random upload names use configured printable ASCII and preserve extensions", () => {
@@ -70,18 +68,22 @@ test("random upload names use configured printable ASCII and preserve extensions
 });
 
 
-test("plugin preserves the plus menu and reroutes selected files", () => {
+test("plugin preserves the plus menu and reroutes only selected files", () => {
     const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/index.tsx", import.meta.url), "utf8");
     assert.match(source, /import \{ definePluginSettings \} from "@api\/Settings"/);
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.doesNotMatch(source, /chatBarButton:/);
-    assert.match(source, /document\.addEventListener\("click"/);
+    assert.doesNotMatch(source, /document\.addEventListener\("click"/);
     assert.match(source, /document\.addEventListener\("change"/);
     assert.match(source, /document\.addEventListener\("drop"/);
     assert.match(source, /document\.addEventListener\("paste"/);
     assert.match(source, /input\.type !== "file"/);
-    assert.doesNotMatch(source, /pickAndUpload|Native\.pickUploadFiles/);
-    assert.match(source, /handlePlusButtonClick|attachButtonPlus|new MouseEvent\("contextmenu"/);
+    assert.doesNotMatch(source, /handlePlusButtonClick|pickAndUpload|Native\.pickUploadFiles/);
+    assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
+    assert.match(source, /poo-wang-settings/);
+    assert.match(source, />Cancel</);
+    assert.match(source, />Upload with Discord</);
+    assert.match(source, />Upload with poo\.wang</);
     assert.match(source, /await sendMessage\(channel\.id, \{ content: links \}\)/);
 });
 

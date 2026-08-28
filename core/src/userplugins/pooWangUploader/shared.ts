@@ -54,19 +54,18 @@ export function selectUploadRoute(input: {
     tokenConfigured: boolean;
     isThumbnail: boolean;
     fileSizes: readonly number[];
-    showChoice: boolean;
     rerouteByDefault: boolean;
     autoRerouteLargeFiles: boolean;
     largeFileThresholdBytes: number;
 }): UploadRoute {
     if (!input.enabled || input.isThumbnail || input.fileSizes.length === 0) return "discord";
-    if (!input.tokenConfigured) return input.showChoice ? "prompt" : "discord";
+    if (!input.tokenConfigured) return "prompt";
+    if (input.rerouteByDefault) return "poo-wang";
     if (
         input.autoRerouteLargeFiles
         && input.fileSizes.some(size => size >= input.largeFileThresholdBytes)
     ) return "poo-wang";
-    if (input.showChoice) return "prompt";
-    return input.rerouteByDefault ? "poo-wang" : "discord";
+    return "prompt";
 }
 
 const TAR_EXTENSION = /\.tar\.[^.]+$/i;
