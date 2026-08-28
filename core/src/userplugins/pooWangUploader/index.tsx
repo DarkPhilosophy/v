@@ -279,8 +279,8 @@ export default definePlugin({
     patches: [{
         find: "Unexpected mismatch between files and file metadata",
         replacement: {
-            match: /async function (\i)\((\i),(\i),(\i)\)\{(?=let\{filesMetadata:)/,
-            replace: "$&if($self.interceptUploads($2,$3,$4,arguments[3]))return;"
+            match: /async function \i\((\i),(\i),(\i)\)\{(?=let\{filesMetadata:)/,
+            replace: "$&if($self.interceptUploads($1,$2,$3,arguments[3]))return;"
         }
     }],
 
