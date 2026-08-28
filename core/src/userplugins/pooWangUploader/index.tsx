@@ -7,12 +7,13 @@
 import { addGlobalContextMenuPatch, type GlobalContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
+import { Switch } from "@components/Switch";
 import { copyWithToast, sendMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
-import { ChannelStore, closeModal, Forms, Menu, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
+import { ChannelStore, closeModal, ContextMenuApi, Forms, Menu, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
 import { formatUploadLinks, isAttachmentPlusClassName, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
@@ -20,6 +21,7 @@ const logger = new Logger("PooWangUploader");
 let tokenConfigured = false;
 let attachmentMenuRequestedAt = 0;
 let attachmentMenuNavId: string | undefined;
+let attachmentMenuInjectionTimer: number | undefined;
 
 interface UploadChannel {
     id: string;
@@ -113,6 +115,99 @@ function openTokenConfiguration() {
     ));
 }
 
+
+function openQuickSettings() {
+    openModal(rootProps => {
+        const QuickSettings = () => {
+            const [reroute, setReroute] = useState(settings.store.rerouteByDefault);
+            const [largeFiles, setLargeFiles] = useState(settings.store.autoRerouteLargeFiles);
+
+            return (
+                <Modal {...rootProps} title="poo.wang quick settings">
+                    <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                        <div>
+                            <Forms.FormTitle>Reroute uploads by default</Forms.FormTitle>
+                            <Forms.FormText>Upload through poo.wang and send the link without asking.</Forms.FormText>
+                        </div>
+                        <Switch checked={reroute} onChange={value => {
+                            settings.store.rerouteByDefault = value;
+                            setReroute(value);
+                        }} />
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 16 }}>
+                        <div>
+                            <Forms.FormTitle>Reroute oversized files</Forms.FormTitle>
+                            <Forms.FormText>Use poo.wang automatically at the configured size limit.</Forms.FormText>
+                        </div>
+                        <Switch checked={largeFiles} onChange={value => {
+                            settings.store.autoRerouteLargeFiles = value;
+                            setLargeFiles(value);
+                        }} />
+                    </label>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+                        <Button onClick={() => { rootProps.onClose(); openTokenConfiguration(); }}>Configure token</Button>
+                        <Button onClick={rootProps.onClose}>Done</Button>
+                    </div>
+                </Modal>
+            );
+        };
+        return <QuickSettings />;
+    });
+}
+
+function injectQuickSettingsIntoAttachmentMenu(menu: HTMLElement): boolean {
+    if (menu.querySelector('[data-vc-poo-wang-settings="true"]') || menu.textContent?.includes("poo.wang upload settings")) return true;
+
+    const reference = menu.querySelector<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]');
+    if (!reference?.parentElement) return false;
+
+    const item = reference.cloneNode(true) as HTMLElement;
+    item.dataset.vcPooWangSettings = "true";
+    item.setAttribute("role", "menuitem");
+    item.setAttribute("aria-label", "poo.wang upload settings");
+    item.removeAttribute("aria-checked");
+    item.removeAttribute("aria-haspopup");
+    item.querySelectorAll("[id]").forEach(element => element.removeAttribute("id"));
+
+    const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+    let replaced = false;
+    while (walker.nextNode()) {
+        const text = walker.currentNode as Text;
+        if (!text.nodeValue?.trim()) continue;
+        text.nodeValue = replaced ? "" : "poo.wang upload settings";
+        replaced = true;
+    }
+    if (!replaced) item.textContent = "poo.wang upload settings";
+
+    const activate = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        ContextMenuApi.closeContextMenu();
+        openQuickSettings();
+    };
+    item.addEventListener("click", activate, true);
+    item.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") activate(event);
+    }, true);
+    reference.parentElement.append(item);
+    logger.info("Injected poo.wang quick settings into attachment menu");
+    return true;
+}
+
+function scheduleAttachmentMenuInjection(existingMenus: Set<Element>, attempt = 0) {
+    clearTimeout(attachmentMenuInjectionTimer);
+    attachmentMenuInjectionTimer = window.setTimeout(() => {
+        const menus = Array.from(document.querySelectorAll<HTMLElement>('[role="menu"]'));
+        const menu = menus.findLast(candidate => !existingMenus.has(candidate) && candidate.getClientRects().length > 0);
+        if (menu && injectQuickSettingsIntoAttachmentMenu(menu)) {
+            attachmentMenuInjectionTimer = undefined;
+            return;
+        }
+        if (attempt < 20) scheduleAttachmentMenuInjection(existingMenus, attempt + 1);
+        else attachmentMenuInjectionTimer = undefined;
+    }, 50);
+}
 function UploadRouteModal(props: {
     rootProps: RenderModalProps;
     files: readonly File[];
@@ -340,7 +435,11 @@ const plugin = definePlugin({
                 && typeof node.className === "string"
                 && isAttachmentPlusClassName(node.className)
             );
-            if (attachmentButton) attachmentMenuRequestedAt = Date.now();
+            if (!attachmentButton) return;
+
+            const existingMenus = new Set(document.querySelectorAll('[role="menu"]'));
+            attachmentMenuRequestedAt = Date.now();
+            scheduleAttachmentMenuInjection(existingMenus);
         };
         this.pasteListener = event => this.handleDocumentPaste(event);
         document.addEventListener("change", this.changeListener, true);
@@ -354,6 +453,8 @@ const plugin = definePlugin({
         tokenConfigured = false;
         attachmentMenuRequestedAt = 0;
         attachmentMenuNavId = undefined;
+        clearTimeout(attachmentMenuInjectionTimer);
+        attachmentMenuInjectionTimer = undefined;
         if (this.plusContextListener) document.removeEventListener("contextmenu", this.plusContextListener, true);
         removeGlobalContextMenuPatch(attachmentMenuPatch);
         if (this.changeListener) document.removeEventListener("change", this.changeListener, true);

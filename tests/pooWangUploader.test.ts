@@ -90,6 +90,9 @@ test("plugin preserves the plus menu and reroutes only selected files", () => {
     assert.match(source, /poo-wang-settings/);
     assert.match(source, /poo-wang-default/);
     assert.match(source, /poo-wang-large-files/);
+    assert.match(source, /injectQuickSettingsIntoAttachmentMenu/);
+    assert.match(source, /data-vc-poo-wang-settings/);
+    assert.match(source, /poo\.wang quick settings/);
     assert.doesNotMatch(source, /showChoice/);
     assert.match(source, />Cancel</);
     assert.match(source, />Upload with Discord</);
