@@ -11,9 +11,10 @@ import { copyWithToast, insertTextIntoChatInputBox } from "@utils/discord";
 import { Logger } from "@utils/Logger";
 import definePlugin, { type IconComponent, OptionType, PluginNative } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
-import { closeModal, Forms, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
+import { DraftType } from "@vencord/discord-types/enums";
+import { ChannelStore, closeModal, Forms, Modal, openModal, SelectedChannelStore, showToast, TextInput, Toasts, UploadHandler, useEffect, useState } from "@webpack/common";
 import type * as NativeModule from "./native";
-import { formatUploadLinks, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute, shouldHookPlusButton } from "./shared";
+import { formatUploadLinks, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
 const logger = new Logger("PooWangUploader");
@@ -117,6 +118,17 @@ function AccessTokenSetting() {
     );
 }
 
+function openTokenConfiguration() {
+    openModal(rootProps => (
+        <Modal {...rootProps} title="Configure poo.wang">
+            <AccessTokenSetting />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+                <Button onClick={rootProps.onClose}>Done</Button>
+            </div>
+        </Modal>
+    ));
+}
+
 function UploadRouteModal(props: {
     rootProps: RenderModalProps;
     files: readonly File[];
@@ -144,7 +156,10 @@ function UploadRouteModal(props: {
                 <Switch checked={reroute} onChange={setReroute} disabled={!props.tokenConfigured} />
             </label>
             {!props.tokenConfigured && (
-                <Forms.FormText style={{ marginTop: 12 }}>Configure a registered-account machine token in the plugin settings to enable poo.wang.</Forms.FormText>
+                <div style={{ marginTop: 12 }}>
+                    <Forms.FormText>Configure a registered-account machine token to enable poo.wang.</Forms.FormText>
+                    <Button onClick={() => { close(undefined); openTokenConfiguration(); }}>Configure token</Button>
+                </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
                 <Button onClick={() => close(undefined)}>Cancel</Button>
@@ -232,7 +247,7 @@ const settings = definePluginSettings({
     },
     hookPlusButton: {
         type: OptionType.BOOLEAN,
-        description: "Use left click on the plus button for poo.wang and right click for the original Discord upload menu",
+        description: "Use left click on Discord's plus attachment button for a direct poo.wang file picker",
         default: true
     },
     showChoice: {
@@ -309,42 +324,86 @@ const plugin = definePlugin({
         render: PooWangChatButton
     },
 
-    patches: [
-        {
-            find: "Unexpected mismatch between files and file metadata",
-            replacement: {
-                match: /async function \i\((\i),(\i),(\i)\)\{(?=let\{filesMetadata:)/,
-                replace: "$&if($self.interceptUploads($1,$2,$3,arguments[3]))return;"
-            }
-        },
-        {
-            find: ".CHAT_INPUT_BUTTON_NOTIFICATION,",
-            replacement: {
-                match: /onDoubleClick:(\i\?void 0:\i)(?=,onMouseEnter:)/,
-                replace: "$&,...$self.getPlusButtonOverrides(arguments[0],arguments[0].onClick,arguments[0].onDoubleClick)"
-            }
-        }
-    ],
-
-    bypassNextUpload: false,
-    forcePooWangUntil: 0,
+    clickListener: undefined as ((event: MouseEvent) => void) | undefined,
+    dropListener: undefined as ((event: DragEvent) => void) | undefined,
+    pasteListener: undefined as ((event: ClipboardEvent) => void) | undefined,
 
     start() {
         if (!IS_DISCORD_DESKTOP) return;
         void Native.hasAccessToken()
             .then(value => { tokenConfigured = value; })
             .catch(error => logger.error("Could not read poo.wang token state", error));
+
+        this.clickListener = event => this.handleDocumentClick(event);
+        this.dropListener = event => this.handleDocumentDrop(event);
+        this.pasteListener = event => this.handleDocumentPaste(event);
+        document.addEventListener("click", this.clickListener, true);
+        document.addEventListener("drop", this.dropListener, true);
+        document.addEventListener("paste", this.pasteListener, true);
     },
 
     stop() {
         tokenConfigured = false;
-        this.forcePooWangUntil = 0;
+        if (this.clickListener) document.removeEventListener("click", this.clickListener, true);
+        if (this.dropListener) document.removeEventListener("drop", this.dropListener, true);
+        if (this.pasteListener) document.removeEventListener("paste", this.pasteListener, true);
+        this.clickListener = this.dropListener = this.pasteListener = undefined;
     },
 
+    currentChannel(): UploadChannel | undefined {
+        return ChannelStore.getChannel(SelectedChannelStore.getChannelId());
+    },
+
+    handleDocumentClick(event: MouseEvent) {
+        if (!settings.store.enabled || !settings.store.hookPlusButton || event.button !== 0) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target?.closest('[class*="attachButton"]')) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const channel = this.currentChannel();
+        if (channel) void this.pickAndUpload(channel, DraftType.ChannelMessage);
+    },
+
+    routeDomFiles(files: File[], event: Event): boolean {
+        const channel = this.currentChannel();
+        if (!channel || files.length === 0) return false;
+        const route = selectUploadRoute({
+            enabled: settings.store.enabled,
+            tokenConfigured,
+            isThumbnail: false,
+            fileSizes: files.map(file => file.size),
+            showChoice: settings.store.showChoice,
+            rerouteByDefault: settings.store.rerouteByDefault,
+            autoRerouteLargeFiles: settings.store.autoRerouteLargeFiles,
+            largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024
+        });
+        if (route === "discord") return false;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        void this.routeUpload(route, files, channel, DraftType.ChannelMessage, { requireConfirm: true });
+        return true;
+    },
+
+    handleDocumentDrop(event: DragEvent) {
+        if (!document.querySelector('[class*="channelTextArea"]')) return;
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        this.routeDomFiles(files, event);
+    },
+
+    handleDocumentPaste(event: ClipboardEvent) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target?.closest('[contenteditable="true"]')) return;
+        const files = Array.from(event.clipboardData?.files ?? []);
+        this.routeDomFiles(files, event);
+    },
 
     async pickAndUpload(channel: UploadChannel, draftType: number) {
         if (!tokenConfigured) {
-            showToast("Configure the poo.wang machine token in plugin settings first.", Toasts.Type.FAILURE);
+            openTokenConfiguration();
             return;
         }
 
@@ -358,58 +417,6 @@ const plugin = definePlugin({
             showToast("Could not select files for poo.wang upload.", Toasts.Type.FAILURE);
         }
     },
-    getPlusButtonOverrides(props: any, openDiscord: ((event: unknown) => void) | undefined, openFilePicker: ((event: unknown) => void) | undefined) {
-        if (!shouldHookPlusButton({
-            enabled: settings.store.enabled,
-            hookPlusButton: settings.store.hookPlusButton,
-            disabled: props?.disabled === true,
-            className: props?.className
-        })) return {};
-        return {
-            onClick: (event: unknown) => {
-                if (!tokenConfigured) {
-                    showToast("Configure the poo.wang machine token in plugin settings first.", Toasts.Type.FAILURE);
-                    openDiscord?.(event);
-                    return;
-                }
-                this.forcePooWangUntil = Date.now() + 60_000;
-                openFilePicker?.(event);
-            },
-            onContextMenu: openDiscord
-        };
-    },
-
-    interceptUploads(
-        rawFiles: ArrayLike<File>,
-        channel: UploadChannel,
-        draftType: number,
-        options?: UploadOptions
-    ): boolean {
-        if (this.bypassNextUpload) {
-            this.bypassNextUpload = false;
-            return false;
-        }
-
-        const files = Array.from(rawFiles);
-        if (files.some(file => !(file instanceof File))) return false;
-        const forcedPooWang = tokenConfigured && Date.now() <= this.forcePooWangUntil;
-        this.forcePooWangUntil = 0;
-        const route = forcedPooWang ? "poo-wang" : selectUploadRoute({
-            enabled: settings.store.enabled,
-            tokenConfigured,
-            isThumbnail: options?.isThumbnail === true,
-            fileSizes: files.map(file => file.size),
-            showChoice: settings.store.showChoice,
-            rerouteByDefault: settings.store.rerouteByDefault,
-            autoRerouteLargeFiles: settings.store.autoRerouteLargeFiles,
-            largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024
-        });
-        if (route === "discord") return false;
-
-        void this.routeUpload(route, files, channel, draftType, options);
-        return true;
-    },
-
     restoreDiscordUpload(
         files: File[],
         channel: UploadChannel,
@@ -418,13 +425,11 @@ const plugin = definePlugin({
         forceConfirmation = false
     ) {
         if (!files.length) return;
-        this.bypassNextUpload = true;
         try {
             UploadHandler.promptToUpload(files, channel, draftType, forceConfirmation
                 ? { ...options, requireConfirm: true }
                 : options);
         } catch (error) {
-            this.bypassNextUpload = false;
             logger.error("Could not restore Discord upload", error);
             showToast("The attachment could not be restored to the Discord composer.", Toasts.Type.FAILURE);
         }

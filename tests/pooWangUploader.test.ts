@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { formatUploadLinks, getUploadError, parseUploadFile, randomizeUploadName, selectUploadRoute, shouldHookPlusButton } from "../core/src/userplugins/pooWangUploader/shared.ts";
+import { formatUploadLinks, getUploadError, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
 
 test("poo.wang upload response maps a public file link", () => {
     assert.deepEqual(parseUploadFile({
@@ -70,17 +70,13 @@ test("random upload names use configured printable ASCII and preserve extensions
 });
 
 
-test("plus upload hook targets only the enabled attachment button", () => {
-    assert.equal(shouldHookPlusButton({ enabled: true, hookPlusButton: true, disabled: false, className: "button attachButton_xyz" }), true);
-    assert.equal(shouldHookPlusButton({ enabled: false, hookPlusButton: true, disabled: false, className: "attachButton_xyz" }), false);
-    assert.equal(shouldHookPlusButton({ enabled: true, hookPlusButton: true, disabled: true, className: "attachButton_xyz" }), false);
-    assert.equal(shouldHookPlusButton({ enabled: true, hookPlusButton: true, disabled: false, className: "emojiButton" }), false);
-});
-
-test("plugin registers both promptToUpload and direct plus-button patches", () => {
+test("plugin registers runtime hooks for plus, drop, paste, and an explicit chat button", () => {
     const source = readFileSync(new URL("../core/src/userplugins/pooWangUploader/index.tsx", import.meta.url), "utf8");
-    assert.match(source, /Unexpected mismatch between files and file metadata/);
-    assert.match(source, /CHAT_INPUT_BUTTON_NOTIFICATION/);
-    assert.match(source, /getPlusButtonOverrides/);
-    assert.match(source, /onContextMenu: openDiscord/);
+    assert.doesNotMatch(source, /patches:\s*\[/);
+    assert.match(source, /document\.addEventListener\("click"/);
+    assert.match(source, /document\.addEventListener\("drop"/);
+    assert.match(source, /document\.addEventListener\("paste"/);
+    assert.ok(source.includes("closest('[class*=\"attachButtonPlus\"]')"));
+    assert.match(source, /chatBarButton:/);
+    assert.match(source, /Native\.pickUploadFiles\(\)/);
 });
