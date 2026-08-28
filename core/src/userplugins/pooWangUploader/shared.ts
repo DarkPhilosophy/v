@@ -100,16 +100,3 @@ export function secureRandomIndex(upperBound: number): number {
     crypto.getRandomValues(sample);
     return sample[0] % upperBound;
 }
-
-export function shouldHookPlusButton(input: {
-    enabled: boolean;
-    hookPlusButton: boolean;
-    disabled: boolean;
-    className: unknown;
-}): boolean {
-    return input.enabled
-        && input.hookPlusButton
-        && !input.disabled
-        && typeof input.className === "string"
-        && input.className.includes("attachButton");
-}

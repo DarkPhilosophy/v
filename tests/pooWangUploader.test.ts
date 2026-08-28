@@ -76,7 +76,7 @@ test("plugin registers runtime hooks for plus, drop, paste, and an explicit chat
     assert.match(source, /document\.addEventListener\("click"/);
     assert.match(source, /document\.addEventListener\("drop"/);
     assert.match(source, /document\.addEventListener\("paste"/);
-    assert.ok(source.includes("closest('[class*=\"attachButtonPlus\"]')"));
+    assert.ok(source.includes("closest('[class*=\"attachButton\"]')"));
     assert.match(source, /chatBarButton:/);
     assert.match(source, /Native\.pickUploadFiles\(\)/);
 });
