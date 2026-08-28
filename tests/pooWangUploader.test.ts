@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { formatUploadLinks, getUploadError, isAttachmentPlusClassName, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
+import { composeUploadMessage, formatUploadLinks, getUploadError, isAttachmentPlusClassName, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
 
 test("poo.wang upload response maps a public file link", () => {
     assert.deepEqual(parseUploadFile({
@@ -28,6 +28,11 @@ test("poo.wang API errors remain visible", () => {
 
 test("multiple poo.wang links are inserted on separate lines", () => {
     assert.equal(formatUploadLinks(["https://poo.wang/f/a", "https://poo.wang/f/b"]), "https://poo.wang/f/a\nhttps://poo.wang/f/b");
+});
+
+test("send-time rerouting preserves existing draft text", () => {
+    assert.equal(composeUploadMessage("hello  ", "https://poo.wang/f/a"), "hello\nhttps://poo.wang/f/a");
+    assert.equal(composeUploadMessage("", "https://poo.wang/f/a"), "https://poo.wang/f/a");
 });
 
 test("default routing is silent while opt-in routing prompts", () => {
@@ -84,7 +89,7 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /async onBeforeMessageSend/);
     assert.match(source, /getUploads\(channelId, DraftType\.ChannelMessage\)/);
     assert.match(source, /upload\.removeFromMsgDraft\(\)/);
-    assert.match(source, /message\.content = \[message\.content\.trim\(\), links\]/);
+    assert.match(source, /message\.content = composeUploadMessage\(message\.content, links\)/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
     assert.match(source, /poo-wang-default/);

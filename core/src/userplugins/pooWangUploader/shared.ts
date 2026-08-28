@@ -49,6 +49,11 @@ export function formatUploadLinks(urls: readonly string[]): string {
     return urls.join("\n");
 }
 
+export function composeUploadMessage(content: string, links: string): string {
+    const existing = content.trimEnd();
+    return existing ? `${existing}\n${links}` : links;
+}
+
 export function selectUploadRoute(input: {
     enabled: boolean;
     tokenConfigured: boolean;
