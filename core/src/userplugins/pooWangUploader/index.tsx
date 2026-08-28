@@ -54,6 +54,7 @@ function AccessTokenSetting() {
     async function saveToken() {
         setSaving(true);
         const result = await Native.setAccessToken(token).catch(error => ({ ok: false, error: String(error) }));
+        logger.info("Token save result", { ok: result.ok, configured: result.ok && Boolean(token.trim()), error: result.error });
         setSaving(false);
         if (!result.ok) {
             showToast(result.error ?? "Could not store the poo.wang token.", Toasts.Type.FAILURE);
@@ -308,7 +309,10 @@ const plugin = definePlugin({
     start() {
         if (!IS_DISCORD_DESKTOP) return;
         void Native.hasAccessToken()
-            .then(value => { tokenConfigured = value; })
+            .then(value => {
+                tokenConfigured = value;
+                logger.info("Plugin started", { tokenConfigured: value });
+            })
             .catch(error => logger.error("Could not read poo.wang token state", error));
 
         this.changeListener = event => this.handleFileSelection(event);
@@ -336,6 +340,7 @@ const plugin = definePlugin({
         const input = event.target;
         if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
         const files = Array.from(input.files ?? []);
+        logger.info("Discord file picker selection", { files: files.length, tokenConfigured });
         this.routeDomFiles(files, event);
 
     },
@@ -351,6 +356,13 @@ const plugin = definePlugin({
             rerouteByDefault: settings.store.rerouteByDefault,
             autoRerouteLargeFiles: settings.store.autoRerouteLargeFiles,
             largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024
+        });
+        logger.info("Upload route selected", {
+            route,
+            files: files.length,
+            tokenConfigured,
+            showChoice: settings.store.showChoice,
+            rerouteByDefault: settings.store.rerouteByDefault
         });
         if (route === "discord") return false;
 
@@ -448,6 +460,7 @@ const plugin = definePlugin({
                         );
                     }
                     report({ fileName: uploadName, fileIndex: index, fileCount: files.length, percent: 0 });
+                    logger.info("Upload started", { fileIndex: index + 1, fileCount: files.length, size: file.size, burnMode: settings.store.burnMode });
                     progressTimer = window.setInterval(() => {
                         void Native.getUploadProgress(uploadId).then(progress => {
                             if (!pollingProgress || !progress || progress.total <= 0) return;
@@ -466,6 +479,7 @@ const plugin = definePlugin({
                         data: new Uint8Array(await file.arrayBuffer()),
                         burnMode: settings.store.burnMode
                     });
+                    logger.info("Upload response", { fileIndex: index + 1, ok: result.ok, status: result.status, error: result.error });
                     report({ fileName: uploadName, fileIndex: index, fileCount: files.length, percent: 100 });
                 } catch (error) {
                     result = { ok: false, status: 0, error: String(error) };
