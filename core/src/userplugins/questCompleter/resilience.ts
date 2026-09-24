@@ -5,10 +5,18 @@ export interface DispatcherLike {
 
 interface HeartbeatEvent {
     questId?: string;
-    userStatus?: {
-        progress?: Record<string, { value?: number }>;
-        streamProgressSeconds?: number;
-    };
+    quest_id?: string;
+    userStatus?: QuestUserStatusLike;
+}
+
+/** userStatus arrives from Discord in several shapes: progress may be a plain
+ * object or a Map, keys may be camelCase or snake_case. */
+interface QuestUserStatusLike {
+    completedAt?: string | null;
+    completed_at?: string | null;
+    progress?: Record<string, { value?: number }> | Map<string, { value?: number }>;
+    streamProgressSeconds?: number;
+    stream_progress_seconds?: number;
 }
 
 export interface HeartbeatWait {
@@ -16,45 +24,182 @@ export interface HeartbeatWait {
     cancel(error?: Error): void;
 }
 
+export interface HeartbeatWaitOptions {
+    /** Silence window: any heartbeat event (success or failure) for this quest
+     * re-arms it. Discord beats every ~60s and never retries a failed beat, so
+     * 90s leaves one beat of slack. */
+    idleMs?: number;
+    /** Hard cap for the whole wait regardless of activity. */
+    absoluteMs?: number;
+    /** Consecutive QUESTS_SEND_HEARTBEAT_FAILURE events that end the wait. */
+    maxConsecutiveFailures?: number;
+    /** Extra completion signal: polled periodically (e.g. QuestsStore lookup)
+     * so a completedAt/progress update we never saw as an event still settles. */
+    isComplete?: () => boolean;
+    pollMs?: number;
+    onDebug?: (message: string) => void;
+    /** Injectable timers so tests drive time deterministically. */
+    setTimer?: (fn: () => void, ms: number) => unknown;
+    clearTimer?: (id: unknown) => void;
+    setPoll?: (fn: () => void, ms: number) => unknown;
+    clearPoll?: (id: unknown) => void;
+}
+
 const HEARTBEAT_SUCCESS = "QUESTS_SEND_HEARTBEAT_SUCCESS";
+const HEARTBEAT_FAILURE = "QUESTS_SEND_HEARTBEAT_FAILURE";
+const USER_STATUS_UPDATE = "QUESTS_USER_STATUS_UPDATE";
 const CONNECTION_CLOSED = "CONNECTION_CLOSED";
 const AUTOMATION_BATCH_SIZE = 5;
+
+function eventQuestId(event: unknown): string | undefined {
+    const e = event as HeartbeatEvent | null | undefined;
+    return e?.questId ?? e?.quest_id;
+}
+
+export function readTaskProgress(userStatus: QuestUserStatusLike | null | undefined, taskName: string): number {
+    const progress = userStatus?.progress;
+    const entry = progress instanceof Map ? progress.get(taskName) : progress?.[taskName];
+    return Math.floor(entry?.value ?? userStatus?.streamProgressSeconds ?? userStatus?.stream_progress_seconds ?? 0);
+}
+
+/** A quest is done when Discord says so (completedAt) or when the credited
+ * progress reached the target — the terminal heartbeat may carry either. */
+export function isQuestStatusComplete(userStatus: QuestUserStatusLike | null | undefined, taskName: string, secondsNeeded: number): boolean {
+    if (!userStatus) return false;
+    if (userStatus.completedAt || userStatus.completed_at) return true;
+    return readTaskProgress(userStatus, taskName) >= secondsNeeded;
+}
+
+function describeHeartbeatFailure(event: unknown): string {
+    const e = (event as { error?: unknown })?.error ?? event;
+    const parts: string[] = [];
+    const status = (e as { status?: unknown; httpStatus?: unknown })?.status ?? (e as { httpStatus?: unknown })?.httpStatus;
+    if (typeof status === "number") parts.push(`HTTP ${status}`);
+    const code = (e as { body?: { code?: unknown }; code?: unknown })?.body?.code ?? (e as { code?: unknown })?.code;
+    if ((typeof code === "string" || typeof code === "number") && code !== status) parts.push(`code ${code}`);
+    const message = (e as { body?: { message?: unknown }; message?: unknown })?.body?.message ?? (e as { message?: unknown })?.message;
+    if (message) parts.push(String(message));
+    if (!parts.length) {
+        try { parts.push(JSON.stringify(e).slice(0, 160)); } catch { parts.push(String(e)); }
+    }
+    return parts.join(", ") || "no detail";
+}
 
 export function createHeartbeatWait(
     dispatcher: DispatcherLike,
     questId: string,
     taskName: string,
     secondsNeeded: number,
-    cleanup: () => void
+    cleanup: () => void,
+    options: HeartbeatWaitOptions = {}
 ): HeartbeatWait {
+    const idleMs = options.idleMs ?? 90_000;
+    const absoluteMs = options.absoluteMs ?? (secondsNeeded + 300) * 1000;
+    const maxConsecutiveFailures = options.maxConsecutiveFailures ?? 5;
+    const pollMs = options.pollMs ?? 15_000;
+    const setTimer = options.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+    const clearTimer = options.clearTimer ?? ((id: unknown) => clearTimeout(id as Parameters<typeof clearTimeout>[0]));
+    const setPoll = options.setPoll ?? ((fn: () => void, ms: number) => setInterval(fn, ms));
+    const clearPoll = options.clearPoll ?? ((id: unknown) => clearInterval(id as Parameters<typeof clearInterval>[0]));
+
     let settled = false;
     let resolvePromise!: () => void;
     let rejectPromise!: (error: Error) => void;
+    let idleTimer: unknown;
+    let absoluteTimer: unknown;
+    let pollTimer: unknown;
+    let creditedBeats = 0;
+    let failedBeats = 0;
+    let consecutiveFailures = 0;
+    let lastFailure: string | undefined;
+    let debugged = false;
 
     const unsubscribe = () => {
         dispatcher.unsubscribe(HEARTBEAT_SUCCESS, onHeartbeat);
+        dispatcher.unsubscribe(HEARTBEAT_FAILURE, onHeartbeatFailure);
+        dispatcher.unsubscribe(USER_STATUS_UPDATE, onStatusUpdate);
         dispatcher.unsubscribe(CONNECTION_CLOSED, onConnectionClosed);
+    };
+    const stopTimers = () => {
+        clearTimer(idleTimer);
+        clearTimer(absoluteTimer);
+        clearPoll(pollTimer);
     };
     const settle = (error?: Error) => {
         if (settled) return;
         settled = true;
+        stopTimers();
         unsubscribe();
         cleanup();
         if (error) rejectPromise(error);
         else resolvePromise();
     };
+    const armIdle = () => {
+        clearTimer(idleTimer);
+        idleTimer = setTimer(() => {
+            const detail = failedBeats > 0
+                ? ` (${creditedBeats} credited, ${failedBeats} failed, last: ${lastFailure})`
+                : creditedBeats > 0 ? ` (${creditedBeats} credited)` : "";
+            settle(new Error(`heartbeat timeout${detail}`));
+        }, idleMs);
+    };
+    const debugOnce = (label: string, event: unknown) => {
+        if (debugged) return;
+        debugged = true;
+        try { options.onDebug?.(`${label}: ${JSON.stringify(event)?.slice(0, 400)}`); } catch { /* debug only */ }
+    };
     const onHeartbeat = (rawEvent: unknown) => {
-        const event = rawEvent as HeartbeatEvent;
-        if (event.questId !== questId) return;
-        const value = Math.floor(event.userStatus?.progress?.[taskName]?.value ?? event.userStatus?.streamProgressSeconds ?? 0);
-        if (value >= secondsNeeded) settle();
+        if (eventQuestId(rawEvent) !== questId) return;
+        debugOnce("heartbeat", rawEvent);
+        creditedBeats++;
+        consecutiveFailures = 0;
+        armIdle();
+        const status = (rawEvent as HeartbeatEvent).userStatus;
+        if (isQuestStatusComplete(status, taskName, secondsNeeded)) settle();
+    };
+    const onHeartbeatFailure = (rawEvent: unknown) => {
+        if (eventQuestId(rawEvent) !== questId) return;
+        debugOnce("heartbeat failure", rawEvent);
+        failedBeats++;
+        consecutiveFailures++;
+        lastFailure = describeHeartbeatFailure(rawEvent);
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+            settle(new Error(`heartbeat failed ${consecutiveFailures} times in a row: ${lastFailure}`));
+            return;
+        }
+        options.onDebug?.(`heartbeat failed (${consecutiveFailures}/${maxConsecutiveFailures}): ${lastFailure}`);
+        // Discord does not retry a failed beat; the next attempt is the tick
+        // already scheduled ~60s out, so a failure is proof of life, not silence.
+        // Before the first credited beat the original deadline stands: a spoof
+        // Discord never accepted should fail fast instead of retrying forever.
+        if (creditedBeats > 0) armIdle();
+    };
+    const onStatusUpdate = (rawEvent: unknown) => {
+        const e = rawEvent as { questId?: string; quest_id?: string; userStatus?: QuestUserStatusLike } & QuestUserStatusLike;
+        if (eventQuestId(rawEvent) !== questId) return;
+        const status = e?.userStatus ?? e;
+        // Passive updates only count when Discord finalized the quest: a full
+        // progress bar without completedAt means the terminal beat never went
+        // out, so the spoof must stay up until a real heartbeat lands.
+        if (status?.completedAt || status?.completed_at) settle();
     };
     const onConnectionClosed = () => settle(new Error("Gateway connection closed"));
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     resolvePromise = resolve;
     rejectPromise = reject;
     dispatcher.subscribe(HEARTBEAT_SUCCESS, onHeartbeat);
+    dispatcher.subscribe(HEARTBEAT_FAILURE, onHeartbeatFailure);
+    dispatcher.subscribe(USER_STATUS_UPDATE, onStatusUpdate);
     dispatcher.subscribe(CONNECTION_CLOSED, onConnectionClosed);
+    armIdle();
+    absoluteTimer = setTimer(() => settle(new Error(`heartbeat timeout (${Math.round(absoluteMs / 1000)}s cap)`)), absoluteMs);
+    if (options.isComplete) {
+        pollTimer = setPoll(() => {
+            try {
+                if (options.isComplete?.()) settle();
+            } catch { /* store lookup is best-effort */ }
+        }, pollMs);
+    }
 
     return { promise, cancel: error => settle(error ?? new Error("Quest heartbeat cancelled")) };
 }

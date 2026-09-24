@@ -10,7 +10,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByProps } from "@webpack";
 import { Button, FluxDispatcher, Forms, RestAPI, showToast, Toasts } from "@webpack/common";
 import { createDeferredHandler, type DeferredHandler } from "./deferredHandler";
-import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, resolveEnrolledStatus, runConcurrentQuestBatch } from "./resilience";
+import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, readTaskProgress, resolveEnrolledStatus, runConcurrentQuestBatch } from "./resilience";
 import { isAutomatableQuest } from "./taskSupport";
 
 
@@ -59,7 +59,7 @@ interface Quest {
         lastStreamHeartbeatAt?: string;
         streamProgressSeconds?: number;
         dismissedQuestContent?: unknown;
-        progress?: Record<string, { value: number; }>;
+        progress?: Record<string, { value: number; }> | Map<string, { value: number; }>;
     } | null;
     targetedContent?: unknown[];
     trafficMetadataSealed?: string;
@@ -196,7 +196,7 @@ async function completeQuest(quest: Quest): Promise<void> {
             return;
         }
         const enrolledAt = new Date(quest.userStatus!.enrolledAt!).getTime() / 1000;
-        let done = Math.floor(quest.userStatus?.progress?.[taskName]?.value ?? 0);
+        let done = readTaskProgress(quest.userStatus, taskName);
         toast(`${appName}: watching video ${done}/${secondsNeeded}s`);
         while (done < secondsNeeded) {
             const maxByElapsed = Math.floor(Date.now() / 1000) - enrolledAt;
@@ -220,6 +220,13 @@ async function completeQuest(quest: Quest): Promise<void> {
     if (taskName === "PLAY_ON_DESKTOP" || taskName === "STREAM_ON_DESKTOP") {
         if (!settings.store.doPlayQuests) {
             logger.info(`Skipping play quest ${appName} (doPlayQuests off)`);
+            return;
+        }
+        // Only a finalized quest is safe to skip. Full progress without
+        // completedAt means the terminal heartbeat never went out (e.g. after
+        // a client restart) — the spoof must run so Discord can credit it.
+        if (quest.userStatus?.completedAt) {
+            logger.info(`${appName}: already completed, skipping`);
             return;
         }
         const store = getStore<RunningGameStore>("getRunningGames", "getGameForPID");
@@ -274,24 +281,31 @@ async function completeQuest(quest: Quest): Promise<void> {
             runningGameStore.getGameForPID = getForPIDSnapshot;
             FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [gameEntry], added: [], games: [] });
         }
+        const questsStore = getStore<QuestsStore>("getQuest", "quests");
         const heartbeat = createHeartbeatWait(
             FluxDispatcher,
             quest.id,
             taskName,
             secondsNeeded,
-            cleanup
+            cleanup,
+            {
+                // Store poll is the fallback completion signal: it sees
+                // completedAt even if the heartbeat event shape changed.
+                isComplete: () => {
+                    const status = questsStore?.quests.get(quest.id)?.userStatus;
+                    return !!status?.completedAt;
+                },
+                onDebug: message => logger.info(`${appName}: ${message}`),
+            }
         );
-        const watchdog = setTimeout(() => {
-            logger.warn(`${appName}: heartbeat timeout (${secondsNeeded + 300}s), giving up`);
-            toast(`${appName}: heartbeat timeout. Try again later.`, Toasts.Type.FAILURE);
-            heartbeat.cancel(new Error("heartbeat timeout"));
-        }, (secondsNeeded + 300) * 1000);
         try {
             await heartbeat.promise;
             logger.info(`${appName}: play complete (${secondsNeeded}s)`);
             toast(`${appName}: play quest complete`, Toasts.Type.SUCCESS);
-        } finally {
-            clearTimeout(watchdog);
+        } catch (err) {
+            logger.warn(`${appName}: ${err instanceof Error ? err.message : err}`);
+            toast(`${appName}: heartbeat failed. Try again later.`, Toasts.Type.FAILURE);
+            throw err;
         }
         return;
     }

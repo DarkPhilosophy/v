@@ -168,6 +168,174 @@ test("transient Quest heartbeat failures keep waiting for later progress", async
     assert.equal(cleaned, 1);
 });
 
+function makeDispatcher() {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    return {
+        listeners,
+        dispatcher: {
+            subscribe(event: string, listener: (event: unknown) => void) {
+                const eventListeners = listeners.get(event) ?? new Set();
+                eventListeners.add(listener);
+                listeners.set(event, eventListeners);
+            },
+            unsubscribe(event: string, listener: (event: unknown) => void) {
+                listeners.get(event)?.delete(listener);
+            }
+        },
+        emit(event: string, payload: unknown) {
+            listeners.get(event)?.forEach(listener => listener(payload));
+        }
+    };
+}
+
+/** Manual clock: timers and polls are recorded, `advance` fires what is due. */
+function makeTimers() {
+    let nextId = 1;
+    let now = 0;
+    const timers = new Map<number, { at: number; fn: () => void; }>();
+    const polls = new Map<number, { every: number; next: number; fn: () => void; }>();
+    return {
+        setTimer: (fn: () => void, ms: number) => {
+            const id = nextId++;
+            timers.set(id, { at: now + ms, fn });
+            return id;
+        },
+        clearTimer: (id: unknown) => { timers.delete(id as number); },
+        setPoll: (fn: () => void, ms: number) => {
+            const id = nextId++;
+            polls.set(id, { every: ms, next: now + ms, fn });
+            return id;
+        },
+        clearPoll: (id: unknown) => { polls.delete(id as number); },
+        advance(ms: number) {
+            const target = now + ms;
+            while (true) {
+                let soonest = Infinity;
+                let fire: (() => void) | undefined;
+                for (const [id, t] of timers) {
+                    if (t.at <= target && t.at < soonest) {
+                        soonest = t.at;
+                        fire = () => { timers.delete(id); t.fn(); };
+                    }
+                }
+                for (const p of polls.values()) {
+                    if (p.next <= target && p.next < soonest) {
+                        soonest = p.next;
+                        const poll = p;
+                        fire = () => { poll.next += poll.every; poll.fn(); };
+                    }
+                }
+                if (!fire) break;
+                now = soonest;
+                fire();
+            }
+            now = target;
+        }
+    };
+}
+
+test("failed Quest heartbeats re-arm the idle watchdog instead of ending the wait", async () => {
+    const { dispatcher, emit } = makeDispatcher();
+    const timers = makeTimers();
+    let cleaned = 0;
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { cleaned++; }, {
+        idleMs: 50,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+        setPoll: timers.setPoll,
+        clearPoll: timers.clearPoll,
+    });
+    emit("QUESTS_SEND_HEARTBEAT_SUCCESS", { questId: "quest-1", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 10 } } } });
+    timers.advance(40);
+    // Discord does not retry a failed beat; the next attempt is the tick ~60s
+    // out, so a failure must re-arm the deadline rather than count as silence.
+    emit("QUESTS_SEND_HEARTBEAT_FAILURE", { questId: "quest-1", status: 500 });
+    timers.advance(40); // past the original 50ms deadline, inside the re-armed one
+    assert.equal(cleaned, 0);
+    emit("QUESTS_SEND_HEARTBEAT_SUCCESS", { questId: "quest-1", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 60 } } } });
+    await wait.promise;
+    assert.equal(cleaned, 1);
+});
+
+test("consecutive Quest heartbeat failures give up with the real error", async () => {
+    const { dispatcher, emit } = makeDispatcher();
+    const timers = makeTimers();
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { }, {
+        idleMs: 10_000,
+        maxConsecutiveFailures: 3,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+        setPoll: timers.setPoll,
+        clearPoll: timers.clearPoll,
+    });
+    for (let i = 0; i < 3; i++) {
+        emit("QUESTS_SEND_HEARTBEAT_FAILURE", { questId: "quest-1", status: 500, body: { message: "upstream exploded" } });
+    }
+    await assert.rejects(wait.promise, /heartbeat failed 3 times in a row.*upstream exploded/);
+});
+
+test("Quest heartbeat wait resolves on Map-shaped progress and completedAt", async () => {
+    const { dispatcher, emit } = makeDispatcher();
+    const timers = makeTimers();
+    const options = {
+        idleMs: 10_000,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+        setPoll: timers.setPoll,
+        clearPoll: timers.clearPoll,
+    };
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { }, options);
+    emit("QUESTS_SEND_HEARTBEAT_SUCCESS", { questId: "quest-1", userStatus: { progress: new Map([["PLAY_ON_DESKTOP", { value: 60 }]]) } });
+    await wait.promise;
+
+    const wait2 = createHeartbeatWait(dispatcher, "quest-2", "PLAY_ON_DESKTOP", 60, () => { }, options);
+    emit("QUESTS_SEND_HEARTBEAT_SUCCESS", { questId: "quest-2", userStatus: { completedAt: "2026-09-24T10:00:00.000Z" } });
+    await wait2.promise;
+});
+
+test("full progress without completedAt does not settle passive update or poll", async () => {
+    const { dispatcher, emit } = makeDispatcher();
+    const timers = makeTimers();
+    // Post-restart state: server credited 60/60 but never finalized completedAt.
+    // The wait must stay alive so the spoof keeps Discord heartbeating.
+    let completedAt: string | undefined;
+    let settled = false;
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { }, {
+        idleMs: 10_000,
+        pollMs: 10,
+        isComplete: () => completedAt != null,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+        setPoll: timers.setPoll,
+        clearPoll: timers.clearPoll,
+    });
+    wait.promise.then(() => { settled = true; }, () => { settled = true; });
+    emit("QUESTS_USER_STATUS_UPDATE", { questId: "quest-1", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 60 } } } });
+    timers.advance(50); // several polls ran, none may settle
+    await flush();
+    assert.equal(settled, false);
+    completedAt = "2026-09-24T10:00:00.000Z";
+    timers.advance(10); // next poll sees completedAt
+    await wait.promise;
+    assert.equal(settled, true);
+});
+
+test("Quest heartbeat wait rejects after the idle window with failure detail", async () => {
+    const { dispatcher, emit } = makeDispatcher();
+    const timers = makeTimers();
+    const wait = createHeartbeatWait(dispatcher, "quest-1", "PLAY_ON_DESKTOP", 60, () => { }, {
+        idleMs: 30,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+        setPoll: timers.setPoll,
+        clearPoll: timers.clearPoll,
+    });
+    emit("QUESTS_SEND_HEARTBEAT_SUCCESS", { questId: "quest-1", userStatus: { progress: { PLAY_ON_DESKTOP: { value: 10 } } } });
+    emit("QUESTS_SEND_HEARTBEAT_FAILURE", { questId: "quest-1", status: 500, body: { message: "upstream exploded" } });
+    timers.advance(31);
+    await assert.rejects(wait.promise, /heartbeat timeout \(1 credited, 1 failed, last: HTTP 500, upstream exploded\)/);
+});
+
 test("Quest auto-enroll honors Discord retry_after and ignores non-rate-limit errors", () => {
     assert.equal(getRateLimitDelayMs({ status: 429, body: { retry_after: 2.5 } }), 2_500);
     assert.equal(getRateLimitDelayMs({ status: 429, body: { retry_after: 0 } }), 1_000);
