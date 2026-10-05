@@ -4,8 +4,8 @@ import { UserStore } from "@webpack/common";
 
 import { discordPruningApi } from "./api";
 import { collectEligibleMessages, deleteEligibleMessages, type CollectionOptions, type PreviewResult } from "./engine";
-import { formatUnknownError, getRetryDelayMs, isChannelUnavailableError, UNAVAILABLE_CHANNEL_RETRY_MS } from "./guards";
-import { computeWindow, isPruningActive, setChannelPolicy, type ChannelPolicy, type SyncedPruningState } from "./model";
+import { formatUnknownError, getRetryDelayMs, isChannelGoneError, isChannelUnavailableError, UNAVAILABLE_CHANNEL_RETRY_MS } from "./guards";
+import { channelIdsOfGuild, computeWindow, isPruningActive, removeChannelPolicies, setChannelPolicy, type ChannelPolicy, type SyncedPruningState } from "./model";
 import { readSyncedState, writeSyncedState } from "./settings";
 import { nextChannelDeadline, partitionDueMessages, type PendingOwnMessage } from "./scheduler";
 
@@ -162,6 +162,37 @@ export async function confirmChannelPolicy(
     return { deletedCount: result.deletedIds.length, failureCount: result.failures.length };
 }
 
+/**
+ * The one place that forgets channels: synced policy and every piece of runtime state.
+ * Event handlers and the manual cleanup all funnel through here so none of them can
+ * leave a half-removed channel behind.
+ *
+ * `deleteKeeps` is mandatory on purpose: true only when the channel is proven deleted,
+ * false when it is merely unreachable (see removeChannelPolicies).
+ */
+export async function dropChannels(
+    channelIds: ReadonlySet<string>,
+    reason: string,
+    deleteKeeps: boolean,
+): Promise<void> {
+    if (channelIds.size === 0) return;
+    const state = readSyncedState();
+    const present = new Set([...channelIds].filter(id => id in state.channels));
+    for (const id of channelIds) {
+        clearChannelTimer(id);
+        activeChannels.get(id)?.abort();
+        activeChannels.delete(id);
+        pausedChannels.delete(id);
+        interruptedChannels.delete(id);
+        pendingMessages.delete(id);
+        delete progress[id];
+    }
+    await DataStore.set(PROGRESS_KEY, progress);
+    if (present.size === 0) return;
+    writeSyncedState(removeChannelPolicies(state, present, deleteKeeps));
+    logger.info(`Removed ${present.size} stale channel polic${present.size === 1 ? "y" : "ies"} (${reason}${deleteKeeps ? "" : "; Keep marks preserved"}): ${[...present].join(", ")}`);
+}
+
 export async function runChannelPruning(channelId: string, now = Date.now()): Promise<void> {
     if (activeChannels.has(channelId)) return;
     const state = readSyncedState();
@@ -265,6 +296,12 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
         await DataStore.set(PROGRESS_KEY, progress);
         logger.info(`Channel ${channelId}: worker completed; deleted=${deletedCount}, failed=${failureCount}.`);
     } catch (error) {
+        if (isChannelGoneError(error)) {
+            // Discord itself says the channel no longer exists, so its stored policy can
+            // never do anything again. Remove it instead of retrying forever.
+            await dropChannels(new Set([channelId]), `Discord reports it as deleted (${formatUnknownError(error)})`, true);
+            return;
+        }
         if (isChannelUnavailableError(error)) {
             // Not a failure of ours and not fixable by retrying soon. Keep the user's
             // policy exactly as configured (access may return, and it syncs across
@@ -299,13 +336,14 @@ function scheduleChannel(channelId: string, runImmediately = false): void {
     const record = readSyncedState().channels[channelId];
     if (!record?.confirmedAt || !record.policy.enabled) return;
     const previous = progress[channelId];
+    const notBefore = previous?.nextAttemptAt ?? 0;
     const historyDeadline = Math.max(
-        previous?.nextAttemptAt ?? 0,
+        notBefore,
         (previous?.lastScanAt ?? Date.now()) + record.policy.scanIntervalMs,
     );
     const deadline = runImmediately
-        ? Date.now()
-        : nextChannelDeadline(historyDeadline, pendingMessages.get(channelId) ?? []);
+        ? Math.max(Date.now(), notBefore)
+        : nextChannelDeadline(historyDeadline, pendingMessages.get(channelId) ?? [], notBefore);
     const delay = Math.min(Math.max(0, deadline - Date.now()), 2_147_483_647);
     logger.info(`Channel ${channelId}: scheduled in ${Math.ceil(delay)}ms.`);
     channelTimers.set(channelId, window.setTimeout(async () => {
@@ -337,6 +375,29 @@ export function stopScheduler(): void {
     pausedChannels.clear();
     interruptedChannels.clear();
     pendingMessages.clear();
+}
+
+/** Gateway CHANNEL_DELETE: Discord deleted the channel, so its stored policy is dead. */
+export function onChannelDeleted(channelId: string): Promise<void> {
+    return dropChannels(new Set([channelId]), "channel deleted", true);
+}
+
+/**
+ * Gateway GUILD_DELETE. `unavailable` means a temporary Discord outage for that
+ * server, not that the user left it, so nothing may be removed in that case.
+ */
+export function onGuildDeleted(guildId: string, unavailable: boolean | undefined): Promise<void> {
+    if (unavailable === true) return Promise.resolve();
+    // Leaving a server does not delete its messages, so Keep marks survive in case the user rejoins.
+    return dropChannels(channelIdsOfGuild(readSyncedState(), guildId), "left or deleted the server", false);
+}
+
+/** Channels Discord currently refuses us (403 50001/50013). Their policy is kept until the user removes it or Discord proves the channel deleted. */
+export function getUnreachableChannelIds(): string[] {
+    const known = readSyncedState().channels;
+    return Object.entries(progress)
+        .filter(([id, entry]) => entry.unavailable === true && id in known)
+        .map(([id]) => id);
 }
 
 export function getChannelProgress(channelId: string): ChannelProgress | undefined {

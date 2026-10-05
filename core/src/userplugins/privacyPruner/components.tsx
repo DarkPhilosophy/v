@@ -11,7 +11,7 @@ import { DEFAULT_PRUNING_TEMPLATE, type PruningTemplate } from "./defaults";
 import type { CollectionProgress, PreviewResult, PrunableMessage } from "./engine";
 import { formatUnknownError } from "./guards";
 import { saveChannelPolicySettings, setChannelPolicy, setMessageKept, validatePolicy, type ChannelPolicy, type KeptMessageRecord } from "./model";
-import { confirmChannelPolicy, deleteMessageNow, enableChannelPolicy, getChannelProgress, pauseChannelPruning, previewChannel, resumeChannelPruning } from "./runtime";
+import { confirmChannelPolicy, deleteMessageNow, dropChannels, enableChannelPolicy, getChannelProgress, getUnreachableChannelIds, pauseChannelPruning, previewChannel, resumeChannelPruning } from "./runtime";
 import { readSyncedState, settings, writeSyncedState } from "./settings";
 
 const DAY = 86_400_000;
@@ -531,11 +531,49 @@ function KeptMessageRow({ messageId, record }: { messageId: string; record: Kept
     );
 }
 
+function UnreachableChannelRow({ channelId, onRemoved }: { channelId: string; onRemoved(): void; }) {
+    const record = readSyncedState().channels[channelId];
+    const [busy, setBusy] = useState(false);
+    return (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+            <div>
+                <Forms.FormText>Channel {channelId}{record?.guildId ? ` in server ${record.guildId}` : ""}</Forms.FormText>
+                <Forms.FormText>Discord refuses access (deleted, or you lost access). Its policy is kept until you remove it.</Forms.FormText>
+            </div>
+            <Button
+                size="small"
+                variant="dangerPrimary"
+                disabled={busy}
+                onClick={async () => {
+                    setBusy(true);
+                    await dropChannels(new Set([channelId]), "removed by the user from Privacy Manager", false);
+                    onRemoved();
+                }}
+            >
+                Remove policy
+            </Button>
+        </div>
+    );
+}
+
 function PrivacyManagerModal({ rootProps }: { rootProps: RenderModalProps; }) {
     settings.use(["syncedState"]);
+    const [unreachable, setUnreachable] = useState(getUnreachableChannelIds);
     const kept = Object.entries(readSyncedState().kept);
     return (
         <Modal {...rootProps} title="Privacy Pruner — Kept Messages">
+            {unreachable.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                    <Forms.FormTitle>Channels Discord can't reach</Forms.FormTitle>
+                    {unreachable.map(channelId => (
+                        <UnreachableChannelRow
+                            key={channelId}
+                            channelId={channelId}
+                            onRemoved={() => setUnreachable(getUnreachableChannelIds())}
+                        />
+                    ))}
+                </div>
+            )}
             {kept.length === 0 ? (
                 <Forms.FormText>No messages are protected with Keep.</Forms.FormText>
             ) : kept.map(([messageId, record]) => (

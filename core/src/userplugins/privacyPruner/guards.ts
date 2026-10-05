@@ -47,16 +47,24 @@ export function getRetryDelayMs(error: unknown): number {
 }
 
 /**
- * Discord says the channel exists but we may not touch it (50001 Missing Access,
- * 50013 Missing Permissions) or that it is gone (10003 Unknown Channel). These do
- * not fix themselves on a 60 s retry, so hammering the API and flooding the
- * console every minute helps nobody.
+ * Discord says the channel does not exist (10003 Unknown Channel). Unlike an access
+ * error this is definitive: there is nothing left to prune and its stored policy can
+ * be dropped.
+ */
+export function isChannelGoneError(error: unknown): boolean {
+    return isUnknownRecord(error) && error.status === 404
+        && isUnknownRecord(error.body) && error.body.code === 10003;
+}
+
+/**
+ * The channel exists but we may not touch it (50001 Missing Access, 50013 Missing
+ * Permissions). That can be temporary (lost role, rejoined server later), so it only
+ * earns a long backoff, never a deletion: the policy syncs across devices.
  */
 export function isChannelUnavailableError(error: unknown): boolean {
     if (!isUnknownRecord(error) || !isUnknownRecord(error.body)) return false;
     const code = error.body.code;
-    return (error.status === 403 && (code === 50001 || code === 50013))
-        || (error.status === 404 && code === 10003);
+    return error.status === 403 && (code === 50001 || code === 50013);
 }
 
 /** Access can come back (rejoined server, role restored), so check again occasionally instead of giving up for good. */

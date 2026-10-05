@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    channelIdsOfGuild,
     computeWindow,
     isPruningActive,
     parseSyncedState,
+    removeChannelPolicies,
     saveChannelPolicySettings,
     setChannelPolicy,
     setGuildEnabled,
@@ -37,6 +39,25 @@ test("new messages preempt historical work at their retention deadline", () => {
         due: [pending[1]],
         future: [pending[0]],
     });
+});
+
+test("a backoff window bounds the deadline even when priority messages are already due", () => {
+    const now = 1_000_000;
+    const sixHours = 6 * 60 * 60 * 1000;
+    const overdue = [{ id: "m", channelId: "channel", timestamp: 1, dueAt: now - 5_000 }];
+
+    // Regression: the floor used to apply only to the history deadline, so an overdue
+    // priority message produced a 0 ms timer that runChannelPruning rejected at once,
+    // and the scheduler re-armed itself in a tight loop for as long as the outage lasted.
+    assert.equal(nextChannelDeadline(now + DAY, overdue, now + sixHours), now + sixHours);
+    assert.ok(nextChannelDeadline(now + DAY, overdue, now + sixHours) - now >= sixHours);
+
+    // A floor that is already behind every deadline changes nothing, and so does omitting it.
+    assert.equal(nextChannelDeadline(now + DAY, overdue, now - 10_000), now - 5_000);
+    assert.equal(nextChannelDeadline(now + DAY, overdue), now - 5_000);
+
+    // A floor never pulls a deadline earlier.
+    assert.equal(nextChannelDeadline(now + DAY, [], now + sixHours), now + DAY);
 });
 
 test("guild and channel switches must both be enabled", () => {
@@ -136,7 +157,7 @@ test("channels the user can no longer access are recognized, other failures are 
     // Exact shape reported from the console: 403 with Discord code 50001 ("Nu ai acces").
     assert.equal(guards.isChannelUnavailableError({ status: 403, body: { message: "Nu ai acces", code: 50001 } }), true);
     assert.equal(guards.isChannelUnavailableError({ status: 403, body: { code: 50013 } }), true);
-    assert.equal(guards.isChannelUnavailableError({ status: 404, body: { code: 10003 } }), true);
+    assert.equal(guards.isChannelUnavailableError({ status: 404, body: { code: 10003 } }), false);
 
     // Anything transient or unrelated must keep the normal short retry.
     assert.equal(guards.isChannelUnavailableError({ status: 429, body: { retry_after: 3 } }), false);
@@ -148,6 +169,64 @@ test("channels the user can no longer access are recognized, other failures are 
     assert.equal(guards.isChannelUnavailableError(undefined), false);
 
     assert.ok(guards.UNAVAILABLE_CHANNEL_RETRY_MS > 60 * 60 * 1000, "an outage must back off far longer than the 60 s transient retry");
+});
+
+test("only an explicit 404 Unknown Channel counts as proof that a channel is gone", () => {
+    assert.equal(guards.isChannelGoneError({ status: 404, body: { code: 10003 } }), true);
+
+    // The error from the console is 403 / 50001: the channel may exist, so it is NOT proof of deletion.
+    assert.equal(guards.isChannelGoneError({ status: 403, body: { message: "Nu ai acces", code: 50001 } }), false);
+    assert.equal(guards.isChannelGoneError({ status: 403, body: { code: 50013 } }), false);
+    assert.equal(guards.isChannelGoneError({ status: 404, body: { code: 10008 } }), false);
+    assert.equal(guards.isChannelGoneError({ status: 404 }), false);
+    assert.equal(guards.isChannelGoneError({ status: 500, body: { code: 10003 } }), false);
+    assert.equal(guards.isChannelGoneError(undefined), false);
+
+    // The two classes never overlap, so the scheduler always takes exactly one branch.
+    assert.equal(guards.isChannelUnavailableError({ status: 404, body: { code: 10003 } }), false);
+});
+
+test("removing channel policies is explicit about the user's Keep marks", () => {
+    let state = parseSyncedState("");
+    state = setGuildEnabled(state, "guild", true);
+    state = setChannelPolicy(state, "gone", "guild", policy, 1);
+    state = setChannelPolicy(state, "alive", "guild", policy, 1);
+    state = setChannelPolicy(state, "dm", null, policy, 1);
+    state = setMessageKept(state, { messageId: "k-gone", channelId: "gone", guildId: "guild" }, true);
+    state = setMessageKept(state, { messageId: "k-alive", channelId: "alive", guildId: "guild" }, true);
+
+    // Proven deleted: the policy and the marks that can never match again go; nothing else does.
+    const deleted = removeChannelPolicies(state, new Set(["gone"]), true);
+    assert.deepEqual(Object.keys(deleted.channels).sort(), ["alive", "dm"]);
+    assert.deepEqual(Object.keys(deleted.kept), ["k-alive"]);
+    assert.equal(deleted.guilds.guild.enabled, true);
+
+    // Merely unreachable / user cleanup: the policy goes, the deliberate Keep marks stay.
+    const unreachable = removeChannelPolicies(state, new Set(["gone"]), false);
+    assert.deepEqual(Object.keys(unreachable.channels).sort(), ["alive", "dm"]);
+    assert.deepEqual(Object.keys(unreachable.kept).sort(), ["k-alive", "k-gone"]);
+
+    // Nothing to remove (or an unknown id) must hand back the very same state, so no write is triggered.
+    assert.equal(removeChannelPolicies(state, new Set(), true), state);
+    assert.equal(removeChannelPolicies(state, new Set(["never-existed"]), false), state);
+
+    // The input is never mutated: it is shared, synced state.
+    assert.deepEqual(Object.keys(state.channels).sort(), ["alive", "dm", "gone"]);
+    assert.deepEqual(Object.keys(state.kept).sort(), ["k-alive", "k-gone"]);
+});
+
+test("leaving a server selects exactly that server's channels and never DMs", () => {
+    let state = parseSyncedState("");
+    state = setChannelPolicy(state, "a1", "guild-a", policy, 1);
+    state = setChannelPolicy(state, "a2", "guild-a", policy, 1);
+    state = setChannelPolicy(state, "b1", "guild-b", policy, 1);
+    state = setChannelPolicy(state, "dm", null, policy, 1);
+
+    assert.deepEqual([...channelIdsOfGuild(state, "guild-a")].sort(), ["a1", "a2"]);
+    assert.deepEqual([...channelIdsOfGuild(state, "guild-b")], ["b1"]);
+    assert.equal(channelIdsOfGuild(state, "unknown-guild").size, 0);
+    // A DM has guildId === null; asking for any guild must never match it.
+    assert.equal(channelIdsOfGuild(state, "null").has("dm"), false);
 });
 
 test("Discord archived-thread failures are recognized by their API code", () => {

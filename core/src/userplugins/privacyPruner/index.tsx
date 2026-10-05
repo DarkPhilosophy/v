@@ -10,7 +10,7 @@ import { ChannelStore, GuildStore, Menu, SelectedChannelStore, UserStore } from 
 import { GlobalDefaultsSettings, openChannelPruningModal, openDeleteConfirmation, openPrivacyManager } from "./components";
 import { DEFAULT_PRUNING_TEMPLATE, classifyAutoApplyTarget, registerNewId, type PruningTemplate } from "./defaults";
 import { setChannelPolicy, setGuildEnabled, setMessageKept } from "./model";
-import { enableChannelPolicy, queueOwnMessage, startScheduler, stopScheduler } from "./runtime";
+import { enableChannelPolicy, onChannelDeleted, onGuildDeleted, queueOwnMessage, startScheduler, stopScheduler } from "./runtime";
 import { readSyncedState, settings, writeSyncedState } from "./settings";
 
 const PrivacyIcon: IconComponent = ({ height = 20, width = 20, className }) => (
@@ -243,6 +243,12 @@ export default definePlugin({
         render: PrivacyChatButton,
     },
     flux: {
+        CHANNEL_DELETE({ channel }: { channel: Channel; }) {
+            void onChannelDeleted(channel.id);
+        },
+        GUILD_DELETE({ guild }: { guild: { id: string; unavailable?: boolean; }; }) {
+            void onGuildDeleted(guild.id, guild.unavailable);
+        },
         MESSAGE_CREATE({ message }: { message: Message; }) {
             const currentUser = UserStore.getCurrentUser();
             if (!currentUser || message.author.id !== currentUser.id) return;

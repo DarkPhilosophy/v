@@ -184,3 +184,34 @@ export function setMessageKept(
     else delete kept[message.messageId];
     return { ...state, kept };
 }
+
+/**
+ * Drop the policy of the given channels.
+ *
+ * `deleteKeeps` decides what happens to messages the user explicitly marked "keep".
+ * Pass true only when the channel is PROVEN deleted (its messages are gone, so the
+ * marks can never match again). For a channel that merely became unreachable pass
+ * false: access may return, and those marks are the user's deliberate choices,
+ * synced to every device.
+ */
+export function removeChannelPolicies(
+    state: SyncedPruningState,
+    channelIds: ReadonlySet<string>,
+    deleteKeeps: boolean,
+): SyncedPruningState {
+    if (channelIds.size === 0) return state;
+    const channels = Object.fromEntries(Object.entries(state.channels).filter(([id]) => !channelIds.has(id)));
+    const kept = deleteKeeps
+        ? Object.fromEntries(Object.entries(state.kept).filter(([, record]) => !channelIds.has(record.channelId)))
+        : state.kept;
+    if (Object.keys(channels).length === Object.keys(state.channels).length
+        && Object.keys(kept).length === Object.keys(state.kept).length) return state;
+    return { ...state, channels, kept };
+}
+
+/** Channel ids whose policy belongs to the given guild (the user left it, or it was deleted). */
+export function channelIdsOfGuild(state: SyncedPruningState, guildId: string): Set<string> {
+    return new Set(Object.entries(state.channels)
+        .filter(([, record]) => record.guildId === guildId)
+        .map(([id]) => id));
+}
