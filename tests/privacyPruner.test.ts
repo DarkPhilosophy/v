@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
     channelIdsOfGuild,
@@ -11,6 +12,7 @@ import {
     setChannelPolicy,
     setGuildEnabled,
     setMessageKept,
+    updateSyncedState,
     validatePolicy,
     type ChannelPolicy,
 } from "../core/src/userplugins/privacyPruner/model.ts";
@@ -213,6 +215,67 @@ test("removing channel policies is explicit about the user's Keep marks", () => 
     // The input is never mutated: it is shared, synced state.
     assert.deepEqual(Object.keys(state.channels).sort(), ["alive", "dm", "gone"]);
     assert.deepEqual(Object.keys(state.kept).sort(), ["k-alive", "k-gone"]);
+});
+
+test("synced-state updates are applied to the current state, never to a stale snapshot", () => {
+    let stored = parseSyncedState("");
+    for (const id of ["a", "b", "c"]) stored = setChannelPolicy(stored, id, "guild", policy, 1);
+    const read = () => stored;
+    const write = (next: typeof stored) => { stored = next; };
+    const drop = (id: string) => updateSyncedState(read, write, current => removeChannelPolicies(current, new Set([id]), false));
+
+    // Two deletions in a row (what two CHANNEL_DELETE events become) both stick.
+    drop("a");
+    drop("b");
+    assert.deepEqual(Object.keys(stored.channels), ["c"]);
+
+    // A change made between two updates is part of the "current" state of the next one.
+    stored = setMessageKept(stored, { messageId: "fresh", channelId: "c", guildId: "guild" }, true);
+    drop("c");
+    assert.deepEqual(Object.keys(stored.channels), []);
+    assert.deepEqual(Object.keys(stored.kept), ["fresh"]);
+
+    // No-op transforms must not write at all (a write would sync to every device).
+    let writes = 0;
+    updateSyncedState(read, next => { writes++; stored = next; }, current => removeChannelPolicies(current, new Set(["never-existed"]), true));
+    assert.equal(writes, 0);
+});
+
+test("the read-then-await-then-write pattern loses data, which is why updates go through one synchronous step", async () => {
+    // Demonstrates the hazard the helper exists to prevent, so the test above is not vacuous.
+    // A microtask yield is enough to interleave the two callers; no clock is involved.
+    const yieldToOthers = () => Promise.resolve();
+    let stored = parseSyncedState("");
+    for (const id of ["a", "b"]) stored = setChannelPolicy(stored, id, "guild", policy, 1);
+
+    const staleDrop = async (id: string) => {
+        const snapshot = stored;                  // read
+        await yieldToOthers();                    // the other caller runs here
+        stored = removeChannelPolicies(snapshot, new Set([id]), false); // write from the stale snapshot
+    };
+    await Promise.all([staleDrop("a"), staleDrop("b")]);
+    assert.equal(Object.keys(stored.channels).length, 1, "one of the two deletions was undone by the stale write");
+
+    // The same two deletions through the atomic helper both survive.
+    stored = parseSyncedState("");
+    for (const id of ["a", "b"]) stored = setChannelPolicy(stored, id, "guild", policy, 1);
+    const atomicDrop = async (id: string) => {
+        await yieldToOthers();
+        updateSyncedState(() => stored, next => { stored = next; }, current => removeChannelPolicies(current, new Set([id]), false));
+    };
+    await Promise.all([atomicDrop("a"), atomicDrop("b")]);
+    assert.deepEqual(Object.keys(stored.channels), []);
+});
+
+test("dropChannels never awaits between reading and writing the synced state", () => {
+    const source = readFileSync(new URL("../core/src/userplugins/privacyPruner/runtime.ts", import.meta.url), "utf8");
+    const body = /export async function dropChannels\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
+    assert.notEqual(body, "", "dropChannels must be found");
+    const update = body.indexOf("updateSyncedState(");
+    const firstAwait = body.indexOf("await ");
+    assert.ok(update !== -1, "the synced state must change through updateSyncedState");
+    assert.ok(firstAwait === -1 || firstAwait > update, "no await may precede the synced-state update");
+    assert.doesNotMatch(body, /const state = readSyncedState\(\)/, "a separately read snapshot would reintroduce the race");
 });
 
 test("leaving a server selects exactly that server's channels and never DMs", () => {

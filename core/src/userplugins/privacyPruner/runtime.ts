@@ -5,7 +5,7 @@ import { UserStore } from "@webpack/common";
 import { discordPruningApi } from "./api";
 import { collectEligibleMessages, deleteEligibleMessages, type CollectionOptions, type PreviewResult } from "./engine";
 import { formatUnknownError, getRetryDelayMs, isChannelGoneError, isChannelUnavailableError, UNAVAILABLE_CHANNEL_RETRY_MS } from "./guards";
-import { channelIdsOfGuild, computeWindow, isPruningActive, removeChannelPolicies, setChannelPolicy, type ChannelPolicy, type SyncedPruningState } from "./model";
+import { channelIdsOfGuild, computeWindow, isPruningActive, removeChannelPolicies, setChannelPolicy, updateSyncedState, type ChannelPolicy, type SyncedPruningState } from "./model";
 import { readSyncedState, writeSyncedState } from "./settings";
 import { nextChannelDeadline, partitionDueMessages, type PendingOwnMessage } from "./scheduler";
 
@@ -176,8 +176,17 @@ export async function dropChannels(
     deleteKeeps: boolean,
 ): Promise<void> {
     if (channelIds.size === 0) return;
-    const state = readSyncedState();
-    const present = new Set([...channelIds].filter(id => id in state.channels));
+
+    // The synced state is one JSON blob that writeSyncedState replaces wholesale, so a
+    // read-modify-write with an `await` in the middle can resurrect a policy another
+    // call just removed, or drop a Keep the user added meanwhile. Everything touching
+    // it therefore happens synchronously, before the first await.
+    const present = new Set<string>();
+    updateSyncedState(readSyncedState, writeSyncedState, current => {
+        for (const id of channelIds) if (id in current.channels) present.add(id);
+        return removeChannelPolicies(current, present, deleteKeeps);
+    });
+
     for (const id of channelIds) {
         clearChannelTimer(id);
         activeChannels.get(id)?.abort();
@@ -187,10 +196,11 @@ export async function dropChannels(
         pendingMessages.delete(id);
         delete progress[id];
     }
+    if (present.size > 0)
+        logger.info(`Removed ${present.size} stale channel polic${present.size === 1 ? "y" : "ies"} (${reason}${deleteKeeps ? "" : "; Keep marks preserved"}): ${[...present].join(", ")}`);
+
+    // Local-only bookkeeping may await freely: it does not touch the synced state.
     await DataStore.set(PROGRESS_KEY, progress);
-    if (present.size === 0) return;
-    writeSyncedState(removeChannelPolicies(state, present, deleteKeeps));
-    logger.info(`Removed ${present.size} stale channel polic${present.size === 1 ? "y" : "ies"} (${reason}${deleteKeeps ? "" : "; Keep marks preserved"}): ${[...present].join(", ")}`);
 }
 
 export async function runChannelPruning(channelId: string, now = Date.now()): Promise<void> {

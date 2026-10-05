@@ -209,6 +209,27 @@ export function removeChannelPolicies(
     return { ...state, channels, kept };
 }
 
+/**
+ * Apply `transform` to the CURRENT synced state and persist the result, with no gap
+ * between the read and the write.
+ *
+ * The state is one JSON blob that `write` replaces wholesale. Any `await` between a
+ * read and its write lets another caller's change be silently overwritten with a stale
+ * snapshot (a deleted channel coming back, a fresh Keep mark vanishing). Funnel every
+ * modification through here and that interleaving cannot happen: JS runs this to
+ * completion before anything else gets a turn.
+ */
+export function updateSyncedState(
+    read: () => SyncedPruningState,
+    write: (state: SyncedPruningState) => void,
+    transform: (current: SyncedPruningState) => SyncedPruningState,
+): SyncedPruningState {
+    const current = read();
+    const next = transform(current);
+    if (next !== current) write(next);
+    return next;
+}
+
 /** Channel ids whose policy belongs to the given guild (the user left it, or it was deleted). */
 export function channelIdsOfGuild(state: SyncedPruningState, guildId: string): Set<string> {
     return new Set(Object.entries(state.channels)
