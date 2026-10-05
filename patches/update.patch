@@ -58,7 +58,7 @@ index 1955f7d..124e75d 100644
  
  const execFile = promisify(cpExecFile);
  
-@@ -32,59 +48,150 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
+@@ -32,59 +48,152 @@ const isFlatpak = process.platform === "linux" && !!process.env.FLATPAK_ID;
  
  if (process.platform === "darwin") process.env.PATH = `/usr/local/bin:${process.env.PATH}`;
  
@@ -212,6 +212,8 @@ index 1955f7d..124e75d 100644
 +            join(source, "src", "userplugins"),
 +            join(source, "src", "main", "userPluginManager", "embeddedSeeds.generated.ts")
 +        ]);
++        // Same drift gate as the installer: type errors are the earliest signal that upstream moved an API.
++        await run("pnpm", ["run", "testTsc"], source);
 +        const args = ["scripts/build/build.mjs"];
 +        if (IS_DEV) args.push("--dev");
 +        report?.("building");

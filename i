@@ -92,6 +92,10 @@ SEED_HELPER="$PKG/scripts/stage-userplugin-seeds.sh"
 [ -x "$SEED_HELPER" ] || die "missing embedded source generator: $SEED_HELPER"
 "$SEED_HELPER" "$BUILD/src/userplugins" "$BUILD/src/main/userPluginManager/embeddedSeeds.generated.ts" \
     || die "embedded source generation failed"
+# Type errors are the early warning for upstream API drift (e.g. the Toasts rewrite):
+# esbuild strips types, so `pnpm build` alone happily ships code that throws at runtime.
+say "Type-checking against current upstream"
+(cd "$BUILD" && pnpm testTsc) || die "type check failed: upstream API drift or an overlay bug (fix before installing; the existing runtime was left untouched)"
 say "Building"
 (cd "$BUILD" && VENCORD_HASH="$BUILD_HASH" pnpm build) || die "build failed"
 say "Verifying custom plugins in renderer bundle"
