@@ -502,7 +502,7 @@ index 2c77db5..dc2b25f 100644
  import { onlyOnce } from "@utils/onlyOnce";
  import { PluginNative } from "@utils/types";
 +import type { Message } from "@vencord/discord-types";
- import { showToast, Toasts } from "@webpack/common";
+ import { showToast } from "@webpack/common";
  
  import { DeeplLanguages, deeplLanguageToGoogleLanguage, GoogleLanguages, KagiLanguages } from "./languages";
  import { resetLanguageDefaults, settings } from "./settings";

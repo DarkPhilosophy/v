@@ -226,7 +226,7 @@ function ChannelPruningModal({ rootProps, input }: { rootProps: RenderModalProps
     const [error, setError] = useState<string | undefined>();
     const [result, setResult] = useState<string | undefined>();
     const [scanProgress, setScanProgress] = useState<CollectionProgress | undefined>();
-    const scanController = useRef<AbortController | undefined>();
+    const scanController = useRef<AbortController | undefined>(undefined);
 
 
     const candidate = useMemo<ChannelPolicy | undefined>(() => {
@@ -237,7 +237,7 @@ function ChannelPruningModal({ rootProps, input }: { rootProps: RenderModalProps
         return { enabled: true, retentionMs, maximumLookbackMs, scanIntervalMs, includeThreads };
     }, [retention, lookback, interval, includeThreads]);
     const validation = candidate ? validatePolicy(candidate) : ["Enter a positive number and choose a unit for every duration."];
-    const latestValidPolicy = useRef<ChannelPolicy | undefined>();
+    const latestValidPolicy = useRef<ChannelPolicy | undefined>(undefined);
     latestValidPolicy.current = validation.length === 0 ? candidate : undefined;
     useEffect(() => {
         pauseChannelPruning(input.channelId);

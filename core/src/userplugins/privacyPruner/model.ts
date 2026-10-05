@@ -1,4 +1,4 @@
-import { isUnknownRecord } from "./guards.ts";
+import { isUnknownRecord } from "./guards";
 
 export interface ChannelPolicy {
     enabled: boolean;

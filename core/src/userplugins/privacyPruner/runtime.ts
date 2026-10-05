@@ -289,7 +289,7 @@ function scheduleChannel(channelId: string, runImmediately = false): void {
         : nextChannelDeadline(historyDeadline, pendingMessages.get(channelId) ?? []);
     const delay = Math.min(Math.max(0, deadline - Date.now()), 2_147_483_647);
     logger.info(`Channel ${channelId}: scheduled in ${Math.ceil(delay)}ms.`);
-    channelTimers.set(channelId, setTimeout(async () => {
+    channelTimers.set(channelId, window.setTimeout(async () => {
         channelTimers.delete(channelId);
         try {
             await runChannelPruning(channelId);

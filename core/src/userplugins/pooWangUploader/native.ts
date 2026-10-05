@@ -23,7 +23,7 @@ function runSecretTool(args: string[], input?: string): Promise<string> {
     const isFlatpak = Boolean(process.env.FLATPAK_ID) || existsSync("/.flatpak-info");
     const command = isFlatpak ? "flatpak-spawn" : "secret-tool";
     const commandArgs = isFlatpak ? ["--host", "secret-tool", ...args] : args;
-    const runtimeDirectory = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid()}`;
+    const runtimeDirectory = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.() ?? 1000}`;
     const child = spawn(command, commandArgs, {
         env: {
             ...process.env,

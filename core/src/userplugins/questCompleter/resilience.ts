@@ -247,7 +247,7 @@ export interface EnrollmentStatus {
     orbQuantityClaimed?: number;
     lastStreamHeartbeatAt?: string;
     streamProgressSeconds?: number;
-    progress?: Record<string, { value: number; }>;
+    progress?: Record<string, { value: number; }> | Map<string, { value: number; }>;
 }
 
 type UnknownRecord = Record<string, unknown>;

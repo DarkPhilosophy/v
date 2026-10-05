@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { composeUploadMessages, formatUploadLinks, getUploadError, isAttachmentPlusClassName, parseUploadFile, randomizeUploadName, selectUploadRoute } from "../core/src/userplugins/pooWangUploader/shared.ts";
+import { composeUploadMessages, formatBlockedUploadLinks, formatUploadLinks, getUploadError, isAttachmentPlusClassName, parseUploadFile, randomizeUploadName, selectUploadRoute, shouldInterceptBlockedUpload } from "../core/src/userplugins/pooWangUploader/shared.ts";
 
 test("poo.wang upload response maps a public file link", () => {
     assert.deepEqual(parseUploadFile({
@@ -56,33 +56,65 @@ test("send-time rerouting separates text from one grouped preview message", () =
     assert.deepEqual(composeUploadMessages("", links), [groupedMedia]);
 });
 
-test("default routing is silent while opt-in routing prompts", () => {
+test("pinned route skips the chooser and only 'prompt' asks", () => {
     const base = {
         enabled: true,
         tokenConfigured: true,
         isThumbnail: false,
-        rerouteByDefault: false,
+        pinnedRoute: "prompt" as const,
         autoRerouteLargeFiles: true,
         largeFileThresholdBytes: 25 * 1024 * 1024
     };
     assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024] }), "prompt");
-    assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024], rerouteByDefault: true }), "poo-wang");
+    assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024], pinnedRoute: "poo-wang" }), "poo-wang");
+    assert.equal(selectUploadRoute({ ...base, fileSizes: [2 * 1024 * 1024], pinnedRoute: "discord" }), "discord");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [25 * 1024 * 1024] }), "poo-wang");
-    assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], tokenConfigured: false }), "prompt");
     assert.equal(selectUploadRoute({ ...base, fileSizes: [30 * 1024 * 1024], isThumbnail: true }), "discord");
 });
 
-test("disabled choice follows the configured default route", () => {
+test("without a token there is nothing to choose, so the chooser never appears", () => {
+    const base = {
+        enabled: true,
+        tokenConfigured: false,
+        isThumbnail: false,
+        autoRerouteLargeFiles: true,
+        largeFileThresholdBytes: 25 * 1024 * 1024,
+        fileSizes: [2 * 1024 * 1024]
+    };
+    for (const pinnedRoute of ["prompt", "discord", "poo-wang"] as const) {
+        assert.equal(selectUploadRoute({ ...base, pinnedRoute }), "discord");
+    }
+});
+
+test("a pinned Discord route must not send an oversized file to a host that rejects it", () => {
     const base = {
         enabled: true,
         tokenConfigured: true,
         isThumbnail: false,
-        fileSizes: [1024],
-        autoRerouteLargeFiles: false,
-        largeFileThresholdBytes: 25 * 1024 * 1024
+        pinnedRoute: "discord" as const,
+        largeFileThresholdBytes: 25 * 1024 * 1024,
+        fileSizes: [30 * 1024 * 1024]
     };
-    assert.equal(selectUploadRoute({ ...base, rerouteByDefault: true }), "poo-wang");
-    assert.equal(selectUploadRoute({ ...base, rerouteByDefault: false }), "prompt");
+    assert.equal(selectUploadRoute({ ...base, autoRerouteLargeFiles: true }), "poo-wang");
+    assert.equal(selectUploadRoute({ ...base, autoRerouteLargeFiles: false }), "discord");
+});
+
+test("uploads Discord rejects are intercepted only when poo.wang can actually take them", () => {
+    const base = { enabled: true, tokenConfigured: true, canAttachFiles: false, fileCount: 1 };
+    assert.equal(shouldInterceptBlockedUpload(base), true);
+    assert.equal(shouldInterceptBlockedUpload({ ...base, canAttachFiles: true }), false);
+    assert.equal(shouldInterceptBlockedUpload({ ...base, enabled: false }), false);
+    assert.equal(shouldInterceptBlockedUpload({ ...base, tokenConfigured: false }), false);
+    assert.equal(shouldInterceptBlockedUpload({ ...base, fileCount: 0 }), false);
+});
+
+test("blocked-upload links fall back to plain URLs when Discord will not unfurl masked links", () => {
+    const files = [
+        { id: "a", name: "a.png", url: "https://poo.wang/f/a", contentType: "image/png", mediaKind: "image" },
+        { id: "b", name: "b.zip", url: "https://poo.wang/f/b", contentType: "application/zip", mediaKind: "file" }
+    ];
+    assert.equal(formatBlockedUploadLinks(files, true), "[\u2065](https://poo.wang/f/a) https://poo.wang/f/b");
+    assert.equal(formatBlockedUploadLinks(files, false), "https://poo.wang/f/a https://poo.wang/f/b");
 });
 
 test("random upload names use configured printable ASCII and preserve extensions", () => {
@@ -105,7 +137,17 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /import type \{ MessageObject, SendMessageOptions, SendMessageProps \} from "@api\/MessageEvents"/);
     assert.doesNotMatch(source, /patches:\s*\[/);
     assert.doesNotMatch(source, /chatBarButton:/);
-    assert.doesNotMatch(source, /document\.addEventListener\("(?:click|change|drop|paste)"/);
+    // Intake listeners exist only for uploads Discord would reject (no ATTACH_FILES);
+    // they must stay gated, and never claim click/change so the native picker is untouched.
+    assert.doesNotMatch(source, /document\.addEventListener\("(?:click|change)"/);
+    assert.match(source, /document\.addEventListener\("drop", interceptBlockedDrop, true\)/);
+    assert.match(source, /document\.addEventListener\("paste", interceptBlockedPaste, true\)/);
+    assert.match(source, /if \(!files\.length \|\| !isBlockedUploadContext\(files\)\) return;/);
+    assert.match(source, /function interceptBlockedPaste[\s\S]*?if \(!isComposerTarget\(event\.target\)\) return;/);
+    assert.match(source, /document\.removeEventListener\("drop", interceptBlockedDrop, true\)/);
+    assert.match(source, /document\.removeEventListener\("paste", interceptBlockedPaste, true\)/);
+    assert.match(source, /askUploadRoute\(files, tokenConfigured, \{ discordUnavailable: true \}\)/);
+    assert.match(source, /migrateLegacyRouteSetting\(\)/);
     assert.match(source, /document\.addEventListener\("contextmenu"/);
     assert.match(source, /async onBeforeMessageSend/);
     assert.match(source, /getUploads\(channelId, DraftType\.ChannelMessage\)/);
@@ -119,7 +161,9 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /if \(reroute === undefined\) \{[\s\S]*?scheduleUploadRemoval\(\)/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
-    assert.match(source, /poo-wang-default/);
+    assert.match(source, /poo-wang-route-prompt/);
+    assert.match(source, /poo-wang-route-discord/);
+    assert.match(source, /poo-wang-route-poo-wang/);
     assert.match(source, /poo-wang-large-files/);
     assert.match(source, /injectQuickSettingsIntoAttachmentMenu/);
     assert.match(source, /data-vc-poo-wang-settings/);

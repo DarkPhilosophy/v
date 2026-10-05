@@ -94,23 +94,50 @@ export function composeUploadMessages(content: string, links: readonly string[])
     return [existing, media].filter(Boolean);
 }
 
+export type PinnedUploadRoute = "prompt" | "discord" | "poo-wang";
+
 export function selectUploadRoute(input: {
     enabled: boolean;
     tokenConfigured: boolean;
     isThumbnail: boolean;
     fileSizes: readonly number[];
-    rerouteByDefault: boolean;
+    pinnedRoute: PinnedUploadRoute;
     autoRerouteLargeFiles: boolean;
     largeFileThresholdBytes: number;
 }): UploadRoute {
     if (!input.enabled || input.isThumbnail || input.fileSizes.length === 0) return "discord";
-    if (!input.tokenConfigured) return "prompt";
-    if (input.rerouteByDefault) return "poo-wang";
-    if (
-        input.autoRerouteLargeFiles
-        && input.fileSizes.some(size => size >= input.largeFileThresholdBytes)
-    ) return "poo-wang";
-    return "prompt";
+    // poo.wang cannot be chosen without a token, so asking is pointless: Discord it is.
+    if (!input.tokenConfigured) return "discord";
+    // Discord rejects oversized files outright, so a pinned "discord" must not win over this.
+    const oversized = input.autoRerouteLargeFiles
+        && input.fileSizes.some(size => size >= input.largeFileThresholdBytes);
+    if (oversized || input.pinnedRoute === "poo-wang") return "poo-wang";
+    return input.pinnedRoute === "discord" ? "discord" : "prompt";
+}
+
+/**
+ * Discord rejects a file before it ever becomes a draft when the user lacks
+ * ATTACH_FILES, so the send-time hook can never see it. Only in that case do
+ * we take the file at the DOM boundary and route it to poo.wang directly.
+ * Anything else (permission present, plugin off, no token, nothing to send)
+ * is left to Discord and the normal send-time route selection.
+ */
+export function shouldInterceptBlockedUpload(input: {
+    enabled: boolean;
+    tokenConfigured: boolean;
+    canAttachFiles: boolean;
+    fileCount: number;
+}): boolean {
+    return input.enabled && input.tokenConfigured && !input.canAttachFiles && input.fileCount > 0;
+}
+
+/**
+ * Without EMBED_LINKS Discord will not unfurl masked links, so the invisible
+ * `[⁥](url)` label would render as an empty, unclickable gap. Fall back to the
+ * plain URL in that case.
+ */
+export function formatBlockedUploadLinks(files: readonly PooWangUploadFile[], canEmbedLinks: boolean): string {
+    return canEmbedLinks ? formatUploadLinks(files) : files.map(file => file.url).join(" ");
 }
 export function isAttachmentPlusClassName(className: string): boolean {
     return className.includes("attachButtonPlus") || className.includes("attachButton_");

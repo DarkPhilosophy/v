@@ -8,7 +8,8 @@ import { definePluginSettings } from "@api/Settings";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
 import { findByProps } from "@webpack";
-import { Button, FluxDispatcher, Forms, RestAPI, showToast, Toasts } from "@webpack/common";
+import type { ToastType } from "@vencord/discord-types";
+import { Button, FluxDispatcher, Forms, RestAPI, showToast } from "@webpack/common";
 import { createDeferredHandler, type DeferredHandler } from "./deferredHandler";
 import { createHeartbeatWait, getCompletionBatch, getEnrollmentBatch, getNextAutomationDelayMs, getRateLimitDelayMs, readTaskProgress, resolveEnrolledStatus, runConcurrentQuestBatch } from "./resilience";
 import { isAutomatableQuest } from "./taskSupport";
@@ -137,9 +138,8 @@ const settings = definePluginSettings({
     },
 });
 
-type ToastKind = typeof Toasts.Type[keyof typeof Toasts.Type];
-function toast(message: string, type: ToastKind = Toasts.Type.MESSAGE) {
-    if (!settings.store.notify && type !== Toasts.Type.FAILURE) return;
+function toast(message: string, type: ToastType = "message") {
+    if (!settings.store.notify && type !== "failure") return;
     showToast(message, type);
 }
 
@@ -184,7 +184,7 @@ async function completeQuest(quest: Quest): Promise<void> {
     const task = tasks[taskName];
     if (!task || typeof task.target !== "number") {
         logger.warn(`${appName}: malformed task ${taskName} (no target); skipping; task=${JSON.stringify(task)}`);
-        toast(`${appName}: could not read task target. Skipping.`, Toasts.Type.FAILURE);
+        toast(`${appName}: could not read task target. Skipping.`, "failure");
         return;
     }
     const secondsNeeded = task.target;
@@ -213,7 +213,7 @@ async function completeQuest(quest: Quest): Promise<void> {
         }
         await RestAPI.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: secondsNeeded } });
         logger.info(`${appName}: video complete (${secondsNeeded}s)`);
-        toast(`${appName}: video quest complete`, Toasts.Type.SUCCESS);
+        toast(`${appName}: video quest complete`, "success");
         return;
     }
 
@@ -232,7 +232,7 @@ async function completeQuest(quest: Quest): Promise<void> {
         const store = getStore<RunningGameStore>("getRunningGames", "getGameForPID");
         if (!store) {
             logger.warn(`${appName}: game store not found (open Quests tab first)`);
-            toast(`${appName}: game store unavailable. Open Discord's Quests tab first, then retry.`, Toasts.Type.FAILURE);
+            toast(`${appName}: game store unavailable. Open Discord's Quests tab first, then retry.`, "failure");
             return;
         }
         // Discord v2 API: application no longer lives in QuestStore.quests[id].config.
@@ -241,7 +241,7 @@ async function completeQuest(quest: Quest): Promise<void> {
         const realAppId = appMeta?.application?.id;
         if (!realAppId) {
             logger.warn(`${appName}: could not resolve application id from /quests/${quest.id}; skipping play quest`);
-            toast(`${appName}: failed to resolve game. Skipping (API changed).`, Toasts.Type.FAILURE);
+            toast(`${appName}: failed to resolve game. Skipping (API changed).`, "failure");
             return;
         }
         const { body } = await RestAPI.get({ url: `/applications/public?application_ids=${realAppId}` });
@@ -301,10 +301,10 @@ async function completeQuest(quest: Quest): Promise<void> {
         try {
             await heartbeat.promise;
             logger.info(`${appName}: play complete (${secondsNeeded}s)`);
-            toast(`${appName}: play quest complete`, Toasts.Type.SUCCESS);
+            toast(`${appName}: play quest complete`, "success");
         } catch (err) {
             logger.warn(`${appName}: ${err instanceof Error ? err.message : err}`);
-            toast(`${appName}: heartbeat failed. Try again later.`, Toasts.Type.FAILURE);
+            toast(`${appName}: heartbeat failed. Try again later.`, "failure");
             throw err;
         }
         return;
@@ -316,20 +316,20 @@ async function completeQuest(quest: Quest): Promise<void> {
             ? "requires Discord Activity"
             : "not supported";
     logger.warn(`${appName}: task ${taskName} not automatable (${reason})`);
-    toast(`${appName}: ${taskName} not automatable (${reason})`, Toasts.Type.FAILURE);
+    toast(`${appName}: ${taskName} not automatable (${reason})`, "failure");
 }
 
 let running = false;
 let autoEnrollBlockedUntil = 0;
 async function completeAll(silent = false): Promise<void> {
     if (running) {
-        if (!silent) toast("Already running.", Toasts.Type.FAILURE);
+        if (!silent) toast("Already running.", "failure");
         return;
     }
     const questsStore = getStore<QuestsStore>("getQuest", "quests");
     if (!questsStore) {
         logger.warn("QuestsStore not found; open the Quests tab first");
-        if (!silent) toast("Quests not loaded yet. Open Discord's Quests tab, then retry.", Toasts.Type.FAILURE);
+        if (!silent) toast("Quests not loaded yet. Open Discord's Quests tab, then retry.", "failure");
         return;
     }
 
@@ -365,7 +365,7 @@ async function completeAll(silent = false): Promise<void> {
                 } catch (err) {
                     const retryDelayMs = getRateLimitDelayMs(err);
                     logger.error("Enroll failed", quest.config.messages.questName, err);
-                    if (!silent) toast(`Enroll failed: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
+                    if (!silent) toast(`Enroll failed: ${quest.config.messages.questName}`, "failure");
                     if (retryDelayMs !== undefined) {
                         autoEnrollBlockedUntil = Date.now() + retryDelayMs;
                         logger.warn(`Auto-enroll rate limited; pausing for ${Math.ceil(retryDelayMs / 1000)}s`);
@@ -404,13 +404,13 @@ async function completeAll(silent = false): Promise<void> {
                     successfulQuests++;
                 } catch (err) {
                     logger.error("Failed for quest", quest.config.messages.questName, err);
-                    if (!silent) toast(`Error: ${quest.config.messages.questName}`, Toasts.Type.FAILURE);
+                    if (!silent) toast(`Error: ${quest.config.messages.questName}`, "failure");
                 }
             },
             3
         );
         logger.info("Quest batch processed");
-        if (!silent) toast("Done. Check Gift Inventory.", Toasts.Type.SUCCESS);
+        if (!silent) toast("Done. Check Gift Inventory.", "success");
     } finally {
         running = false;
         if (silent && hasDeferredQuests && autoHandler) {
