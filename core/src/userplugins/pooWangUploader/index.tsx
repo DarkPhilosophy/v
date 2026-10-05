@@ -230,7 +230,7 @@ function UploadRouteModal(props: {
     };
 
     return (
-        <Modal {...props.rootProps} onClose={() => props.resolve(undefined)} title="Choose upload destination">
+        <Modal {...props.rootProps} onClose={() => { props.resolve(undefined); props.rootProps.onClose(); }} title="Choose upload destination">
             <Forms.FormText>
                 {props.files.length} file(s), {totalMb.toFixed(1)} MB total.
                 {props.options.discordUnavailable && " Discord does not allow attachments in this channel, so these can only go to poo.wang."}
@@ -713,8 +713,10 @@ const plugin = definePlugin({
         if (route === "prompt") {
             const reroute = await askUploadRoute(files, tokenConfigured, {});
             if (reroute === undefined) {
-                scheduleUploadRemoval();
-                logger.info("Cleared draft attachments after upload route cancellation", { files: uploads.length, channelId });
+                // Dismissing the chooser (X or Cancel) only aborts this send. The draft,
+                // its attachments and the typed text are the user's context and stay put;
+                // cancel:true leaves the composer uncleared, so they can pick again.
+                logger.info("Upload route chooser dismissed; draft kept", { files: uploads.length, channelId });
                 return { cancel: true };
             }
             if (!reroute) return;

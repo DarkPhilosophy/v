@@ -4,7 +4,7 @@ import { UserStore } from "@webpack/common";
 
 import { discordPruningApi } from "./api";
 import { collectEligibleMessages, deleteEligibleMessages, type CollectionOptions, type PreviewResult } from "./engine";
-import { getRetryDelayMs } from "./guards";
+import { formatUnknownError, getRetryDelayMs, isChannelUnavailableError, UNAVAILABLE_CHANNEL_RETRY_MS } from "./guards";
 import { computeWindow, isPruningActive, setChannelPolicy, type ChannelPolicy, type SyncedPruningState } from "./model";
 import { readSyncedState, writeSyncedState } from "./settings";
 import { nextChannelDeadline, partitionDueMessages, type PendingOwnMessage } from "./scheduler";
@@ -17,6 +17,8 @@ export interface ChannelProgress {
     lastDeletedCount?: number;
     nextAttemptAt?: number;
     lastFailureCount?: number;
+    /** Set while Discord reports the channel as inaccessible; cleared by the next successful scan. */
+    unavailable?: boolean;
 }
 
 type ProgressState = Record<string, ChannelProgress>;
@@ -263,6 +265,23 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
         await DataStore.set(PROGRESS_KEY, progress);
         logger.info(`Channel ${channelId}: worker completed; deleted=${deletedCount}, failed=${failureCount}.`);
     } catch (error) {
+        if (isChannelUnavailableError(error)) {
+            // Not a failure of ours and not fixable by retrying soon. Keep the user's
+            // policy exactly as configured (access may return, and it syncs across
+            // devices) and just stop asking for a while. Warn once per outage, not
+            // on every retry.
+            const alreadyKnown = (previous?.nextAttemptAt ?? 0) >= now - UNAVAILABLE_CHANNEL_RETRY_MS
+                && previous?.unavailable === true;
+            progress[channelId] = {
+                ...previous,
+                nextAttemptAt: now + UNAVAILABLE_CHANNEL_RETRY_MS,
+                unavailable: true,
+            };
+            await DataStore.set(PROGRESS_KEY, progress);
+            if (!alreadyKnown)
+                logger.warn(`Channel ${channelId}: no longer accessible (${formatUnknownError(error)}); will check again in ${UNAVAILABLE_CHANNEL_RETRY_MS / 3_600_000}h. Its policy is kept.`);
+            return;
+        }
         progress[channelId] = {
             ...previous,
             nextAttemptAt: now + getRetryDelayMs(error),

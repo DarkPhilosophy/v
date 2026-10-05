@@ -45,3 +45,19 @@ export function getRateLimitDelayMs(error: unknown): number | undefined {
 export function getRetryDelayMs(error: unknown): number {
     return getRateLimitDelayMs(error) ?? 60_000;
 }
+
+/**
+ * Discord says the channel exists but we may not touch it (50001 Missing Access,
+ * 50013 Missing Permissions) or that it is gone (10003 Unknown Channel). These do
+ * not fix themselves on a 60 s retry, so hammering the API and flooding the
+ * console every minute helps nobody.
+ */
+export function isChannelUnavailableError(error: unknown): boolean {
+    if (!isUnknownRecord(error) || !isUnknownRecord(error.body)) return false;
+    const code = error.body.code;
+    return (error.status === 403 && (code === 50001 || code === 50013))
+        || (error.status === 404 && code === 10003);
+}
+
+/** Access can come back (rejoined server, role restored), so check again occasionally instead of giving up for good. */
+export const UNAVAILABLE_CHANNEL_RETRY_MS = 6 * 60 * 60 * 1000;

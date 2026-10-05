@@ -132,6 +132,24 @@ test("structured Discord failures render a useful message", () => {
     assert.equal(guards.getRetryDelayMs?.({ status: 500 }), 60_000);
 });
 
+test("channels the user can no longer access are recognized, other failures are not", () => {
+    // Exact shape reported from the console: 403 with Discord code 50001 ("Nu ai acces").
+    assert.equal(guards.isChannelUnavailableError({ status: 403, body: { message: "Nu ai acces", code: 50001 } }), true);
+    assert.equal(guards.isChannelUnavailableError({ status: 403, body: { code: 50013 } }), true);
+    assert.equal(guards.isChannelUnavailableError({ status: 404, body: { code: 10003 } }), true);
+
+    // Anything transient or unrelated must keep the normal short retry.
+    assert.equal(guards.isChannelUnavailableError({ status: 429, body: { retry_after: 3 } }), false);
+    assert.equal(guards.isChannelUnavailableError({ status: 500, body: { code: 0 } }), false);
+    assert.equal(guards.isChannelUnavailableError({ status: 403, body: { code: 40002 } }), false);
+    assert.equal(guards.isChannelUnavailableError({ status: 404, body: { code: 10008 } }), false);
+    assert.equal(guards.isChannelUnavailableError({ status: 403 }), false);
+    assert.equal(guards.isChannelUnavailableError(new Error("boom")), false);
+    assert.equal(guards.isChannelUnavailableError(undefined), false);
+
+    assert.ok(guards.UNAVAILABLE_CHANNEL_RETRY_MS > 60 * 60 * 1000, "an outage must back off far longer than the 60 s transient retry");
+});
+
 test("Discord archived-thread failures are recognized by their API code", () => {
     assert.equal(guards.isArchivedThreadError?.({
         status: 400,

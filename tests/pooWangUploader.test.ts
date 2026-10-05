@@ -158,7 +158,12 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /type: "UPLOAD_ATTACHMENT_REMOVE_FILES"/);
     assert.match(source, /attachmentIds: handledUploadIds/);
     assert.match(source, /window\.setTimeout\(removeHandledUploads, 250\)/);
-    assert.match(source, /if \(reroute === undefined\) \{[\s\S]*?scheduleUploadRemoval\(\)/);
+    // Dismissing the chooser must keep the user's draft: the branch may only cancel the send.
+    const dismissBranch = /if \(reroute === undefined\) \{([\s\S]*?)\n            \}/.exec(source)?.[1] ?? "";
+    assert.match(dismissBranch, /return \{ cancel: true \};/);
+    assert.doesNotMatch(dismissBranch, /scheduleUploadRemoval|removeHandledUploads|removeFromMsgDraft|\.cancel\(\)/);
+    // X must close the modal itself, not just settle the promise, or it lingers on screen.
+    assert.match(source, /onClose=\{\(\) => \{ props\.resolve\(undefined\); props\.rootProps\.onClose\(\); \}\}/);
     assert.match(source, /addGlobalContextMenuPatch\(attachmentMenuPatch\)/);
     assert.match(source, /poo-wang-settings/);
     assert.match(source, /poo-wang-route-prompt/);
@@ -169,7 +174,8 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, /data-vc-poo-wang-settings/);
     assert.match(source, /poo\.wang quick settings/);
     assert.match(source, />Cancel</);
-    assert.match(source, /Cleared draft attachments after upload route cancellation/);
+    assert.match(source, /Upload route chooser dismissed; draft kept/);
+    assert.doesNotMatch(source, /Cleared draft attachments after upload route cancellation/);
     assert.match(source, />Upload with Discord</);
     assert.match(source, />Upload with poo\.wang</);
 });
