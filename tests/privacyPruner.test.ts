@@ -278,6 +278,47 @@ test("dropChannels never awaits between reading and writing the synced state", (
     assert.doesNotMatch(body, /const state = readSyncedState\(\)/, "a separately read snapshot would reintroduce the race");
 });
 
+function runtimeSource(): string {
+    return readFileSync(new URL("../core/src/userplugins/privacyPruner/runtime.ts", import.meta.url), "utf8");
+}
+
+test("scheduled scans run through one serial queue instead of all at once", () => {
+    const source = runtimeSource();
+    // Regression: every channel was due at startup and stayed in lockstep, so ~10+ message
+    // searches fired in the same instant and Discord answered 429.
+    assert.match(source, /await runScanSerially\(channelId\)/);
+    assert.doesNotMatch(source, /channelTimers\.set\([\s\S]{0,300}?await runChannelPruning\(channelId\)/,
+        "the timer must not call runChannelPruning directly, that bypasses the queue");
+    const queue = /function runScanSerially\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
+    assert.notEqual(queue, "", "runScanSerially must exist");
+    assert.match(queue, /scanQueue\.then\(/);
+    assert.match(queue, /SCAN_GAP_MS/, "a pause between scans is the point of the queue");
+    assert.match(queue, /scanQueue = turn\.catch\(/, "one failing scan must not stall the channels behind it");
+});
+
+test("a scan queued before the scheduler stopped never runs after it", () => {
+    const source = runtimeSource();
+    const queue = /function runScanSerially\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
+    assert.match(queue, /const generation = schedulerGeneration/, "the generation is captured when the scan is queued");
+    assert.match(queue, /if \(!schedulerStarted \|\| generation !== schedulerGeneration\) return;/);
+    const stop = /export function stopScheduler\(\): void \{[\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
+    assert.match(stop, /schedulerGeneration\+\+/, "stopping must invalidate everything already queued");
+});
+
+test("the access gate asks the client first and treats an unknown channel as no proof", () => {
+    const source = runtimeSource();
+    const gate = /const knownChannel = ChannelStore\.getChannel\(channelId\);[\s\S]*?\n    \}\n/.exec(source)?.[0] ?? "";
+    assert.notEqual(gate, "", "the gate must exist in runChannelPruning");
+    assert.match(gate, /knownChannel != null/, "an unknown channel must still be sent to Discord");
+    assert.match(gate, /VIEW_CHANNEL/);
+    assert.match(gate, /READ_MESSAGE_HISTORY/, "guild search needs both permissions");
+    assert.match(gate, /UNAVAILABLE_CHANNEL_RETRY_MS/, "it backs off, it never deletes the policy");
+    assert.doesNotMatch(gate, /dropChannels|removeChannelPolicies/, "absence from the client is not proof of deletion");
+    const gateAt = source.indexOf("const knownChannel = ChannelStore.getChannel(channelId);");
+    const firstRequest = source.indexOf("collectEligibleMessages(discordPruningApi", gateAt);
+    assert.ok(gateAt !== -1 && firstRequest > gateAt, "the gate must run before any request to Discord");
+});
+
 test("leaving a server selects exactly that server's channels and never DMs", () => {
     let state = parseSyncedState("");
     state = setChannelPolicy(state, "a1", "guild-a", policy, 1);

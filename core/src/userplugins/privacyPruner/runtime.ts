@@ -1,6 +1,6 @@
 import * as DataStore from "@api/DataStore";
 import { Logger } from "@utils/Logger";
-import { UserStore } from "@webpack/common";
+import { ChannelStore, PermissionsBits, PermissionStore, UserStore } from "@webpack/common";
 
 import { discordPruningApi } from "./api";
 import { collectEligibleMessages, deleteEligibleMessages, type CollectionOptions, type PreviewResult } from "./engine";
@@ -221,6 +221,26 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
     const historyDue = previous?.lastScanAt == null || now - previous.lastScanAt >= record.policy.scanIntervalMs;
     if (initialPriority.length === 0 && !historyDue) return;
 
+    // Ask the client before asking Discord. If the channel is known and VIEW_CHANNEL is
+    // missing, the search is guaranteed to come back 403, so skip it and back off for
+    // as long as a real 403 would. A channel the client does NOT know proves nothing
+    // (stores can still be empty at startup, hidden channels are absent from them), so
+    // that case still goes to Discord, which gives the authoritative answer.
+    const knownChannel = ChannelStore.getChannel(channelId);
+    // Guild search needs both: seeing the channel and reading its history.
+    const cannotRead = knownChannel != null && !knownChannel.isPrivate() && (
+        !PermissionStore.can(PermissionsBits.VIEW_CHANNEL, knownChannel)
+        || !PermissionStore.can(PermissionsBits.READ_MESSAGE_HISTORY, knownChannel)
+    );
+    if (cannotRead) {
+        const alreadyKnown = previous?.unavailable === true;
+        progress[channelId] = { ...previous, nextAttemptAt: now + UNAVAILABLE_CHANNEL_RETRY_MS, unavailable: true };
+        await DataStore.set(PROGRESS_KEY, progress);
+        if (!alreadyKnown)
+            logger.warn(`Channel ${channelId}: you cannot view it any more; skipping requests, will check again in ${UNAVAILABLE_CHANNEL_RETRY_MS / 3_600_000}h. Its policy is kept.`);
+        return;
+    }
+
     const controller = new AbortController();
     activeChannels.set(channelId, controller);
     logger.info(`Channel ${channelId}: worker started; priority=${initialPriority.length}, historical=${historyDue}.`);
@@ -350,6 +370,32 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
         if (activeChannels.get(channelId) === controller) activeChannels.delete(channelId);
     }
 }
+/**
+ * Scans of different channels must not run at the same time. At startup every channel is
+ * due at once, and with the default 2 h interval they would stay in lockstep forever, so
+ * each cycle fired ~10+ message searches in the same instant. Discord rate-limits that
+ * endpoint per user, which is what produced the 429s. A single queue with a pause between
+ * scans spreads the same work out; nothing is skipped, only delayed.
+ */
+const SCAN_GAP_MS = 3_000;
+let scanQueue: Promise<void> = Promise.resolve();
+
+let schedulerGeneration = 0;
+
+function runScanSerially(channelId: string): Promise<void> {
+    // Captured when the scan is queued: a stop followed by a quick start bumps the
+    // generation, so turns queued before it are recognised as stale and dropped.
+    const generation = schedulerGeneration;
+    const turn = scanQueue.then(async () => {
+        if (!schedulerStarted || generation !== schedulerGeneration) return;
+        await runChannelPruning(channelId);
+        await new Promise<void>(resolve => window.setTimeout(resolve, SCAN_GAP_MS));
+    });
+    // A failing scan must not poison the queue for the channels behind it.
+    scanQueue = turn.catch(() => undefined);
+    return turn;
+}
+
 function scheduleChannel(channelId: string, runImmediately = false): void {
     clearChannelTimer(channelId);
     if (!schedulerStarted || pausedChannels.has(channelId) || activeChannels.has(channelId)) return;
@@ -370,7 +416,7 @@ function scheduleChannel(channelId: string, runImmediately = false): void {
     channelTimers.set(channelId, window.setTimeout(async () => {
         channelTimers.delete(channelId);
         try {
-            await runChannelPruning(channelId);
+            await runScanSerially(channelId);
         } catch (error) {
             logger.error(`Scheduled pruning failed for channel ${channelId}.`, error);
         } finally {
@@ -389,6 +435,7 @@ export async function startScheduler(scanOnStartup: boolean): Promise<void> {
 
 export function stopScheduler(): void {
     schedulerStarted = false;
+    schedulerGeneration++;
     for (const timer of channelTimers.values()) clearTimeout(timer);
     channelTimers.clear();
     for (const controller of activeChannels.values()) controller.abort();
