@@ -4,7 +4,7 @@ import { UserStore } from "@webpack/common";
 
 import { discordPruningApi } from "./api";
 import { collectEligibleMessages, deleteEligibleMessages, type CollectionOptions, type PreviewResult } from "./engine";
-import { formatUnknownError, getRetryDelayMs, isChannelGoneError, isChannelUnavailableError, UNAVAILABLE_CHANNEL_RETRY_MS } from "./guards";
+import { formatUnknownError, getRateLimitDelayMs, getRetryDelayMs, isChannelGoneError, isChannelUnavailableError, UNAVAILABLE_CHANNEL_RETRY_MS } from "./guards";
 import { channelIdsOfGuild, computeWindow, isPruningActive, removeChannelPolicies, setChannelPolicy, updateSyncedState, type ChannelPolicy, type SyncedPruningState } from "./model";
 import { readSyncedState, writeSyncedState } from "./settings";
 import { nextChannelDeadline, partitionDueMessages, type PendingOwnMessage } from "./scheduler";
@@ -280,6 +280,10 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
             signal: controller.signal,
             beforePage: drainDuePriority,
             retainMessages: false,
+            onRateLimit: (retryDelayMs, willRetry) => logger.warn(
+                `Channel ${channelId}: history search rate-limited; ` +
+                (willRetry ? `waiting ${retryDelayMs + 100}ms before one retry.` : "second 429 received; rescheduling channel."),
+            ),
             async onCandidates(candidates) {
                 const batch = await deleteEligibleMessages(discordPruningApi, candidates, {
                     signal: controller.signal,
@@ -334,6 +338,13 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
             nextAttemptAt: now + getRetryDelayMs(error),
         };
         await DataStore.set(PROGRESS_KEY, progress);
+        if (getRateLimitDelayMs(error) != null) {
+            // Discord asked us to slow down and getRetryDelayMs already honours its
+            // retry_after via nextAttemptAt. That is normal operation, not a plugin
+            // failure, so it must not surface as a red console error every time.
+            logger.warn(`Channel ${channelId}: rate-limited; next attempt in ${Math.ceil(getRetryDelayMs(error) / 1000)}s.`);
+            return;
+        }
         throw error;
     } finally {
         if (activeChannels.get(channelId) === controller) activeChannels.delete(channelId);

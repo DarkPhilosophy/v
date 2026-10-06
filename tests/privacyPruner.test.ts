@@ -550,6 +550,93 @@ test("preview paginates old history and excludes kept messages", async () => {
     assert.equal(result.keptCount, 1);
 });
 
+function searchApi(script: Array<unknown>): { api: PruningApi; attempts(): number; } {
+    let attempt = 0;
+    return {
+        attempts: () => attempt,
+        api: {
+            async listOwnMessagesPage() {
+                const step = script[attempt++];
+                if (step instanceof Error || (typeof step === "object" && step !== null && "status" in step)) throw step;
+                return step as { messages: PrunableMessage[]; };
+            },
+            async deleteOwnMessage() { throw new Error("search tests must not delete"); },
+        },
+    };
+}
+
+const searchInput = {
+    channelId: "channel",
+    guildId: "guild",
+    userId: "me",
+    oldestTimestamp: 1,
+    newestTimestamp: 40,
+    keptMessageIds: new Set<string>(),
+};
+const rateLimited = (retryAfter: number) => ({ status: 429, body: { retry_after: retryAfter } });
+
+test("a rate-limited search page is retried once after the delay Discord asked for", async () => {
+    const { api, attempts } = searchApi([
+        rateLimited(2.5),
+        { messages: [{ id: "10", channelId: "channel", timestamp: 10, content: "x" }] },
+    ]);
+    const slept: number[] = [];
+    const limits: Array<[number, boolean]> = [];
+
+    const result = await collectEligibleMessages(api, searchInput, {
+        sleep: async ms => { slept.push(ms); },
+        onRateLimit: (ms, willRetry) => limits.push([ms, willRetry]),
+    });
+
+    assert.equal(attempts(), 2, "the same page is requested again, not skipped");
+    assert.deepEqual(slept, [2_600], "retry_after + 100 ms of slack");
+    assert.deepEqual(limits, [[2_500, true]]);
+    assert.deepEqual(result.messages.map(message => message.id), ["10"]);
+});
+
+test("a second rate limit in a row is reported as final and thrown for the scheduler's longer backoff", async () => {
+    const { api, attempts } = searchApi([rateLimited(1), rateLimited(7)]);
+    const limits: Array<[number, boolean]> = [];
+
+    await assert.rejects(
+        collectEligibleMessages(api, searchInput, { sleep: async () => {}, onRateLimit: (ms, willRetry) => limits.push([ms, willRetry]) }),
+        (error: unknown) => guards.getRateLimitDelayMs(error) === 7_000,
+    );
+    assert.equal(attempts(), 2, "exactly one retry, never a retry loop");
+    assert.deepEqual(limits, [[1_000, true], [7_000, false]]);
+});
+
+test("search failures other than 429 are not retried and keep their original error", async () => {
+    const forbidden = { status: 403, body: { code: 50001 } };
+    const { api, attempts } = searchApi([forbidden]);
+    let slept = 0;
+
+    await assert.rejects(
+        collectEligibleMessages(api, searchInput, { sleep: async () => { slept++; } }),
+        (error: unknown) => error === forbidden,
+    );
+    assert.equal(attempts(), 1);
+    assert.equal(slept, 0, "no waiting for errors a retry cannot fix");
+});
+
+test("cancelling while a rate limit is being waited out sends no retry request", async () => {
+    const controller = new AbortController();
+    const { api, attempts } = searchApi([
+        rateLimited(3),
+        { messages: [{ id: "10", channelId: "channel", timestamp: 10, content: "x" }] },
+    ]);
+
+    const result = await collectEligibleMessages(api, searchInput, {
+        signal: controller.signal,
+        // The user opens the channel settings (pauseChannelPruning) during the wait.
+        sleep: async () => { controller.abort(); },
+    });
+
+    assert.equal(attempts(), 1, "the stray second request must not be sent");
+    assert.equal(result.stopped, true);
+    assert.deepEqual(result.messages, []);
+});
+
 test("preview reports page progress and preserves partial results when stopped", async () => {
     const controller = new AbortController();
     const snapshots: Array<{

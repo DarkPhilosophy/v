@@ -61,6 +61,43 @@ export interface CollectionOptions {
     onPartialResult?(result: PreviewResult): void;
     retainMessages?: boolean;
     onCandidates?(messages: readonly PrunableMessage[]): Promise<void>;
+    /** Called when a search page is rate-limited; `willRetry` is false on the second 429, which is then thrown. */
+    onRateLimit?(retryDelayMs: number, willRetry: boolean): void;
+    sleep?(milliseconds: number): Promise<void>;
+}
+
+type ListPageInput = Parameters<PruningApi["listOwnMessagesPage"]>[0];
+
+/**
+ * One automatic retry after the delay Discord asked for. A second 429 in a row is
+ * thrown unchanged so the scheduler applies its own, longer backoff (getRetryDelayMs).
+ * Mirrors deleteEligibleMessages, so search and delete treat rate limits the same way.
+ *
+ * Resolves to undefined when the caller cancelled while the delay was running: the
+ * user opening settings pauses the channel, and a request nobody wants any more must
+ * not be sent just because its timer happened to expire afterwards.
+ */
+async function listPageWithRateLimitRetry(
+    api: PruningApi,
+    input: ListPageInput,
+    options: CollectionOptions,
+): Promise<MessagePage | undefined> {
+    try {
+        return await api.listOwnMessagesPage(input);
+    } catch (error) {
+        const retryDelay = getRateLimitDelayMs(error);
+        if (retryDelay == null) throw error;
+        options.onRateLimit?.(retryDelay, true);
+        await (options.sleep ?? sleep)(retryDelay + 100);
+        if (options.signal?.aborted) return undefined;
+        try {
+            return await api.listOwnMessagesPage(input);
+        } catch (second) {
+            const secondDelay = getRateLimitDelayMs(second);
+            if (secondDelay != null) options.onRateLimit?.(secondDelay, false);
+            throw second;
+        }
+    }
 }
 
 export async function collectEligibleMessages(
@@ -82,7 +119,7 @@ export async function collectEligibleMessages(
         if (options.signal?.aborted) return { messages, keptCount, stopped: true };
         await options.beforePage?.();
         if (options.signal?.aborted) return { messages, keptCount, stopped: true };
-        const page = await api.listOwnMessagesPage({
+        const fetched = await listPageWithRateLimitRetry(api, {
             channelId: input.channelId,
             guildId: input.guildId,
             userId: input.userId,
@@ -90,7 +127,10 @@ export async function collectEligibleMessages(
             oldestTimestamp: input.oldestTimestamp,
             newestTimestamp: input.newestTimestamp,
             includeThreads: input.includeThreads,
-        });
+        }, options);
+        // Cancelled while waiting out a 429: the retry was deliberately not sent.
+        if (fetched == null) return { messages, keptCount, stopped: true };
+        const page = fetched;
 
         pagesScanned++;
         messagesInspected += page.inspectedCount ?? page.messages.length;
