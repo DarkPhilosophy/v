@@ -853,6 +853,33 @@ test("deletion blocks on a rate-limited message before advancing to the next one
     });
 });
 
+test("cancelling while a delete rate limit is being waited out sends no retry DELETE", async () => {
+    // A DELETE is a mutation, so a stray one after the user paused the channel is worse
+    // than a stray search. The retry loop rechecks the signal before every attempt.
+    const controller = new AbortController();
+    const deletes: string[] = [];
+    const api: PruningApi = {
+        async listOwnMessagesPage() {
+            throw new Error("unused");
+        },
+        async deleteOwnMessage(_channelId, messageId) {
+            deletes.push(messageId);
+            throw { status: 429, body: { retry_after: 1 } };
+        },
+    };
+
+    const result = await deleteEligibleMessages(api, [
+        { id: "10", channelId: "channel", timestamp: 10, content: "first" },
+        { id: "20", channelId: "channel", timestamp: 20, content: "second" },
+    ], {
+        signal: controller.signal,
+        sleep: async () => { controller.abort(); },
+    });
+
+    assert.deepEqual(deletes, ["10"], "exactly the one attempt that was rate-limited; no retry, no next message");
+    assert.deepEqual(result, { deletedIds: [], failures: [] });
+});
+
 test("repeated rate limits stop the worker instead of retrying forever or advancing", async () => {
     const events: string[] = [];
     const repeatedRateLimit = { status: 429, body: { retry_after: 0.25 } };
