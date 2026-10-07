@@ -56,10 +56,10 @@ index a72f9bd..49a3e8f 100644
      );
  }
 diff --git a/src/plugins/translate/TranslationAccessory.tsx b/src/plugins/translate/TranslationAccessory.tsx
-index 00e3568..4deef7a 100644
+index fa2e347..50aa649 100644
 --- a/src/plugins/translate/TranslationAccessory.tsx
 +++ b/src/plugins/translate/TranslationAccessory.tsx
-@@ -16,16 +16,51 @@
+@@ -16,11 +16,13 @@
   * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
  
@@ -74,7 +74,12 @@ index 00e3568..4deef7a 100644
 -import { cl, TranslationValue } from "./utils";
 +import { cl, getMessageContent, isPendingSentTranslation, sentOriginals, translate, type TranslationValue } from "./utils";
  
- const TranslationSetters = new Map<string, (v: TranslationValue) => void>();
+ interface TranslationSetter {
+     messageId: string;
+@@ -37,6 +39,40 @@ export function handleTranslate(messageId: string, data: TranslationValue) {
+     }
+ }
+ 
 +const logger = new Logger("Translate");
 +let accessoryMountedLogged = false;
 +let requestStartedLogged = false;
@@ -108,14 +113,11 @@ index 00e3568..4deef7a 100644
 +    if (!("vencordEmbeddedBy" in message)) return false;
 +    return Boolean((message as Record<string, unknown>).vencordEmbeddedBy);
 +}
- 
- export function handleTranslate(messageId: string, data: TranslationValue) {
--    TranslationSetters.get(messageId)!(data);
-+    TranslationSetters.get(messageId)?.(data);
- }
- 
++
  function Dismiss({ onDismiss }: { onDismiss: () => void; }) {
-@@ -41,24 +76,168 @@ function Dismiss({ onDismiss }: { onDismiss: () => void; }) {
+     return (
+         <button
+@@ -50,28 +86,167 @@ function Dismiss({ onDismiss }: { onDismiss: () => void; }) {
  
  export function TranslationAccessory({ message }: { message: Message; }) {
      const [translation, setTranslation] = useState<TranslationValue>();
@@ -137,17 +139,25 @@ index 00e3568..4deef7a 100644
          // Ignore MessageLinkEmbeds messages
 -        if ((message as any).vencordEmbeddedBy) return;
 +        if (isVencordEmbedded(message)) return;
-+
+ 
+-        const setter: TranslationSetter = {
+-            messageId: message.id,
+-            handleTranslation: setTranslation
+-        };
 +        let cancelled = false;
 +
 +        // Clear stale translation when message content changes (e.g., after edit)
 +        setTranslation(undefined);
 +        setShowOriginal(false);
-+
-+        // Typed wrapper — avoids Dispatch<SetStateAction<...>> vs Map function type mismatch
-+        const setter: (v: TranslationValue) => void = v => setTranslation(v);
-+        TranslationSetters.set(message.id, setter);
-+
+ 
++        // Upstream registers every mounted accessory in a Set so the same message id can be
++        // shown by several components at once; keep that, delete by identity.
++        const setter: TranslationSetter = { messageId: message.id, handleTranslation: v => setTranslation(v) };
+         TranslationSetters.add(setter);
+-        return () => void TranslationSetters.delete(setter);
+-    }, []);
+ 
+-    if (!translation) return null;
 +        // Auto-translate incoming messages from other users.
 +        // renderMessageAccessory only fires for rendered (visible/near-visible) messages,
 +        // NOT for the entire channel history.
@@ -208,9 +218,7 @@ index 00e3568..4deef7a 100644
 +        return () => {
 +            cancelled = true;
 +            // Only remove the setter if it still belongs to this component instance
-+            if (TranslationSetters.get(message.id) === setter) {
-+                TranslationSetters.delete(message.id);
-+            }
++            TranslationSetters.delete(setter);
 +        };
 +    }, [autoTranslateReceived, message.author.id, message.channel_id, message.content, message.id, receivedInput, receivedOutput, service]);
 +
@@ -222,14 +230,11 @@ index 00e3568..4deef7a 100644
 +    const isOwnWithoutMapping = isOwn && !hasExactOutgoing;
 +    const isIncomingLike = !isOwn || !hasExactOutgoing;
 +    const hasOutgoingImmersive = immersiveMode && hasExactOutgoing;
- 
--        TranslationSetters.set(message.id, setTranslation);
++
 +    // No translation and no outgoing immersive → nothing to render
 +    if (!translation && !hasOutgoingImmersive) return null;
 +    if (hasOutgoingImmersive && dismissedOutgoing) return null;
- 
--        return () => void TranslationSetters.delete(message.id);
--    }, []);
++
 +    const handleDismiss = () => {
 +        if (hasOutgoingImmersive) {
 +            setDismissedOutgoing(true);
@@ -254,8 +259,7 @@ index 00e3568..4deef7a 100644
 +    const isImmersiveToggle = immersiveMode && (isIncomingLike || hasOutgoingImmersive);
 +    const expanded = isImmersiveToggle && showOriginal;
 +    const iconEl = <TranslateIcon width={16} height={16} className={cl("accessory-icon")} />;
- 
--    if (!translation) return null;
++
 +    // Primary text: incoming shows translation, outgoing shows user's original typed text
 +    const accessoryText = translation?.text ?? sentOriginal?.original ?? "";
 +    const labelLang = translation?.sourceLanguage ?? sentOriginal?.targetLanguage ?? "";
@@ -295,7 +299,7 @@ index 00e3568..4deef7a 100644
      );
  }
 diff --git a/src/plugins/translate/index.tsx b/src/plugins/translate/index.tsx
-index 68a3a6d..58becdf 100644
+index 47dce7e..6592086 100644
 --- a/src/plugins/translate/index.tsx
 +++ b/src/plugins/translate/index.tsx
 @@ -19,15 +19,18 @@
@@ -319,7 +323,7 @@ index 68a3a6d..58becdf 100644
  
  const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { message: Message; }) => {
      const content = getMessageContent(message);
-@@ -49,23 +52,15 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
+@@ -50,23 +53,15 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
      ));
  };
  
@@ -345,7 +349,7 @@ index 68a3a6d..58becdf 100644
      settings,
      contextMenus: {
          "message": messageCtxPatch
-@@ -73,7 +68,15 @@ export default definePlugin({
+@@ -74,7 +69,15 @@ export default definePlugin({
      // not used, just here in case some other plugin wants it or w/e
      translate,
  
@@ -362,7 +366,7 @@ index 68a3a6d..58becdf 100644
  
      chatBarButton: {
          icon: TranslateIcon,
-@@ -99,7 +102,36 @@ export default definePlugin({
+@@ -100,7 +103,36 @@ export default definePlugin({
          }
      },
  
@@ -400,7 +404,7 @@ index 68a3a6d..58becdf 100644
          if (!settings.store.autoTranslate) return;
          if (!message.content) return;
  
-@@ -107,7 +139,25 @@ export default definePlugin({
+@@ -108,7 +140,25 @@ export default definePlugin({
          clearTimeout(tooltipTimeout);
          tooltipTimeout = setTimeout(() => setShouldShowTranslateEnabledTooltip?.(false), 2000);
  
@@ -494,7 +498,7 @@ index 2898706..713282d 100644
  }
 \ No newline at end of file
 diff --git a/src/plugins/translate/utils.ts b/src/plugins/translate/utils.ts
-index 2c77db5..dc2b25f 100644
+index 934def2..21535af 100644
 --- a/src/plugins/translate/utils.ts
 +++ b/src/plugins/translate/utils.ts
 @@ -19,12 +19,34 @@
