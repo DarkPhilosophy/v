@@ -427,8 +427,16 @@ function scheduleChannel(channelId: string, runImmediately = false): void {
 
 export async function startScheduler(scanOnStartup: boolean): Promise<void> {
     if (schedulerStarted) return;
+    // The persisted progress holds each channel's backoff (nextAttemptAt). Load it BEFORE the
+    // scheduler is considered started: marking it started first left a window where a timer or a
+    // MESSAGE_CREATE could run a scan against an empty `progress`, ignoring a backoff that was
+    // saved earlier, and hit a channel Discord had already refused.
+    const generation = schedulerGeneration;
+    const loaded = await DataStore.get<ProgressState>(PROGRESS_KEY) ?? {};
+    // stopScheduler() (or another start) ran while we were reading: this start is stale.
+    if (schedulerStarted || generation !== schedulerGeneration) return;
+    progress = loaded;
     schedulerStarted = true;
-    progress = await DataStore.get<ProgressState>(PROGRESS_KEY) ?? {};
     for (const channelId of Object.keys(readSyncedState().channels))
         scheduleChannel(channelId, scanOnStartup);
 }

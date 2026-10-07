@@ -319,6 +319,21 @@ test("the access gate asks the client first and treats an unknown channel as no 
     assert.ok(gateAt !== -1 && firstRequest > gateAt, "the gate must run before any request to Discord");
 });
 
+test("the saved backoff is loaded before the scheduler counts as started", () => {
+    const source = runtimeSource();
+    const start = /export async function startScheduler\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
+    assert.notEqual(start, "", "startScheduler must exist");
+    const load = start.indexOf("await DataStore.get<ProgressState>(PROGRESS_KEY)");
+    const mark = start.indexOf("schedulerStarted = true");
+    const firstSchedule = start.indexOf("scheduleChannel(");
+    assert.ok(load !== -1 && mark !== -1, "both steps must be present");
+    // Regression: marking it started first left a window where a scan ran against an empty
+    // `progress`, ignoring a backoff saved earlier, and hit a channel Discord had refused.
+    assert.ok(load < mark, "progress must be loaded before schedulerStarted is set");
+    assert.ok(mark < firstSchedule, "nothing may be scheduled before the scheduler is marked started");
+    assert.match(start, /generation !== schedulerGeneration/, "a start that was stopped meanwhile must not take effect");
+});
+
 test("leaving a server selects exactly that server's channels and never DMs", () => {
     let state = parseSyncedState("");
     state = setChannelPolicy(state, "a1", "guild-a", policy, 1);
