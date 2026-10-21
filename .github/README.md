@@ -13,6 +13,8 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 - **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
 - **User Plugin Manager** — transactionally installs and updates custom user plugins from Discord settings.
 - **Translate** — custom translation integration.
+- **PerfMonitor** — warns when the main thread stalls and attributes the blocking time to plugins, themes, or Discord.
+- **Faster startup** — Vencord's module patcher skips modules no patch can match and compiles each patched module once, falling back to the upstream algorithm on any error.
 - **NoTrack hardening** — keeps Discord analytics and Sentry disabled while satisfying the preload's local Sentry IPC contract with inert handlers, avoiding failed `sentry-ipc://` requests without restoring telemetry.
 - **OpenAsar** — installed or updated by default as Discord's optimized bootstrap, with Linux-safe runtime patches and Vencord's loader preserved.
 
@@ -128,15 +130,20 @@ v/
 │   │   ├── platformSpoofer/
 │   │   ├── pooWangUploader/
 │   │   ├── privacyPruner/
+│   │   ├── perfMonitor/
 │   │   ├── questCompleter/
 │   │   └── steamRichPresence/
+│   ├── api/PerfAttribution.ts        # per-plugin render/flux timing used by PerfMonitor
 │   ├── main/userPluginManager/       # manager host implementation
 │   ├── components/                   # Vencord settings integration
 │   └── shared/                       # shared manager contracts
 ├── patches/
 │   ├── (Translate lives in core/src/plugins/translate: full overlay copy, no patch to drift)
+│   ├── cloudsync.patch               # Vencord cloud settings sync fix
 │   ├── runtime-noise.patch           # NoTrack/Sentry preload noise suppression
 │   ├── hide-media.patch              # HideMedia: auto-hide all media, click to show
+│   ├── perf-attribution.patch        # wires PerfAttribution timing into flux and message accessories
+│   ├── webpack-fast-patching.patch   # prefiltered, compile-once module patching with upstream fallback
 │   ├── series                        # ordered patch list used by ./i and the in-app updater
 │   ├── update.patch                  # temporary clean-build updater
 │   └── userplugin-manager.patch      # Vencord/Electron manager wiring
