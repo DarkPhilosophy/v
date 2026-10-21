@@ -118,21 +118,31 @@ function cacheKeyFor(message: Message, content: string): string {
     return `${message.id}:${content}:${service}:${receivedInput}:${receivedOutput}`;
 }
 
+// After a failed request (offline, provider error, rate limit) automatic translation pauses for a
+// while. Without this every visible message, and every message scrolled into view, retried at once
+// and each failure raised its own error toast.
+const FAILURE_BACKOFF_MS = 60_000;
+let autoPausedUntil = 0;
+
 function translateCached(key: string, content: string): Promise<TranslationValue> {
     const cached = translationCache.get(key);
     if (cached) return Promise.resolve(cached);
     let request = inflightRequests.get(key);
-    if (!request) {
-        request = translate("received", content).then(value => {
-            if (translationCache.size >= MAX_CACHE) {
-                const oldest = translationCache.keys().next().value;
-                if (oldest) translationCache.delete(oldest);
-            }
-            translationCache.set(key, value);
-            return value;
-        }).finally(() => inflightRequests.delete(key));
-        inflightRequests.set(key, request);
-    }
+    if (request) return request;
+    if (Date.now() < autoPausedUntil) return Promise.reject(new Error("automatic translation paused after a failure"));
+
+    request = translate("received", content).then(value => {
+        if (translationCache.size >= MAX_CACHE) {
+            const oldest = translationCache.keys().next().value;
+            if (oldest) translationCache.delete(oldest);
+        }
+        translationCache.set(key, value);
+        return value;
+    }, error => {
+        autoPausedUntil = Date.now() + FAILURE_BACKOFF_MS;
+        throw error;
+    }).finally(() => inflightRequests.delete(key));
+    inflightRequests.set(key, request);
     return request;
 }
 

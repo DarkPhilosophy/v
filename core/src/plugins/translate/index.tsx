@@ -144,7 +144,13 @@ export default definePlugin({
         tooltipTimeout = setTimeout(() => setShouldShowTranslateEnabledTooltip?.(false), 2000);
 
         const original = message.content;
-        const trans = await translate("sent", original);
+        // A failed translation (offline, provider error) must never block or break sending:
+        // translate() already showed a toast, so send what the user typed.
+        const trans = await translate("sent", original).catch(error => {
+            logger.warn("Outgoing translation failed; sending the original text", error);
+            return undefined;
+        });
+        if (!trans) return;
         const targetLang = getTargetLanguageName("sent");
         const entry = { original, translated: trans.text, targetLanguage: targetLang, ts: Date.now() };
         const queue = pendingSent.get(channelId);
@@ -158,7 +164,11 @@ export default definePlugin({
         if (!message.content) return;
 
         const original = message.content;
-        const trans = await translate("sent", original);
+        const trans = await translate("sent", original).catch(error => {
+            logger.warn("Edit translation failed; saving the original text", error);
+            return undefined;
+        });
+        if (!trans) return;
         // Update the outgoing mapping so immersive mode shows the correct original
         const targetLang = getTargetLanguageName("sent");
         sentOriginals.set(messageId, { original, translated: trans.text, targetLanguage: targetLang });
