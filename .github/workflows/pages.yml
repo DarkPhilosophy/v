@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - i
+      - site/**
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -30,6 +31,7 @@ jobs:
           enablement: true
       - run: |
           mkdir _site
+          cp -r site/. _site/
           cp i _site/i
       - uses: actions/upload-pages-artifact@v3
       - name: Deploy
