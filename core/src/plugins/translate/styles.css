@@ -87,8 +87,9 @@ li[id^="chat-messages-"]:hover .vc-trans-inline-toggle.vc-trans-toggle-off {
     opacity: 0.55;
 }
 
-li[id^="chat-messages-"]:has(h3) .vc-trans-inline-toggle,
-li[id^="chat-messages-"]:has(h3) .vc-trans-inline-only {
+/* The header toggle renders exactly when the row has a header, so key off our own element
+   instead of Discord's markup, which changes between releases. */
+li[id^="chat-messages-"]:has(.vc-trans-toggle:not(.vc-trans-inline-toggle)) :is(.vc-trans-inline-toggle, .vc-trans-inline-only) {
     display: none;
 }
 

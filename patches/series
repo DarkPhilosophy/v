@@ -5,3 +5,4 @@ userplugin-manager.patch
 runtime-noise.patch
 cloudsync.patch
 hide-media.patch
+perf-attribution.patch
