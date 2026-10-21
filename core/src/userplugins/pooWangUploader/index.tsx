@@ -240,7 +240,7 @@ function UploadRouteModal(props: {
     useEffect(() => {
         if (enterChoice === undefined) return;
         const onKey = (event: KeyboardEvent) => {
-            if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+            if (event.key !== "Enter" || event.repeat || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
             // The modal's focus lock may start on Cancel or the switch; Enter must still pick the
             // default, not whatever control happened to receive focus.
             event.preventDefault();

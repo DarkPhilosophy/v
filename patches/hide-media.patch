@@ -1,5 +1,5 @@
 diff --git a/src/plugins/hideAttachments/index.tsx b/src/plugins/hideAttachments/index.tsx
-index 2eeff1d..44f7699 100644
+index 2eeff1d..8e7aec7 100644
 --- a/src/plugins/hideAttachments/index.tsx
 +++ b/src/plugins/hideAttachments/index.tsx
 @@ -20,14 +20,27 @@ import "./styles.css";
@@ -32,7 +32,7 @@ index 2eeff1d..44f7699 100644
  
  let hiddenMessages = new Set<string>();
  
-@@ -38,11 +51,29 @@ async function getHiddenMessages() {
+@@ -38,11 +51,34 @@ async function getHiddenMessages() {
  
  const saveHiddenMessages = (ids: Set<string>) => set(KEY, ids);
  
@@ -40,7 +40,12 @@ index 2eeff1d..44f7699 100644
 +function refreshAll() {
 +    for (const el of document.querySelectorAll<HTMLElement>("[id^='chat-messages-']")) {
 +        const [channelId, messageId] = el.id.slice("chat-messages-".length).split("-");
-+        if (channelId && messageId) updateMessage(channelId, messageId);
++        // Only act on ids that look like Discord snowflakes; a DOM format change must not
++        // turn into a burst of failed updates.
++        if (!/^\d+$/.test(channelId ?? "") || !/^\d+$/.test(messageId ?? "")) continue;
++        try {
++            updateMessage(channelId, messageId);
++        } catch { /* message no longer cached */ }
 +    }
 +}
 +
@@ -62,7 +67,7 @@ index 2eeff1d..44f7699 100644
      const ids = await getHiddenMessages();
      if (!ids.delete(messageId))
          ids.add(messageId);
-@@ -53,7 +84,8 @@ async function toggleHide(channelId: string, messageId: string) {
+@@ -53,7 +89,8 @@ async function toggleHide(channelId: string, messageId: string) {
  
  export default definePlugin({
      name: "HideMedia",
@@ -72,7 +77,7 @@ index 2eeff1d..44f7699 100644
      tags: ["Chat", "Appearance"],
      authors: [Devs.Ven],
      dependencies: ["MessageUpdaterAPI"],
-@@ -71,7 +103,7 @@ export default definePlugin({
+@@ -71,7 +108,7 @@ export default definePlugin({
          render(msg) {
              if (!hasMedia(msg) && !msg.messageSnapshots.some(s => hasMedia(s.message))) return null;
  
@@ -81,7 +86,7 @@ index 2eeff1d..44f7699 100644
  
              return {
                  label: isHidden ? "Show Media" : "Hide Media",
-@@ -83,23 +115,33 @@ export default definePlugin({
+@@ -83,23 +120,33 @@ export default definePlugin({
  
      renderMessageAccessory({ message }) {
          if (!this.shouldHide(message.id)) return null;
