@@ -127,12 +127,15 @@ assert patch.index(generator) < patch.index(build)
 assert 'join(source, "dist", "userPluginSeeds")' not in patch
 assert 'await run("git", ["fetch", "--depth", "1", "origin", upstreamHash], source);' in patch
 assert "UPSTREAM_TARBALL" not in patch
-assert 'import { cp, mkdir, mkdtemp, readFile, rm } from "fs/promises";' in patch
+assert 'import { cp, mkdir, mkdtemp, rm } from "fs/promises";' in patch
 assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });' in patch
 assert 'await run("cp"' not in patch
 assert 'if (userpluginsRoot) await materializeUserPluginsTree(source, userpluginsRoot);' in patch
 assert 'join(overlay, "userplugins")' not in patch
-assert patch.count('join(overlay, "scripts", "verify-userplugins-build.py")') == 2
+# The updater must not need python3/sh (absent on Windows); its steps live in customBuild.ts.
+assert 'python3' not in patch and '.sh"' not in patch
+assert 'await userpluginInventory(join(source, "src", "userplugins"))' in patch
+assert 'await verifyUserpluginBundle(inventory,' in patch
 assert './core/src/userplugins' in installer
 assert '$PKG/userplugins' not in installer
 assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
@@ -191,14 +194,13 @@ assert 'restore_runtime' in installer
 assert 'join(source, "dist", "renderer.js.map")' in patch
 assert 'await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })' in patch
 assert 'console.warn("[Vencord] Failed to clean User Plugin Manager update workspace", error)' in patch
-assert 'await run(join(overlay, "scripts", "package-vencord-asar.sh"), [join(source, "dist"), RUNTIME_ASAR]);' in patch
-assert "await packageRuntime(overlay, source);" in patch
+assert 'await packageRuntimeAsar(join(source, "dist"), RUNTIME_ASAR);' in patch
 assert 'report?.("building");' in patch
 assert 'report?.("installing");' in patch
 assert 'import gitHash from "~git-hash";' in patch
 assert 'buildHash: `${upstreamHash.slice(0, 12)}.${overlayHash.slice(0, 12)}`' in patch
 assert 'if (gitHash === buildHash) return [];' in patch
-assert '`${OVERLAY_TARBALL}/${overlayHash}`' in patch
+assert 'await fetchOverlay(overlayHash, overlay);' in patch
 assert 'VENCORD_HASH: buildHash' in patch
 assert 'BUILD_HASH="$(printf \'%.12s.%.12s\' "$UPSTREAM_HASH" "$OVERLAY_HASH")"' in installer
 assert "waitForPackagedRuntime" not in patch

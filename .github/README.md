@@ -2,7 +2,7 @@
 
 A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds against a fresh upstream checkout and installs one persistent compiled runtime: `~/.config/Vencord/app.asar`.
 
-There is no Vencord fork, persistent upstream checkout, committed build output, CI artifact, or prebuilt release.
+There is no Vencord fork, persistent upstream checkout or committed build output. Vencord Forge (below) is the optional app that does the same as the installer with a window.
 
 ## Included customizations
 
@@ -39,6 +39,34 @@ There is no Vencord fork, persistent upstream checkout, committed build output, 
 - Set retention, maximum lookback, scan interval, and whether thread messages are included. The built-in template defaults to 1 day retention, 1 year maximum lookback, a 2-hour scan interval, and thread inclusion.
 - Use **Preview** before deletion and mark individual messages **Keep** from the message menu. Kept messages are excluded from future pruning.
 - Deletion is limited to your own eligible messages and is irreversible; existing policies are not changed when defaults are edited.
+
+## Vencord Forge (app)
+
+A desktop app (Linux and Windows) and a matching command line, `vforge`, that do what the installer does and let you choose what goes in:
+
+- **Discord:** detects Stable, PTB, Canary and Development (native, Flatpak, Windows `%LOCALAPPDATA%`, macOS); any other folder can be added by hand.
+- **Plugins:** turn any custom plugin off; it is not built in.
+- **Patches:** optional patches can be turned off; required ones (updater, plugin manager) stay on.
+- **OpenAsar:** install/update, keep, or remove (the original Discord bootstrap is backed up and restored).
+- **Restore stock Discord** in one click.
+
+It needs nothing preinstalled: if Node.js 22+ is missing it downloads the official build (checksum verified), and it runs the exact pnpm version Vencord pins. Everything it downloads or builds stays under the user's cache directory.
+
+The selection is saved as `forge-profile.json` next to the runtime and is honored by `./i`, the uupd hook and the in-app updater, so turned-off plugins and patches stay off across every kind of update. The in-app updater no longer needs `python3`, `sh`, `curl` or `tar`, so it works on Windows too (it still needs `git`, `node` and `pnpm`).
+
+Forge is distribution-agnostic: what it builds is described by [`forge.json`](../forge.json) (upstream repository, overlay, patch metadata, plugin descriptions, OpenAsar fixes). Point it at another overlay with a `forge.json` and it builds that instead.
+
+```sh
+cd forge && cargo build --release
+./target/release/vencord-forge            # the app (registers itself in the app menu on Linux)
+./target/release/vforge detect            # installations found
+./target/release/vforge list --source ..  # plugins and patches
+./target/release/vforge install --source .. --disable-plugin steamRichPresence
+```
+
+Prebuilt Linux and Windows builds are produced by the `Vencord Forge` workflow. [`forge/tests/equivalence.sh`](../forge/tests/equivalence.sh) proves the Rust engine produces byte-identical results to the shell installer's tools (patches, runtime ASAR, loader, embedded seeds, OpenAsar fixes).
+
+Brand and icon studio: <https://darkphilosophy.github.io/v/brand/>.
 
 ## Install
 
@@ -147,6 +175,9 @@ v/
 │   ├── series                        # ordered patch list used by ./i and the in-app updater
 │   ├── update.patch                  # temporary clean-build updater
 │   └── userplugin-manager.patch      # Vencord/Electron manager wiring
+├── forge/                          # Vencord Forge: Rust engine (core), CLI (vforge), app (gui)
+├── forge.json                      # distribution manifest read by Forge and the updaters
+├── site/brand/                     # icon and logo studio (GitHub Pages)
 ├── scripts/
 │   ├── choose-openasar-action.sh
 │   ├── manage-openasar.py

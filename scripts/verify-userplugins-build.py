@@ -55,8 +55,6 @@ def collect_inventory(source_root: Path) -> list[dict[str, str]]:
             "source": source.relative_to(source_root).as_posix(),
         })
 
-    if not inventory:
-        fail(f"no canonical userplugins found in: {source_root}")
     return inventory
 
 

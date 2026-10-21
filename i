@@ -87,6 +87,12 @@ prepare_build() {
     BUILD_HASH="$(printf '%.12s.%.12s' "$UPSTREAM_HASH" "$OVERLAY_HASH")"
     mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
     cp -r "$PKG/core/src/." "$BUILD/src/"
+    # The forge profile (written by Vencord Forge) lists plugins and optional patches the user
+    # turned off; keep honoring it here so scheduled reinstalls do not bring them back.
+    for plugin in $(python3 "$PKG/scripts/forge-selection.py" "$PKG/forge.json" "$VENCORD/forge-profile.json" plugins); do
+        rm -rf "$BUILD/src/userplugins/$plugin"
+    done
+    EXCLUDED_PATCHES=" $(python3 "$PKG/scripts/forge-selection.py" "$PKG/forge.json" "$VENCORD/forge-profile.json" patches | tr '\n' ' ') "
     say "Staged custom plugins:"
     python3 "$PKG/scripts/verify-userplugins-build.py" inventory \
         "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
@@ -94,6 +100,7 @@ prepare_build() {
     cp -r "$PKG/patches/." "$BUILD/custom-patches/"
     # patches/series is the single ordered list, shared with the in-app updater.
     for p in $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$PKG/patches/series"); do
+        case "$EXCLUDED_PATCHES" in *" $p "*) say "Skipping $p (turned off in forge profile)"; continue ;; esac
         if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
             :
         elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then
@@ -270,7 +277,7 @@ mkdir -p "$STATE_DIR" && printf '%s\n' "$UPSTREAM_HASH" > "$LOCAL_GOOD.tmp" && m
 for stale in "$VENCORD"/* "$VENCORD"/.[!.]* "$VENCORD"/..?*; do
     [ -e "$stale" ] || continue
     case "$stale" in
-        "$VENCORD/app.asar"|"$VENCORD/settings") continue ;;
+        "$VENCORD/app.asar"|"$VENCORD/settings"|"$VENCORD/forge-profile.json") continue ;;
     esac
     rm -rf "$stale"
 done

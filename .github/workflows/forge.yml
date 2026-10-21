@@ -1,0 +1,90 @@
+name: Vencord Forge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - forge/**
+      - forge.json
+      - patches/**
+      - core/src/main/updater/**
+      - scripts/**
+      - .github/workflows/forge.yml
+  pull_request:
+    paths:
+      - forge/**
+      - forge.json
+      - patches/**
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+            exe: ""
+          - os: windows-latest
+            name: windows-x86_64
+            exe: ".exe"
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: forge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: forge
+      - name: Unit tests
+        run: cargo test --locked --workspace
+      - name: Build
+        run: cargo build --locked --release -p vforge -p vencord-forge
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./target/release/vforge${{ matrix.exe }} --help
+          ./target/release/vforge${{ matrix.exe }} detect
+          ./target/release/vforge${{ matrix.exe }} list --source ..
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p ../dist/vencord-forge
+          cp target/release/vforge${{ matrix.exe }} target/release/vencord-forge${{ matrix.exe }} ../dist/vencord-forge/
+          cd ../dist
+          if [ "${{ runner.os }}" = Windows ]; then 7z a vencord-forge-${{ matrix.name }}.zip vencord-forge >/dev/null; else tar czf vencord-forge-${{ matrix.name }}.tar.gz vencord-forge; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vencord-forge-${{ matrix.name }}
+          path: dist/vencord-forge-${{ matrix.name }}.*
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ../dist/vencord-forge-${{ matrix.name }}.* --clobber
+
+  equivalence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: forge
+      - run: cargo build --locked -p vforge
+        working-directory: forge
+      - name: Rust engine matches the shell installer byte for byte
+        run: sh forge/tests/equivalence.sh
+      - name: Shell installer tests
+        run: |
+          sh tests/update-persistence.sh
+          sh tests/package-vencord-asar.sh

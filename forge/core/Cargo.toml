@@ -1,0 +1,17 @@
+[package]
+name = "forge-core"
+description = "Engine of Vencord Forge: builds a Vencord distribution and installs it into Discord."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+ureq = "3"
+flate2 = "1"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
