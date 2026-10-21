@@ -53,20 +53,43 @@ li[id^="chat-messages-"]:has(.vc-trans-hide-original) [id^="message-content-"] {
     opacity: 1;
 }
 
-/* Inline fallback for messages that continue a group (no header, so no name to sit next to).
-   Rows that start a group have an <h3> header carrying the main toggle; hide the copy there. */
+/* Messages that continue a group have no header, so they get their own toggle. Like Discord's
+   hover timestamp, it lives in the left gutter and only shows while the row is hovered or the
+   toggle is focused: it takes no space and does not repeat down the conversation. */
+.vc-trans-alt,
+.vc-trans-inline-only {
+    position: relative;
+}
+
+.vc-trans-inline-only {
+    height: 0;
+}
+
 .vc-trans-inline-toggle {
-    margin-left: 0;
-    margin-right: 0.35rem;
+    position: absolute;
+    left: -24px;
+    top: 3px;
+    margin: 0;
+    opacity: 0;
+}
+
+.vc-trans-inline-only .vc-trans-inline-toggle {
+    /* The original body sits above this zero-height box. */
+    top: -19px;
+}
+
+li[id^="chat-messages-"]:hover .vc-trans-inline-toggle,
+.vc-trans-inline-toggle:focus-visible {
+    opacity: 1;
+}
+
+li[id^="chat-messages-"]:hover .vc-trans-inline-toggle.vc-trans-toggle-off {
+    opacity: 0.55;
 }
 
 li[id^="chat-messages-"]:has(h3) .vc-trans-inline-toggle,
 li[id^="chat-messages-"]:has(h3) .vc-trans-inline-only {
     display: none;
-}
-
-.vc-trans-inline-only {
-    line-height: 1rem;
 }
 
 .vc-trans-auto-translate {
