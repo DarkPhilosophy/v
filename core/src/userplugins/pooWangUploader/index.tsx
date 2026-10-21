@@ -56,13 +56,13 @@ function AccessTokenSetting() {
         logger.info("Token save result", { ok: result.ok, configured: result.ok && Boolean(token.trim()), error: result.error });
         setSaving(false);
         if (!result.ok) {
-            showToast(result.error ?? "Could not store the poo.wang token.", "failure");
+            showToast({ text: result.error ?? "Could not store the poo.wang token.", variant: "critical" });
             return;
         }
         setToken("");
         tokenConfigured = Boolean(token.trim());
         setConfigured(tokenConfigured);
-        showToast(tokenConfigured ? "poo.wang token stored securely." : "poo.wang token removed.", "success");
+        showToast({ text: tokenConfigured ? "poo.wang token stored securely." : "poo.wang token removed.", variant: "success" });
     }
 
     async function clearToken() {
@@ -71,12 +71,12 @@ function AccessTokenSetting() {
         const result = await Native.setAccessToken("").catch(error => ({ ok: false, error: String(error) }));
         setSaving(false);
         if (!result.ok) {
-            showToast(result.error ?? "Could not remove the poo.wang token.", "failure");
+            showToast({ text: result.error ?? "Could not remove the poo.wang token.", variant: "critical" });
             return;
         }
         tokenConfigured = false;
         setConfigured(false);
-        showToast("poo.wang token removed.", "success");
+        showToast({ text: "poo.wang token removed.", variant: "success" });
     }
 
     return (
@@ -493,7 +493,7 @@ async function routeBlockedUpload(files: File[]): Promise<void> {
         logger.info("Sent poo.wang links for upload Discord would have blocked", { channelId, files: uploaded.length, canEmbed });
     } catch (error) {
         logger.error("Could not send poo.wang links for blocked upload", error);
-        showToast("The files uploaded to poo.wang, but Discord could not send their links.", "failure");
+        showToast({ text: "The files uploaded to poo.wang, but Discord could not send their links.", variant: "critical" });
     }
 }
 
@@ -661,11 +661,11 @@ const plugin = definePlugin({
 
         if (failure) {
             logger.warn("poo.wang upload failed", failure.status, failure.error);
-            showToast(`Uploaded ${uploadedFiles.length}/${files.length}. ${failure.error ?? "A file failed."}`, "failure");
+            showToast({ text: `Uploaded ${uploadedFiles.length}/${files.length}. ${failure.error ?? "A file failed."}`, variant: "critical" });
             return;
         }
 
-        showToast(`Uploaded ${uploadedFiles.length} file(s) to poo.wang.`, "success");
+        showToast({ text: `Uploaded ${uploadedFiles.length} file(s) to poo.wang.`, variant: "success" });
         return uploadedFiles;
     },
 
@@ -744,12 +744,12 @@ const plugin = definePlugin({
             }
         } catch (error) {
             logger.error("Could not send poo.wang message sequence", error);
-            showToast(
-                sentMessages > 0
+            showToast({
+                text: sentMessages > 0
                     ? `Sent ${sentMessages} message(s), but the grouped poo.wang previews failed.`
                     : "The files uploaded, but Discord could not send their links. Your draft was kept.",
-                "failure"
-            );
+                variant: "critical"
+            });
             if (sentMessages === 0) return { cancel: true };
         }
 

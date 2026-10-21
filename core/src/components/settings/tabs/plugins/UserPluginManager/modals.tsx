@@ -17,7 +17,6 @@ import type {
 } from "@shared/userPluginManager";
 import { Margins } from "@utils/margins";
 import type { ModalAction, RenderModalProps } from "@vencord/discord-types";
-import { ToastPosition } from "@vencord/discord-types/enums";
 import { Modal, openModal, Select, showToast, TextInput, useEffect, useState } from "@webpack/common";
 
 import type { UserPluginManagerController } from "./controller";
@@ -34,7 +33,7 @@ import {
 } from "./shared";
 
 function toast(message: string): void {
-    showToast(message, "success", { position: ToastPosition.BOTTOM });
+    showToast({ text: message, variant: "success", position: "bottom" });
 }
 
 const KIND_OPTIONS = SOURCE_KIND_ORDER.map(kind => ({ label: SOURCE_KIND_META[kind].label, value: kind }));

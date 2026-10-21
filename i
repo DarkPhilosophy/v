@@ -61,41 +61,71 @@ fi
 [ "${#OVERLAY_HASH}" -eq 40 ] || die "could not resolve overlay revision"
 
 # 2) Clone upstream into the temporary workspace and apply our overlay.
-BUILD="$WORK/Vencord"
-say "Fetching upstream Vencord"
-git clone --depth 1 "$VENCORD_REPO" "$BUILD" >/dev/null 2>&1 \
-    || die "upstream clone failed"
-UPSTREAM_HASH="$(git -C "$BUILD" rev-parse HEAD)" || die "could not resolve upstream revision"
-BUILD_HASH="$(printf '%.12s.%.12s' "$UPSTREAM_HASH" "$OVERLAY_HASH")"
-mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
-cp -r "$PKG/core/src/." "$BUILD/src/"
+#
+# Upstream changes the files our patches touch about once a week. Without a fallback, every
+# such change made this script die before reinstalling the loader, so a Discord update left
+# the user with stock Discord. Try upstream HEAD first; if the overlay does not apply or does
+# not type-check there, rebuild on the last upstream commit known to work (upstream.lock).
 USERPLUGIN_INVENTORY="$WORK/userplugins.json"
-say "Staged custom plugins:"
-python3 "$PKG/scripts/verify-userplugins-build.py" inventory \
-    "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
-    || die "custom plugin inventory failed"
-cp -r "$PKG/patches/." "$BUILD/custom-patches/"
-for p in translate.patch update.patch userplugin-manager.patch runtime-noise.patch cloudsync.patch; do
-    if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
-        :
-    elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then
-        git -C "$BUILD" apply "$BUILD/custom-patches/$p"
-    else
-        die "$p does not apply cleanly (upstream drift)"
-    fi
-done
+UPSTREAM_LOCK="$PKG/upstream.lock"
 
-# 3) Install dependencies and build only inside the temporary checkout.
-say "Installing temporary build dependencies"
-(cd "$BUILD" && pnpm install --frozen-lockfile) || die "dependency installation failed"
-SEED_HELPER="$PKG/scripts/stage-userplugin-seeds.sh"
-[ -x "$SEED_HELPER" ] || die "missing embedded source generator: $SEED_HELPER"
-"$SEED_HELPER" "$BUILD/src/userplugins" "$BUILD/src/main/userPluginManager/embeddedSeeds.generated.ts" \
-    || die "embedded source generation failed"
-# Type errors are the early warning for upstream API drift (e.g. the Toasts rewrite):
-# esbuild strips types, so `pnpm build` alone happily ships code that throws at runtime.
-say "Type-checking against current upstream"
-(cd "$BUILD" && pnpm testTsc) || die "type check failed: upstream API drift or an overlay bug (fix before installing; the existing runtime was left untouched)"
+# prepare_build <ref|HEAD>: clone, apply overlay, install deps, type-check.
+# Returns 1 on upstream drift (the caller may fall back); dies on anything else.
+prepare_build() {
+    BUILD="$WORK/Vencord-$1"
+    rm -rf "$BUILD"
+    if [ "$1" = HEAD ]; then
+        say "Fetching upstream Vencord (HEAD)"
+        git clone --depth 1 "$VENCORD_REPO" "$BUILD" >/dev/null 2>&1 || die "upstream clone failed"
+    else
+        say "Fetching upstream Vencord at pinned $1"
+        git init -q "$BUILD" && git -C "$BUILD" remote add origin "$VENCORD_REPO" \
+            && git -C "$BUILD" fetch -q --depth 1 origin "$1" \
+            && git -C "$BUILD" checkout -q FETCH_HEAD || die "could not fetch pinned upstream $1"
+    fi
+    UPSTREAM_HASH="$(git -C "$BUILD" rev-parse HEAD)" || die "could not resolve upstream revision"
+    BUILD_HASH="$(printf '%.12s.%.12s' "$UPSTREAM_HASH" "$OVERLAY_HASH")"
+    mkdir -p "$BUILD/src/userplugins" "$BUILD/custom-patches"
+    cp -r "$PKG/core/src/." "$BUILD/src/"
+    say "Staged custom plugins:"
+    python3 "$PKG/scripts/verify-userplugins-build.py" inventory \
+        "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
+        || die "custom plugin inventory failed"
+    cp -r "$PKG/patches/." "$BUILD/custom-patches/"
+    for p in translate.patch update.patch userplugin-manager.patch runtime-noise.patch cloudsync.patch; do
+        if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
+            :
+        elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then
+            git -C "$BUILD" apply "$BUILD/custom-patches/$p"
+        else
+            say "$p does not apply cleanly on upstream ${UPSTREAM_HASH%"${UPSTREAM_HASH#????????????}"} (upstream drift)"
+            return 1
+        fi
+    done
+
+    # 3) Install dependencies and build only inside the temporary checkout.
+    say "Installing temporary build dependencies"
+    (cd "$BUILD" && pnpm install --frozen-lockfile) || die "dependency installation failed"
+    SEED_HELPER="$PKG/scripts/stage-userplugin-seeds.sh"
+    [ -x "$SEED_HELPER" ] || die "missing embedded source generator: $SEED_HELPER"
+    "$SEED_HELPER" "$BUILD/src/userplugins" "$BUILD/src/main/userPluginManager/embeddedSeeds.generated.ts" \
+        || die "embedded source generation failed"
+    # Type errors are the early warning for upstream API drift (e.g. the Toasts rewrite):
+    # esbuild strips types, so `pnpm build` alone happily ships code that throws at runtime.
+    say "Type-checking against upstream"
+    if ! (cd "$BUILD" && pnpm testTsc); then
+        say "type check failed on this upstream (API drift)"
+        return 1
+    fi
+}
+
+if ! prepare_build HEAD; then
+    [ -s "$UPSTREAM_LOCK" ] || die "upstream drift and no $UPSTREAM_LOCK to fall back to (the existing runtime was left untouched)"
+    PINNED="$(tr -d '[:space:]' < "$UPSTREAM_LOCK")"
+    [ "${#PINNED}" -eq 40 ] || die "invalid upstream.lock"
+    say "Falling back to the last known-good upstream $PINNED"
+    prepare_build "$PINNED" || die "overlay does not build even on the pinned upstream $PINNED (the existing runtime was left untouched)"
+fi
 say "Building"
 (cd "$BUILD" && VENCORD_HASH="$BUILD_HASH" pnpm build) || die "build failed"
 say "Verifying custom plugins in renderer bundle"

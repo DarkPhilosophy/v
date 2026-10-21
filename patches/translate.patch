@@ -1,5 +1,5 @@
 diff --git a/src/plugins/translate/TranslateModal.tsx b/src/plugins/translate/TranslateModal.tsx
-index a72f9bd..49a3e8f 100644
+index a72f9bd3..49a3e8f7 100644
 --- a/src/plugins/translate/TranslateModal.tsx
 +++ b/src/plugins/translate/TranslateModal.tsx
 @@ -19,8 +19,8 @@
@@ -56,7 +56,7 @@ index a72f9bd..49a3e8f 100644
      );
  }
 diff --git a/src/plugins/translate/TranslationAccessory.tsx b/src/plugins/translate/TranslationAccessory.tsx
-index fa2e347..50aa649 100644
+index fa2e3471..50aa6498 100644
 --- a/src/plugins/translate/TranslationAccessory.tsx
 +++ b/src/plugins/translate/TranslationAccessory.tsx
 @@ -16,11 +16,13 @@
@@ -299,7 +299,7 @@ index fa2e347..50aa649 100644
      );
  }
 diff --git a/src/plugins/translate/index.tsx b/src/plugins/translate/index.tsx
-index 47dce7e..6592086 100644
+index 08361815..50770af7 100644
 --- a/src/plugins/translate/index.tsx
 +++ b/src/plugins/translate/index.tsx
 @@ -19,15 +19,18 @@
@@ -311,8 +311,8 @@ index 47dce7e..6592086 100644
 +import { Logger } from "@utils/Logger";
  import definePlugin from "@utils/types";
  import { Message } from "@vencord/discord-types";
--import { ChannelStore, Menu } from "@webpack/common";
-+import { ChannelStore, Menu, UserStore } from "@webpack/common";
+-import { Menu } from "@webpack/common";
++import { Menu, UserStore } from "@webpack/common";
  
  import { settings } from "./settings";
  import { setShouldShowTranslateEnabledTooltip, TranslateChatBarIcon, TranslateIcon } from "./TranslateIcon";
@@ -366,7 +366,7 @@ index 47dce7e..6592086 100644
  
      chatBarButton: {
          icon: TranslateIcon,
-@@ -100,7 +103,36 @@ export default definePlugin({
+@@ -98,7 +101,36 @@ export default definePlugin({
          }
      },
  
@@ -404,7 +404,7 @@ index 47dce7e..6592086 100644
          if (!settings.store.autoTranslate) return;
          if (!message.content) return;
  
-@@ -108,7 +140,25 @@ export default definePlugin({
+@@ -106,7 +138,25 @@ export default definePlugin({
          clearTimeout(tooltipTimeout);
          tooltipTimeout = setTimeout(() => setShouldShowTranslateEnabledTooltip?.(false), 2000);
  
@@ -432,7 +432,7 @@ index 47dce7e..6592086 100644
      }
  });
 diff --git a/src/plugins/translate/settings.tsx b/src/plugins/translate/settings.tsx
-index 5c65c8d..8672b9f 100644
+index 5c65c8d0..8672b9f3 100644
 --- a/src/plugins/translate/settings.tsx
 +++ b/src/plugins/translate/settings.tsx
 @@ -75,6 +75,16 @@ export const settings = definePluginSettings({
@@ -453,7 +453,7 @@ index 5c65c8d..8672b9f 100644
          type: OptionType.BOOLEAN,
          description: "Show a tooltip on the chat bar button when a message is auto-translated",
 diff --git a/src/plugins/translate/styles.css b/src/plugins/translate/styles.css
-index 2898706..713282d 100644
+index 28987068..713282d4 100644
 --- a/src/plugins/translate/styles.css
 +++ b/src/plugins/translate/styles.css
 @@ -27,4 +27,39 @@
@@ -498,7 +498,7 @@ index 2898706..713282d 100644
  }
 \ No newline at end of file
 diff --git a/src/plugins/translate/utils.ts b/src/plugins/translate/utils.ts
-index 934def2..21535af 100644
+index eb682742..1b811380 100644
 --- a/src/plugins/translate/utils.ts
 +++ b/src/plugins/translate/utils.ts
 @@ -19,12 +19,34 @@
