@@ -99,10 +99,14 @@ function onFrames(list: PerformanceObserverEntryList) {
             const source = sourceOf(script);
             bySource[source] = (bySource[source] ?? 0) + script.duration;
         }
+        const style = (entry.styleAndLayoutStart ? end - entry.styleAndLayoutStart : 0) + forced;
+        const scripted = Object.values(bySource).reduce((sum, ms) => sum + ms, 0);
         stalls.push({
             at: Date.now(),
-            duration: entry.duration,
-            style: (entry.styleAndLayoutStart ? end - entry.styleAndLayoutStart : 0) + forced,
+            // Time actually worked, not the frame's wall span, so idle gaps neither inflate
+            // "slowest" nor dilute the percentages.
+            duration: Math.min(entry.duration, Math.max(busy, scripted + style)),
+            style,
             bySource
         });
     }
