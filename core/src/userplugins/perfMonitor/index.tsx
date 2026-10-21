@@ -54,6 +54,8 @@ interface Stall {
 // Subset of the Long Animation Frames API (Chromium 123+), not yet in the DOM typings.
 interface LoafScript {
     duration: number;
+    /** Style/layout a script forced synchronously (e.g. by reading layout after a DOM change). */
+    forcedStyleAndLayoutDuration: number;
     sourceURL: string;
     invoker: string;
 }
@@ -85,14 +87,18 @@ function onFrames(list: PerformanceObserverEntryList) {
         if (entry.duration < threshold) continue;
         const end = entry.startTime + entry.duration;
         const bySource: Record<string, number> = {};
+        // CSS cost = style/layout at the end of the frame plus what scripts forced mid-frame. The
+        // frame-end part alone under-reports themes badly when code reads layout after mutating.
+        let forced = 0;
         for (const script of entry.scripts) {
+            forced += script.forcedStyleAndLayoutDuration ?? 0;
             const source = sourceOf(script);
             bySource[source] = (bySource[source] ?? 0) + script.duration;
         }
         stalls.push({
             at: Date.now(),
             duration: entry.duration,
-            style: entry.styleAndLayoutStart ? end - entry.styleAndLayoutStart : 0,
+            style: (entry.styleAndLayoutStart ? end - entry.styleAndLayoutStart : 0) + forced,
             bySource
         });
     }

@@ -18,7 +18,7 @@
 
 import { Logger } from "@utils/Logger";
 import type { Message } from "@vencord/discord-types";
-import { Parser, SelectedChannelStore, useEffect, useReducer, UserStore } from "@webpack/common";
+import { Parser, SelectedChannelStore, useEffect, useLayoutEffect, useReducer, useRef, UserStore } from "@webpack/common";
 
 import { settings } from "./settings";
 import { TranslateIcon } from "./TranslateIcon";
@@ -164,6 +164,23 @@ function renderMarkdown(text: string, message: Message) {
     });
 }
 
+/**
+ * Marks the message row with a `data-*` attribute while mounted. A marker set from the component is
+ * matched by a plain descendant selector; the previous `li:has(...)` rules were re-evaluated by the
+ * browser on every change anywhere inside every message row. An attribute, not a class: Discord
+ * re-renders the row's className on hover/selection and would wipe a class added here.
+ */
+function useRowMarker(attribute: string, active: boolean) {
+    const ref = useRef<HTMLElement>(null);
+    useLayoutEffect(() => {
+        const row = ref.current?.closest("li");
+        if (!row || !active) return;
+        row.setAttribute(attribute, "");
+        return () => row.removeAttribute(attribute);
+    }, [attribute, active]);
+    return ref;
+}
+
 // ── Accessory: produces the alternative and renders it in place of the content ──
 
 export function TranslationAccessory({ message }: { message: Message; }) {
@@ -201,13 +218,14 @@ export function TranslationAccessory({ message }: { message: Message; }) {
         // message.content: an edit must be translated again.
     }, [autoTranslateReceived, message.id, message.content, receivedInput, receivedOutput, service, sentOriginal?.original]);
 
+    const rowRef = useRowMarker("data-vc-trans-alt", !!view?.showAlt);
     if (!view) return null;
     // Messages that continue a group have no header, so the header toggle cannot appear there.
     // This inline copy covers them; CSS hides it whenever the row does have a header.
     const inlineToggle = <TranslationToggle message={message} inline />;
-    if (!view.showAlt) return <div className={cl("inline-only")}>{inlineToggle}</div>;
+    if (!view.showAlt) return <div ref={rowRef as React.RefObject<HTMLDivElement>} className={cl("inline-only")}>{inlineToggle}</div>;
     return (
-        <div className={cl("alt", "hide-original")}>
+        <div ref={rowRef as React.RefObject<HTMLDivElement>} className={cl("alt")}>
             {inlineToggle}
             {renderMarkdown(view.altText, message)}
         </div>
@@ -218,6 +236,8 @@ export function TranslationAccessory({ message }: { message: Message; }) {
 
 export function TranslationToggle({ message, inline = false }: { message: Message; inline?: boolean; }) {
     const view = useMessageView(message.id);
+    // The header toggle marks its row, so the inline copy of the same row can hide itself.
+    const rowRef = useRowMarker("data-vc-trans-header", !inline && !!view);
     if (!view) return null;
 
     const showing = view.showAlt;
@@ -227,6 +247,7 @@ export function TranslationToggle({ message, inline = false }: { message: Messag
 
     return (
         <span
+            ref={rowRef as React.RefObject<HTMLSpanElement>}
             role="button"
             tabIndex={0}
             aria-pressed={showing}

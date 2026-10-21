@@ -1,7 +1,7 @@
 /* ── One version at a time ──
    While the alternative is shown, Discord's own body is hidden and the alternative takes its
    place with the same look as a normal message (no italics, normal colour). */
-li[id^="chat-messages-"]:has(.vc-trans-hide-original) [id^="message-content-"] {
+li[data-vc-trans-alt] [id^="message-content-"] {
     display: none;
 }
 
@@ -89,7 +89,7 @@ li[id^="chat-messages-"]:hover .vc-trans-inline-toggle.vc-trans-toggle-off {
 
 /* The header toggle renders exactly when the row has a header, so key off our own element
    instead of Discord's markup, which changes between releases. */
-li[id^="chat-messages-"]:has(.vc-trans-toggle:not(.vc-trans-inline-toggle)) :is(.vc-trans-inline-toggle, .vc-trans-inline-only) {
+li[data-vc-trans-header] :is(.vc-trans-inline-toggle, .vc-trans-inline-only) {
     display: none;
 }
 
