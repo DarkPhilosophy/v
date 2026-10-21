@@ -60,8 +60,10 @@ input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-rad
       <button id="undo" title="Ctrl+Z">↶ Înapoi</button>
       <button id="random">🎲 Aleator</button>
       <button id="reset">Reset</button>
-      <button id="svg">⬇ SVG</button>
-      <button id="png">⬇ PNG 1024</button>
+      <button id="svg">⬇ Iconă SVG</button>
+      <button id="png">⬇ Iconă PNG</button>
+      <button id="lsvg">⬇ Logo SVG</button>
+      <button id="lpng">⬇ Logo PNG</button>
       <button id="copy">Copiază SVG</button>
       <button id="link">Copiază link</button>
     </div>
@@ -73,6 +75,10 @@ input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-rad
     <div class="saved" id="saved"></div>
   </div>
 </header>
+<section class="logo-stage">
+  <div class="lk dark" id="logo-dark"></div>
+  <div class="lk light" id="logo-light"></div>
+</section>
 
 <nav id="tabs"></nav>
 <div class="hint" id="hint"></div>
@@ -83,6 +89,16 @@ input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-rad
   <h3>Comparație: curent · salvate — pe întunecat și deschis</h3>
   <div class="row" id="compare"></div>
 </section>
+<style>
+.logo-stage{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px 22px 0}
+.lk{border-radius:16px;display:grid;place-items:center;min-height:150px;padding:16px;overflow:hidden}
+.lk svg{max-width:100%;height:auto;max-height:120px}
+.grid.wide{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.opt .lkc{width:100%;display:grid;place-items:center;min-height:110px;background:#0b0c10;border-radius:10px;padding:8px}
+.opt .lkc svg{max-width:100%;height:auto;max-height:90px}
+.custom input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 8px;width:220px}
+@media (max-width:900px){.logo-stage{grid-template-columns:1fr}}
+</style>
 
 <script>
 // Every part shares one 256×256 coordinate system, so any variant of any part composes with any
@@ -181,7 +197,69 @@ function spark(cx, cy, r) { const k = r * .2; return `<path d="M${f(cx)} ${f(cy 
 function rays(cx, cy, w) { return [[-60, 1.6], [-20, 1.9], [20, 1.5]].map(([deg, len]) => { const a = deg * Math.PI / 180, r0 = w * 1.2, r1 = w * len * 1.3; return `<line x1="${f(cx + Math.cos(a) * r0)}" y1="${f(cy + Math.sin(a) * r0)}" x2="${f(cx + Math.cos(a) * r1)}" y2="${f(cy + Math.sin(a) * r1)}" stroke="#C" stroke-width="${f(w * .22)}" stroke-linecap="round"/>`; }).join(""); }
 
 // ── State ──────────────────────────────────────────────────────────────────────────────────
-const BASE = { container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark: 3, weight: 2, box: "#191a21", leftc: "#f4f4f7", rightc: "#eb6f92", accent: "#eb6f92", gradient: true };
+const BASE = { container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark: 3, weight: 2, box: "#191a21", leftc: "#f4f4f7", rightc: "#eb6f92", accent: "#eb6f92", gradient: true,
+  layout: 0, font: 0, tstyle: 3, word: "vencord custom", tag: "redistributed · improved", wordc: "#f4f4f7" };
+
+// ── Logo (icon + wordmark) ─────────────────────────────────────────────────────────────────
+const FONTS = [
+  ["Sans bold", "system-ui, -apple-system, 'Segoe UI', sans-serif", 700, .56],
+  ["Geometric", "'Century Gothic', Futura, 'Avenir Next', 'URW Gothic', sans-serif", 700, .6],
+  ["Rotunjit", "ui-rounded, 'Nunito', 'Varela Round', 'Arial Rounded MT Bold', sans-serif", 800, .58],
+  ["Mono", "'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace", 700, .62],
+  ["Condensed", "Bahnschrift, 'Roboto Condensed', 'Arial Narrow', sans-serif", 700, .52],
+  ["Serif", "Georgia, 'Iowan Old Style', serif", 700, .55],
+  ["Light", "system-ui, -apple-system, 'Segoe UI', sans-serif", 300, .54],
+];
+const TSTYLES = ["minuscule", "Titlu", "MAJUSCULE RARE", "Două tonuri", "Prima literă accent", "Al doilea cuvânt subțire"];
+const LAYOUTS = ["Orizontal", "Stivuit", "Doar text", "Iconă mică + text", "Badge", "Text + iconă dreapta"];
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/** Wordmark as <text> with tspans; returns [markup, approximate width]. */
+function wordmark(s, x, y, size, anchor = "start") {
+  const [, family, weight, ratio] = FONTS[s.font];
+  let text = s.word, spacing = -size * .02;
+  if (s.tstyle === 0) text = text.toLowerCase();
+  if (s.tstyle === 1) text = text.replace(/\b\w/g, c => c.toUpperCase());
+  if (s.tstyle === 2) { text = text.toUpperCase(); spacing = size * .12; }
+  const words = text.split(" ");
+  let spans;
+  if (s.tstyle === 3) spans = words.map((w, i) => `<tspan fill="${i ? s.accent : s.wordc}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
+  else if (s.tstyle === 4) spans = `<tspan fill="${s.accent}">${esc(text[0])}</tspan>${esc(text.slice(1))}`;
+  else if (s.tstyle === 5) spans = words.map((w, i) => `<tspan font-weight="${i ? 300 : weight}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
+  else spans = esc(text);
+  const width = text.length * size * (s.tstyle === 2 ? ratio + .22 : ratio) * 1.08;
+  return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${family.replace(/"/g, "'")}" font-weight="${weight}" font-size="${f(size)}" letter-spacing="${f(spacing)}" fill="${s.wordc}">${spans}</text>`, width];
+}
+function tagline(s, x, y, size, anchor = "start") {
+  if (!s.tag) return ["", 0];
+  return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${FONTS[s.font][1].replace(/"/g, "'")}" font-size="${f(size)}" letter-spacing="${f(size * .06)}" fill="${s.wordc}" opacity=".6">${esc(s.tag)}</text>`, s.tag.length * size * .56];
+}
+const inner = s => svg(s, 256).replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
+
+/** Full logo lockup. Height `h` in pixels; width follows the text. */
+function lockup(s, h = 80) {
+  const icon = (x, y, size) => `<g transform="translate(${f(x)} ${f(y)}) scale(${f(size / 256 * 1000) / 1000})">${inner(s)}</g>`;
+  let body, W, H;
+  switch (s.layout) {
+    case 1: { // stacked
+      const [t, tw] = wordmark(s, 0, 300, 64, "middle"); const [g, gw] = tagline(s, 0, 344, 26, "middle");
+      W = Math.max(256, tw, gw) + 40; H = s.tag ? 360 : 320;
+      body = icon(W / 2 - 110, 0, 220) + t.replace('x="0"', `x="${f(W / 2)}"`) + g.replace('x="0"', `x="${f(W / 2)}"`);
+      break;
+    }
+    case 2: { const [t, tw] = wordmark(s, 0, 92, 96); const [g, gw] = tagline(s, 4, 140, 30); W = Math.max(tw, gw) + 10; H = s.tag ? 156 : 120; body = t + g; break; }
+    case 3: { const [t, tw] = wordmark(s, 76, 58, 56); W = 76 + tw + 10; H = 80; body = icon(0, 6, 64) + t; break; }
+    case 4: { // badge
+      const [t, tw] = wordmark(s, 150, 104, 60); const [g] = tagline(s, 152, 140, 22);
+      W = 150 + tw + 46; H = 180;
+      body = `<rect width="${f(W)}" height="${H}" rx="40" fill="${s.box}"/>` + icon(18, 26, 128).replace(/<rect x="6"[^>]*\/>|<circle cx="128" cy="128" r="122"[^>]*\/>/, "") + t + g;
+      break;
+    }
+    case 5: { const [t, tw] = wordmark(s, 0, 112, 84); const [g, gw] = tagline(s, 4, 152, 28); const w = Math.max(tw, gw); W = w + 190; H = 180; body = t + g + icon(w + 24, 6, 168); break; }
+    default: { const [t, tw] = wordmark(s, 196, 112, 84); const [g, gw] = tagline(s, 200, 152, 28); W = 196 + Math.max(tw, gw) + 10; H = 180; body = icon(0, 6, 168) + t + g; }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f(W)} ${f(H)}" height="${h}" width="${f(h * W / H)}">${body}</svg>`;
+}
 const KEY = "vBrandStudio";
 let S = { ...BASE, ...load("cur") };
 const fromHash = new URLSearchParams(location.hash.slice(1));
@@ -224,13 +302,15 @@ function set(patch) { hist.push({ ...S }); if (hist.length > 100) hist.shift(); 
 function draw() {
   $("cur").innerHTML = svg(S, 200);
   $("cur").style.background = lightBg ? "#f2f2f6" : "";
+  $("logo-dark").innerHTML = lockup(S, 120);
+  $("logo-light").innerHTML = lockup(onLight(S), 120);
   $("sizes").innerHTML = [16, 24, 32, 48, 64, 96].map(n => `<figure>${svg(S, n)}<figcaption>${n}</figcaption></figure>`).join("");
-  $("tabs").innerHTML = [...ORDER, "weight", "__colors"].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : PARTS[k].label}</button>`).join("");
+  $("tabs").innerHTML = [...ORDER, "weight", "__colors", ...LOGO_TABS.map(t => t[0])].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : LOGO_TAB[k]?.[1] ?? PARTS[k].label}</button>`).join("");
   $("saved").innerHTML = saved.map((s, i) => `<div class="slot" data-i="${i}" title="${s ? "Încarcă" : "Salvează aici"}">${s ? svg(s, 56) + `<button class="x" data-del="${i}">✕</button>` : "<span>★</span>"}</div>`).join("");
   $("focus").classList.toggle("on", focus);
   $("bgmode").textContent = lightBg ? "Fundal: deschis" : "Fundal: întunecat";
   $("compare").innerHTML = [["Curent", S], ...saved.map((s, i) => s && [`#${i + 1}`, s]).filter(Boolean)].map(([n, s]) =>
-    `<div class="cmp"><div class="pair"><div class="dark">${svg(s, 92)}</div><div class="light">${svg(s, 92)}</div></div>${n}</div>`).join("");
+    `<div class="cmp"><div class="pair"><div class="dark">${svg(s, 92)}</div><div class="light">${svg(s, 92)}</div></div><div class="lk dark" style="min-height:0;padding:8px">${lockup(s, 46)}</div>${n}</div>`).join("");
   drawGrid();
   history.replaceState(null, "", "#" + new URLSearchParams(Object.entries(S).map(([k, v]) => [k, String(v)])));
   store();
@@ -238,6 +318,15 @@ function draw() {
 
 function drawGrid() {
   $("custom").innerHTML = "";
+  $("grid").classList.toggle("wide", tab in LOGO_TAB);
+  if (tab in LOGO_TAB) {
+    const [, label, list] = LOGO_TAB[tab];
+    $("hint").textContent = `${label}: alege; iconița rămâne cea compusă de tine.`;
+    $("custom").innerHTML = `<label>Text <input type="text" data-text="word" value="${esc(S.word)}"></label> · <label>Slogan <input type="text" data-text="tag" value="${esc(S.tag)}"></label> · <label>Culoare text <input type="color" data-text="wordc" value="${S.wordc}"></label>`;
+    $("grid").innerHTML = list.map((name, i) =>
+      `<div class="opt ${S[tab] === i ? "on" : ""}" data-pick="${i}"><div class="lkc">${lockup({ ...S, [tab]: i }, 90)}</div><small>${name}</small></div>`).join("");
+    return;
+  }
   if (tab === "__colors") {
     $("hint").textContent = "Click pe o culoare o aplică elementului; selectorul din dreapta acceptă orice culoare. Gradient = accent și braț drept cu degrade.";
     $("custom").innerHTML = COLOR_TABS.map(([k, n]) => `<label>${n} <input type="color" data-color="${k}" value="${cval(k)}"></label>`).join(" · ") +
@@ -252,6 +341,10 @@ function drawGrid() {
     `<div class="opt ${S[tab] === i ? "on" : ""}" data-pick="${i}">${svg({ ...S, [tab]: i }, 120, focus && tab !== "weight" ? tab : null)}<small>${item[0]}</small></div>`).join("");
 }
 const cval = k => ({ box: S.box, left: S.leftc, right: S.rightc, accent: S.accent })[k];
+const LOGO_TABS = [["layout", "Logo: aranjare", LAYOUTS], ["font", "Logo: font", FONTS.map(x => x[0])], ["tstyle", "Logo: stil text", TSTYLES]];
+const LOGO_TAB = Object.fromEntries(LOGO_TABS.map(t => [t[0], t]));
+/** Light-background variant: light text turns dark so the wordmark stays readable. */
+function onLight(s) { const n = parseInt(s.wordc.slice(1), 16); const lum = (n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11; return lum > 150 ? { ...s, wordc: "#16171d" } : s; }
 const colorPatch = (k, c) => ({ box: { box: c }, left: { leftc: c }, right: { rightc: c }, accent: { accent: c } })[k];
 
 // ── Events ─────────────────────────────────────────────────────────────────────────────────
@@ -260,7 +353,12 @@ $("grid").onclick = e => {
   const pick = e.target.closest("[data-pick]"); if (pick) return set({ [tab]: Number(pick.dataset.pick) });
   const col = e.target.closest("[data-set-color]"); if (col) set(colorPatch(col.dataset.setColor, col.dataset.value));
 };
-$("custom").oninput = e => { if (e.target.dataset.color) set(colorPatch(e.target.dataset.color, e.target.value)); if (e.target.id === "grad") set({ gradient: e.target.checked }); };
+$("custom").oninput = e => {
+  if (e.target.dataset.color) set(colorPatch(e.target.dataset.color, e.target.value));
+  if (e.target.id === "grad") set({ gradient: e.target.checked });
+  if (e.target.dataset.text) { Object.assign(S, { [e.target.dataset.text]: e.target.value }); $("logo-dark").innerHTML = lockup(S, 120); $("logo-light").innerHTML = lockup(onLight(S), 120); store(); }
+};
+$("custom").onchange = e => { if (e.target.dataset.text) set({}); };
 $("saved").onclick = e => {
   const del = e.target.closest("[data-del]"); if (del) { saved[del.dataset.del] = null; return draw(); }
   const slot = e.target.closest("[data-i]"); if (!slot) return;
@@ -273,10 +371,13 @@ $("random").onclick = () => set(Object.fromEntries([...ORDER, "weight"].map(k =>
 $("focus").onclick = () => { focus = !focus; draw(); };
 $("bgmode").onclick = () => { lightBg = !lightBg; draw(); };
 const download = (name, blob) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
-$("svg").onclick = () => download("v-logo.svg", new Blob([svg(S)], { type: "image/svg+xml" }));
+$("svg").onclick = () => download("v-icon.svg", new Blob([svg(S)], { type: "image/svg+xml" }));
 $("copy").onclick = () => navigator.clipboard.writeText(svg(S));
 $("link").onclick = () => navigator.clipboard.writeText(location.href);
-$("png").onclick = () => { const img = new Image(); img.onload = () => { const c = Object.assign(document.createElement("canvas"), { width: 1024, height: 1024 }); c.getContext("2d").drawImage(img, 0, 0, 1024, 1024); c.toBlob(b => download("v-logo.png", b)); }; img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg(S, 1024)); };
+$("png").onclick = () => toPng(svg(S, 1024), 1024, 1024, "v-icon.png");
+$("lsvg").onclick = () => download("v-logo.svg", new Blob([lockup(S, 180)], { type: "image/svg+xml" }));
+$("lpng").onclick = () => { const l = lockup(S, 360); const w = Number(l.match(/width="([\d.]+)"/)[1]); toPng(l, Math.round(w), 360, "v-logo.png"); };
+function toPng(markup, w, h, name) { const img = new Image(); img.onload = () => { const c = Object.assign(document.createElement("canvas"), { width: w, height: h }); c.getContext("2d").drawImage(img, 0, 0, w, h); c.toBlob(b => download(name, b)); }; img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(markup); }
 draw();
 </script>
 </body>
