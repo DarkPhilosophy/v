@@ -13,12 +13,25 @@ import { parseSteamAppIds } from "./parse";
 const execFileAsync = promisify(execFile);
 const gameCache = new Map<string, SteamGame>();
 
+// A process counts as a running game only if it carries SteamAppId AND is not a Wine/Proton
+// infrastructure process. Wine's services (services.exe, svchost.exe, rpcss.exe, plugplay.exe,
+// winedevice.exe, explorer.exe, wineserver, ...) inherit SteamAppId and can outlive the game by
+// days when the prefix is not shut down, which kept "Playing <game>" on forever.
 const FIND_STEAM_APPS = String.raw`
 for environment in /proc/[0-9]*/environ; do
     [ -r "$environment" ] || continue
     app_id=$(cat "$environment" 2>/dev/null | tr '\0' '\n' | sed -n 's/^SteamAppId=//p' | head -n 1)
     case "$app_id" in
         ''|*[!0-9]*|0|7) continue ;;
+    esac
+    # Judge only the executable (argv[0]), never the whole command line: a game whose install
+    # path happens to contain "proton" or "reaper" must still count.
+    argv0=$(tr '\0' '\n' < "$(dirname "$environment")/cmdline" 2>/dev/null | head -n 1 | tr 'A-Z' 'a-z')
+    case "$argv0" in
+        ''|'c:\windows\'*) continue ;;
+    esac
+    case "$(basename "$(printf '%s' "$argv0" | tr '\\' '/')")" in
+        services.exe|svchost.exe|rpcss.exe|plugplay.exe|winedevice.exe|explorer.exe|conhost.exe|tabtip.exe|start.exe|steam.exe|wineserver|wine-preloader|wine64-preloader|reaper|srt-bwrap|pv-adverb|steam-launch-wrapper) continue ;;
     esac
     printf '%s\n' "$app_id"
 done
