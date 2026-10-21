@@ -214,6 +214,15 @@ const TSTYLES = ["minuscule", "Titlu", "MAJUSCULE RARE", "Două tonuri", "Prima 
 const LAYOUTS = ["Orizontal", "Stivuit", "Doar text", "Iconă mică + text", "Badge", "Text + iconă dreapta"];
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+/** Real rendered width via canvas (browser); undefined where no canvas exists. */
+let measureCtx;
+function measure(text, font, spacing) {
+  try {
+    measureCtx ??= document.createElement("canvas").getContext("2d");
+    measureCtx.font = font;
+    return measureCtx.measureText(text).width + spacing * text.length + 8;
+  } catch { return undefined; }
+}
 /** Wordmark as <text> with tspans; returns [markup, approximate width]. */
 function wordmark(s, x, y, size, anchor = "start") {
   const [, family, weight, ratio] = FONTS[s.font];
@@ -227,7 +236,8 @@ function wordmark(s, x, y, size, anchor = "start") {
   else if (s.tstyle === 4) spans = `<tspan fill="${s.accent}">${esc(text[0])}</tspan>${esc(text.slice(1))}`;
   else if (s.tstyle === 5) spans = words.map((w, i) => `<tspan font-weight="${i ? 300 : weight}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
   else spans = esc(text);
-  const width = text.length * size * (s.tstyle === 2 ? ratio + .22 : ratio) * 1.08;
+  const estimate = text.length * size * (s.tstyle === 2 ? ratio + .22 : ratio) * 1.08;
+  const width = measure(text, `${weight} ${size}px ${family}`, spacing) ?? estimate;
   return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${family.replace(/"/g, "'")}" font-weight="${weight}" font-size="${f(size)}" letter-spacing="${f(spacing)}" fill="${s.wordc}">${spans}</text>`, width];
 }
 function tagline(s, x, y, size, anchor = "start") {
