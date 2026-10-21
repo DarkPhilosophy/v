@@ -134,7 +134,7 @@ v/
 │   ├── components/                   # Vencord settings integration
 │   └── shared/                       # shared manager contracts
 ├── patches/
-│   ├── translate.patch
+│   ├── (Translate lives in core/src/plugins/translate: full overlay copy, no patch to drift)
 │   ├── runtime-noise.patch           # NoTrack/Sentry preload noise suppression
 │   ├── hide-media.patch              # HideMedia: auto-hide all media, click to show
 │   ├── series                        # ordered patch list used by ./i and the in-app updater
