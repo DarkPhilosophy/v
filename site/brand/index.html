@@ -129,6 +129,15 @@ const ARMS = [
   ["Puncte", w => [0, .25, .5, .75, 1].map(t => { const [x, y] = along(t, w); return `<circle cx="${f(x)}" cy="${f(Math.min(y, B - w * .4))}" r="${f(w * .42)}" fill="#C"/>`; }).join("")],
   ["Curbă", w => { const [a, ay] = along(0, w); return `<path d="M${f(a)} ${f(ay + w / 2)} Q${f(a + 4)} ${f(B - 30)} ${MID} ${B - w / 2}" stroke="#C" stroke-width="${w}" stroke-linecap="round" fill="none"/>`; }],
   ["Pensulă", w => { const [a, ay] = along(0, w); return `<path d="M${f(a - w * .55)} ${ay} Q${f(a + w * .9)} ${ay - 6} ${f(a + w * .6)} ${ay + 4} L${MID + w * .2} ${B} Q${MID - w * .3} ${B + 4} ${f(MID - w * .5)} ${B - 6} Z" fill="#C"/>`; }],
+  ["Italic", w => { const [a, ay] = along(0, w); return `<polygon points="${pts([[a - w * .2, ay], [a + w * .8, ay], [MID + w * .5, B], [MID - w * .5, B]])}" fill="#C"/>`; }],
+  ["Daltă", w => { const [a, ay] = along(0, w); return `<polygon points="${pts([[a - w / 2, ay + w * .5], [a + w / 2, ay], [MID + w / 2, B], [MID - w / 2, B]])}" fill="#C"/>`; }],
+  ["Stencil", w => slice(0, .47, w) + slice(.53, 1, w)],
+  ["Degrade", w => [0, 1, 2, 3, 4].map(i => `<g opacity="${f(.25 + i * .19)}">${slice(i * .2, i * .2 + .2, w)}</g>`).join("")],
+  ["Pixeli", w => [0, .2, .4, .6, .8].map(t => { const [x, y] = along(t + .1, w); return `<rect x="${f(x - w * .45)}" y="${f(y - w * .45)}" width="${f(w * .9)}" height="${f(w * .9)}" rx="3" fill="#C"/>`; }).join("")],
+  ["Zigzag", w => { const p = []; for (let i = 0; i <= 8; i++) { const [x, y] = along(i / 8, w); p.push([x + (i % 2 ? w * .35 : -w * .35), y]); } return `<polyline points="${pts(p)}" fill="none" stroke="#C" stroke-width="${f(w * .42)}" stroke-linejoin="round" stroke-linecap="round"/>`; }],
+  ["Val", w => { const [a, ay] = along(0, w); return `<path d="M${f(a)} ${f(ay + w / 2)} C${f(a + 40)} ${f(ay + 40)} ${f(a - 20)} ${f(B - 60)} ${MID} ${B - w / 2}" stroke="#C" stroke-width="${f(w * .8)}" stroke-linecap="round" fill="none"/>`; }],
+  ["Triunghiuri", w => [0, .34, .68].map(t => { const [x, y] = along(t, w), [x2, y2] = along(t + .3, w); return `<polygon points="${pts([[x - w / 2, y], [x + w / 2, y], [x2, y2]])}" fill="#C"/>`; }).join("")],
+  ["Linie fină", w => { const [a, ay] = along(0, w); return `<line x1="${f(a)}" y1="${ay}" x2="${MID}" y2="${B - 4}" stroke="#C" stroke-width="${f(w * .3)}" stroke-linecap="round"/>`; }],
   ["Gol", () => ""],
 ];
 
@@ -143,6 +152,12 @@ const PARTS = {
     ["Romb", () => `<rect x="38" y="38" width="180" height="180" rx="34" transform="rotate(45 128 128)" fill="#C"/>`],
     ["Inel", () => `<circle cx="128" cy="128" r="114" fill="none" stroke="#C" stroke-width="14"/>`],
     ["Contur rotunjit", () => `<rect x="10" y="10" width="236" height="236" rx="60" fill="none" stroke="#C" stroke-width="12"/>`],
+    ["Octogon", () => `<polygon points="${pts([...Array(8)].map((_, i) => { const a = Math.PI / 4 * i + Math.PI / 8; return [128 + 124 * Math.cos(a), 128 + 124 * Math.sin(a)]; }))}" fill="#C" stroke="#C" stroke-width="10" stroke-linejoin="round"/>`],
+    ["Blob", () => `<path d="M128 8 C196 6 250 50 248 124 C246 196 200 250 126 248 C54 246 6 200 8 128 C10 58 62 10 128 8Z" fill="#C"/>`],
+    ["Squircle înclinat", () => `<rect x="22" y="22" width="212" height="212" rx="60" transform="rotate(-8 128 128)" fill="#C"/>`],
+    ["Sticlă", () => `<rect x="6" y="6" width="244" height="244" rx="64" fill="#C"/><path d="M6 110 V70 Q6 6 70 6 H186 Q240 6 248 52 Q140 70 6 110Z" fill="#fff" opacity=".07"/><rect x="7" y="7" width="242" height="242" rx="63" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>`],
+    ["Badge dublu", () => `<rect x="6" y="6" width="244" height="244" rx="64" fill="#C"/><rect x="20" y="20" width="216" height="216" rx="52" fill="none" stroke="#ACC" stroke-opacity=".45" stroke-width="4"/>`],
+    ["Picătură", () => `<path d="M128 6 C190 70 240 120 240 160 A112 92 0 0 1 16 160 C16 120 66 70 128 6Z" fill="#C"/>`],
   ]},
   back: { label: "Straturi spate", color: "accent", items: [
     ["Fără", () => ""],
@@ -150,6 +165,11 @@ const PARTS = {
     ["2 ecouri", w => [2, 1].map(k => `<g opacity="${.18 * (3 - k)}" transform="translate(0 -${f(w * 1.05 * k)})">${slice(0, 1, w * .75)}${mirror(slice(0, 1, w * .75))}</g>`).join("")],
     ["Umbră", w => `<g opacity=".4" transform="translate(${f(w * .35)} ${f(w * .35)})">${slice(0, 1, w)}${mirror(slice(0, 1, w))}</g>`],
     ["Chevron", w => `<polyline points="${pts([[L + 10, T - 22], [MID, B - 70], [R - 10, T - 22]])}" fill="none" stroke="#C" stroke-width="${f(w * .45)}" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>`],
+    ["Halo", () => `<circle cx="128" cy="124" r="92" fill="#C" opacity=".16"/><circle cx="128" cy="124" r="62" fill="#C" opacity=".16"/>`],
+    ["Orbită", () => `<ellipse cx="128" cy="128" rx="112" ry="40" transform="rotate(-24 128 128)" fill="none" stroke="#C" stroke-width="6" opacity=".7"/>`],
+    ["Puncte grilă", () => [...Array(36)].map((_, i) => `<circle cx="${38 + (i % 6) * 36}" cy="${38 + Math.floor(i / 6) * 36}" r="3" fill="#C" opacity=".35"/>`).join("")],
+    ["Dungi", () => [...Array(7)].map((_, i) => `<line x1="${-20 + i * 46}" y1="250" x2="${80 + i * 46}" y2="6" stroke="#C" stroke-width="10" opacity=".12"/>`).join("")],
+    ["Rază sus", () => `<polygon points="128,124 60,0 196,0" fill="#C" opacity=".14"/>`],
   ]},
   left: { label: "Braț stâng", color: "left", items: ARMS },
   right: { label: "Braț drept", color: "right", items: ARMS, mirrored: true },
@@ -160,6 +180,9 @@ const PARTS = {
     ["Nicovală", w => `<path d="M${MID - 64} ${B + 6} H${MID + 64} L${MID + 46} ${B + 22} H${MID + 30} L${MID + 34} ${B + 40} H${MID - 34} L${MID - 30} ${B + 22} H${MID - 46} Z" fill="#C"/>`],
     ["Bază", () => `<rect x="${MID - 52}" y="${B + 10}" width="104" height="14" rx="7" fill="#C"/>`],
     ["Punct jos", w => `<circle cx="${MID}" cy="${B + 22}" r="${f(w * .32)}" fill="#C"/>`],
+    ["Gem", w => `<polygon points="${pts([[MID, B + w * .2], [MID + w * .7, B + w * .8], [MID, B + w * 1.6], [MID - w * .7, B + w * .8]])}" fill="#C"/>`],
+    ["Bare duble", () => `<rect x="${MID - 52}" y="${B + 8}" width="104" height="10" rx="5" fill="#C"/><rect x="${MID - 34}" y="${B + 24}" width="68" height="10" rx="5" fill="#C"/>`],
+    ["Picior", w => `<rect x="${f(MID - w * .32)}" y="${B - 4}" width="${f(w * .64)}" height="34" rx="4" fill="#C"/><rect x="${MID - 40}" y="${B + 28}" width="80" height="10" rx="5" fill="#C"/>`],
   ]},
   caps: { label: "Capete sus", color: "accent", items: [
     ["Fără", () => ""],
@@ -167,9 +190,12 @@ const PARTS = {
     ["Inele", w => [L + w / 2, R - w / 2].map(x => `<circle cx="${f(x)}" cy="${T}" r="${f(w * .58)}" fill="none" stroke="#C" stroke-width="7"/>`).join("")],
     ["Bară peste", w => `<polygon points="${pts([[L + w * .1, T - w * .95], [R + w * .1, T - w * .95], [R - w * .3, T - w * .2], [L - w * .3, T - w * .2]])}" fill="#C"/>`],
     ["Steag dreapta", w => `<polygon points="${pts([[R - w * .2, T - w * .3], [R + w * 1.2 - 34, T - w * .3], [R + w * .6 - 34, T + w * .55], [R - w * .8, T + w * .55]])}" fill="#C"/>`],
+    ["Coroană", w => `<path d="M${MID - 50} ${T - 10} L${MID - 30} ${T - 40} L${MID} ${T - 18} L${MID + 30} ${T - 40} L${MID + 50} ${T - 10} Z" fill="#C"/>`],
+    ["Liniuțe", w => [L + w / 2, R - w / 2].map(x => `<line x1="${f(x - 14)}" y1="${T - 18}" x2="${f(x + 14)}" y2="${T - 18}" stroke="#C" stroke-width="6" stroke-linecap="round"/>`).join("")],
+    ["Bule", w => [[L + w / 2 - 8, T - 22, .3], [L + w / 2 + 12, T - 34, .2], [R - w / 2 + 8, T - 22, .3], [R - w / 2 - 12, T - 34, .2]].map(([x, y, r]) => `<circle cx="${f(x)}" cy="${y}" r="${f(w * r)}" fill="#C"/>`).join("")],
     ["Săgeți", w => `<polygon points="${pts([[L - 4, T + 18], [L + w / 2, T - 16], [L + w + 4, T + 18]])}" fill="#C"/><polygon points="${pts([[R + 4, T + 18], [R - w / 2, T - 16], [R - w - 4, T + 18]])}" fill="#C"/>`],
   ]},
-  mark: { label: "Accent", color: "accent", items: [
+  mark: { label: "Emblemă", color: "accent", items: [
     ["Fără", () => ""],
     ["Scânteie mijloc", w => spark(MID, T + 34, w * 1.0)],
     ["Scânteie dreapta", w => spark(R - 4, B - 54, w * .85)],
@@ -184,20 +210,65 @@ const PARTS = {
 };
 const ORDER = ["container", "back", "left", "right", "notch", "caps", "mark"];
 
+// ── Free accent layers: any shape, anywhere, any size/rotation/colour ─────────────────────────
+// Shapes are centred on 0,0 with radius ~1; each layer scales, rotates and places one.
+const SHAPES = [
+  ["Fără", () => ""],
+  ["Scânteie 4", () => star4(1, .2)],
+  ["Scânteie fină", () => star4(1, .1)],
+  ["Scânteie grasă", () => star4(1, .34)],
+  ["Scânteie 6", () => starN(6, 1, .32)],
+  ["Stea 5", () => starN(5, 1, .42, true)],
+  ["Stea 8", () => starN(8, 1, .5)],
+  ["Strălucire", () => star4(1, .2) + `<g transform="translate(.95 -.75) scale(.38)">${star4(1, .2)}</g><g transform="translate(-.8 .7) scale(.26)">${star4(1, .2)}</g>`],
+  ["Scânteie + raze", () => `<g transform="scale(.62)">${star4(1, .2)}</g>` + [[-60, 1.3], [-20, 1.55], [20, 1.2]].map(([d, l]) => { const a = d * Math.PI / 180; return `<line x1="${f(Math.cos(a) * .85)}" y1="${f(Math.sin(a) * .85)}" x2="${f(Math.cos(a) * l)}" y2="${f(Math.sin(a) * l)}" stroke="#C" stroke-width=".16" stroke-linecap="round"/>`; }).join("")],
+  ["Explozie", () => [...Array(8)].map((_, i) => { const a = i * Math.PI / 4; return `<line x1="${f(Math.cos(a) * .45)}" y1="${f(Math.sin(a) * .45)}" x2="${f(Math.cos(a))}" y2="${f(Math.sin(a))}" stroke="#C" stroke-width=".16" stroke-linecap="round"/>`; }).join("")],
+  ["Punct", () => `<circle r=".6" fill="#C"/>`],
+  ["Inel", () => `<circle r=".72" fill="none" stroke="#C" stroke-width=".26"/>`],
+  ["Plus", () => `<path d="M0 -.85V.85M-.85 0H.85" stroke="#C" stroke-width=".32" stroke-linecap="round"/>`],
+  ["X", () => `<path d="M-.6 -.6L.6 .6M.6 -.6L-.6 .6" stroke="#C" stroke-width=".3" stroke-linecap="round"/>`],
+  ["Romb", () => `<polygon points="0,-1 .62,0 0,1 -.62,0" fill="#C"/>`],
+  ["Inimă", () => `<path d="M0 .85 C-1.1 .1 -.9 -.85 -.4 -.85 C-.15 -.85 0 -.6 0 -.45 C0 -.6 .15 -.85 .4 -.85 C.9 -.85 1.1 .1 0 .85Z" fill="#C"/>`],
+  ["Fulger", () => `<polygon points=".2,-1 -.55,.12 -.05,.12 -.25,1 .55,-.18 .05,-.18" fill="#C"/>`],
+  ["Semilună", () => `<path d="M.25 -.92 A.95 .95 0 1 0 .25 .92 A1 1 0 0 1 .25 -.92Z" fill="#C"/>`],
+  ["Triunghi", () => `<polygon points="0,-.9 .85,.65 -.85,.65" fill="#C"/>`],
+  ["Asterisc", () => `<path d="${[90, 30, -30].map(deg => { const a = deg * Math.PI / 180, x = f(Math.cos(a) * 90) / 100, y = f(Math.sin(a) * 90) / 100; return `M${x} ${y}L${-x} ${-y}`; }).join("")}" stroke="#C" stroke-width=".26" stroke-linecap="round" fill="none"/>`],
+  ["Picătură", () => `<path d="M0 -1 C.5 -.3 .7 .1 .7 .35 A.7 .65 0 0 1 -.7 .35 C-.7 .1 -.5 -.3 0 -1Z" fill="#C"/>`],
+  ["Bară oblică", () => `<polygon points="-.3,-.9 .9,-.9 .3,.9 -.9,.9" fill="#C"/>`],
+  ["Cutie asar", () => `<polygon points="0,-1 .87,-.5 .87,.5 0,1 -.87,.5 -.87,-.5" fill="#C"/><polyline points="-.87,-.5 0,0 .87,-.5" fill="none" stroke="#BOX" stroke-width=".1"/><line x1="0" y1="0" x2="0" y2="1" stroke="#BOX" stroke-width=".1"/>`],
+  ["Notă", () => `<path d="M-.1 .55 V-.85 L.75 -1 V.35" fill="none" stroke="#C" stroke-width=".18"/><circle cx="-.35" cy=".6" r=".3" fill="#C"/><circle cx=".5" cy=".4" r=".3" fill="#C"/>`],
+];
+function star4(r, k) { return `<path d="M0 ${-r} C${k} ${-k} ${k} ${-k} ${r} 0 C${k} ${k} ${k} ${k} 0 ${r} C${-k} ${k} ${-k} ${k} ${-r} 0 C${-k} ${-k} ${-k} ${-k} 0 ${-r}Z" fill="#C"/>`; }
+function starN(n, r, inner, sharp) { const p = []; for (let i = 0; i < n * 2; i++) { const a = Math.PI * i / n - Math.PI / 2, rr = i % 2 ? r * inner : r; p.push([Math.cos(a) * rr, Math.sin(a) * rr]); } return `<polygon points="${p.map(([x, y]) => `${f(x * 1000) / 1000},${f(y * 1000) / 1000}`).join(" ")}" fill="#C" ${sharp ? "" : 'stroke="#C" stroke-width=".06" stroke-linejoin="round"'}/>`; }
+const POSITIONS = [["Sus mijloc", 128, 82], ["Dreapta mijloc", 190, 138], ["Dreapta sus", 214, 40], ["Stânga sus", 42, 40], ["Colț dreapta", 226, 28], ["Colț stânga", 30, 28], ["În V", 128, 140], ["Lângă vârf dreapta", 172, 190], ["Lângă vârf stânga", 84, 190], ["Stânga mijloc", 66, 138], ["Centru", 128, 128], ["Jos dreapta", 220, 222], ["Jos stânga", 36, 222], ["Sub vârf", 128, 232]];
+const ACOLORS = [["accent", "Accent"], ["accent2", "Accent 2"], ["leftc", "Braț stâng"], ["rightc", "Braț drept"], ["box", "Container"]];
+const ACCENTS = ["a1", "a2", "a3", "a4"];
+function accentLayer(s, k, paint) {
+  const shape = s[k]; if (!shape) return "";
+  const [, x, y] = POSITIONS[s[k + "p"]];
+  const color = paint(k, s[s[k + "c"]] ?? s.accent);
+  return `<g transform="translate(${f(x + s[k + "x"])} ${f(y + s[k + "y"])}) rotate(${s[k + "r"]}) scale(${s[k + "z"]})" opacity="${s[k + "o"]}">${SHAPES[shape][1]().replaceAll("#C", color).replaceAll("#BOX", s.box)}</g>`;
+}
+
 const PALETTES = {
   box: ["#191a21", "#0b0c10", "#1e1f2b", "#1e1e2e", "#f2f2f6", "#eb6f92", "#5865f2", "#ffffff"],
   left: ["#f4f4f7", "#ffffff", "#e0def4", "#cdd6f4", "#111318", "#eb6f92", "#5865f2", "#f6c177"],
   right: ["#f4f4f7", "#ffffff", "#eb6f92", "#c4a7e7", "#5865f2", "#9ccfd8", "#f6c177", "#111318"],
   accent: ["#eb6f92", "#ff7a3d", "#c4a7e7", "#5865f2", "#2dd4a3", "#f6c177", "#9ccfd8", "#ffffff"],
+  accent2: ["#f6c177", "#d4a017", "#eb6f92", "#9ccfd8", "#c4a7e7", "#2dd4a3", "#ffffff", "#5865f2"],
 };
-const COLOR_TABS = [["box", "Culoare container"], ["left", "Culoare braț stâng / vârf"], ["right", "Culoare braț drept"], ["accent", "Culoare accent"]];
+const COLOR_TABS = [["box", "Culoare container"], ["left", "Culoare braț stâng / vârf"], ["right", "Culoare braț drept"], ["accent", "Culoare accent"], ["accent2", "Culoare accent 2"]];
 
 function mirror(svg) { return `<g transform="matrix(-1 0 0 1 256 0)">${svg}</g>`; }
 function spark(cx, cy, r) { const k = r * .2; return `<path d="M${f(cx)} ${f(cy - r)} C${f(cx + k)} ${f(cy - k)} ${f(cx + k)} ${f(cy - k)} ${f(cx + r)} ${f(cy)} C${f(cx + k)} ${f(cy + k)} ${f(cx + k)} ${f(cy + k)} ${f(cx)} ${f(cy + r)} C${f(cx - k)} ${f(cy + k)} ${f(cx - k)} ${f(cy + k)} ${f(cx - r)} ${f(cy)} C${f(cx - k)} ${f(cy - k)} ${f(cx - k)} ${f(cy - k)} ${f(cx)} ${f(cy - r)}Z" fill="#C"/>`; }
 function rays(cx, cy, w) { return [[-60, 1.6], [-20, 1.9], [20, 1.5]].map(([deg, len]) => { const a = deg * Math.PI / 180, r0 = w * 1.2, r1 = w * len * 1.3; return `<line x1="${f(cx + Math.cos(a) * r0)}" y1="${f(cy + Math.sin(a) * r0)}" x2="${f(cx + Math.cos(a) * r1)}" y2="${f(cy + Math.sin(a) * r1)}" stroke="#C" stroke-width="${f(w * .22)}" stroke-linecap="round"/>`; }).join(""); }
 
 // ── State ──────────────────────────────────────────────────────────────────────────────────
-const BASE = { container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark: 3, weight: 2, box: "#191a21", leftc: "#f4f4f7", rightc: "#eb6f92", accent: "#eb6f92", gradient: true,
+const BASE = { container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark: 0, weight: 2, box: "#191a21", leftc: "#f4f4f7", rightc: "#eb6f92", accent: "#eb6f92", accent2: "#f6c177", gradient: true, autoLight: true,
+  a1: 8, a1p: 1, a1z: 22, a1r: 0, a1x: 0, a1y: 0, a1o: 1, a1c: "accent",
+  a2: 0, a2p: 0, a2z: 18, a2r: 0, a2x: 0, a2y: 0, a2o: 1, a2c: "accent2",
+  a3: 0, a3p: 2, a3z: 12, a3r: 0, a3x: 0, a3y: 0, a3o: 1, a3c: "accent2",
+  a4: 0, a4p: 7, a4z: 10, a4r: 0, a4x: 0, a4y: 0, a4o: 1, a4c: "accent",
   layout: 0, font: 0, tstyle: 3, word: "vencord custom", tag: "redistributed · improved", wordc: "#f4f4f7" };
 
 // ── Logo (icon + wordmark) ─────────────────────────────────────────────────────────────────
@@ -244,7 +315,7 @@ function tagline(s, x, y, size, anchor = "start") {
   if (!s.tag) return ["", 0];
   return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${FONTS[s.font][1].replace(/"/g, "'")}" font-size="${f(size)}" letter-spacing="${f(size * .06)}" fill="${s.wordc}" opacity=".6">${esc(s.tag)}</text>`, s.tag.length * size * .56];
 }
-const inner = s => svg(s, 256).replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
+const inner = s => svg(s, 256, null, s._light).replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
 
 /** Full logo lockup. Height `h` in pixels; width follows the text. */
 function lockup(s, h = 80) {
@@ -283,51 +354,74 @@ function store() { localStorage[KEY + "cur"] = JSON.stringify(S); localStorage[K
 
 function colorFor(part, s) { return { box: s.box, left: s.leftc, right: s.rightc, accent: s.accent }[PARTS[part].color]; }
 
-/** Full mark. `dim` = part to keep at full opacity while others fade (gallery focus). */
-function svg(s, size = 256, dim) {
+/** Full mark. `dim` = part to keep at full opacity while others fade (gallery focus).
+ *  `light` = drawn on a light page: without a filled container, near-white colours turn dark. */
+function svg(s, size = 256, dim, light) {
   const u = "g" + (uid++);
   const w = PARTS.weight.items[s.weight][2];
+  const filled = ![0, 7, 8].includes(s.container);
+  const adapt = c => light && s.autoLight && !filled && lum(c) > 200 ? "#1b1c24" : c;
   let defs = "";
   const paint = (part, c) => {
-    if (s.gradient && part !== "container" && (c === s.accent || c === s.rightc) && c !== s.leftc) {
+    c = adapt(c);
+    if (s.gradient && part !== "container" && lum(c) < 200 && lum(c) > 40 && c !== adapt(s.leftc)) {
       defs += `<linearGradient id="${u}${part}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${shade(c, -.3)}"/></linearGradient>`;
       return `url(#${u}${part})`;
     }
     return c;
   };
-  const body = ORDER.map(part => {
-    let g = PARTS[part].items[s[part]][1](w).replaceAll("#C", paint(part, colorFor(part, s))).replaceAll("#BOX", s.box);
+  const fade = (key, g) => dim && key !== dim && key !== "container" && g ? `<g opacity=".18">${g}</g>` : g;
+  let body = ORDER.map(part => {
+    let g = PARTS[part].items[s[part]][1](w).replaceAll("#C", paint(part, colorFor(part, s))).replaceAll("#BOX", s.box).replaceAll("#ACC", s.accent);
     if (PARTS[part].mirrored) g = mirror(g);
-    if (dim && part !== dim && part !== "container" && g) g = `<g opacity=".18">${g}</g>`;
-    return g;
+    return fade(part, g);
   }).join("");
+  body += ACCENTS.map(k => fade(k, accentLayer(s, k, paint))).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="${size}" height="${size}">${defs ? `<defs>${defs}</defs>` : ""}${body}</svg>`;
 }
+function lum(hex) { if (!/^#[0-9a-f]{6}$/i.test(hex)) return 0; const n = parseInt(hex.slice(1), 16); return (n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11; }
 function shade(hex, a) { const n = parseInt(hex.slice(1), 16); return "#" + [n >> 16, n >> 8 & 255, n & 255].map(v => Math.max(0, Math.min(255, Math.round(v + (a < 0 ? v : 255 - v) * a))).toString(16).padStart(2, "0")).join(""); }
 
 // ── Rendering ──────────────────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 function set(patch) { hist.push({ ...S }); if (hist.length > 100) hist.shift(); Object.assign(S, patch); draw(); }
 
-function draw() {
-  $("cur").innerHTML = svg(S, 200);
+function draw(keepCustom) {
+  $("cur").innerHTML = svg(S, 200, null, lightBg);
   $("cur").style.background = lightBg ? "#f2f2f6" : "";
   $("logo-dark").innerHTML = lockup(S, 120);
   $("logo-light").innerHTML = lockup(onLight(S), 120);
   $("sizes").innerHTML = [16, 24, 32, 48, 64, 96].map(n => `<figure>${svg(S, n)}<figcaption>${n}</figcaption></figure>`).join("");
-  $("tabs").innerHTML = [...ORDER, "weight", "__colors", ...LOGO_TABS.map(t => t[0])].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : LOGO_TAB[k]?.[1] ?? PARTS[k].label}</button>`).join("");
+  $("tabs").innerHTML = [...ORDER, ...ACCENTS, "weight", "__colors", ...LOGO_TABS.map(t => t[0])].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : ACCENTS.includes(k) ? `✦ Accent ${ACCENTS.indexOf(k) + 1}${S[k] ? "" : " (gol)"}` : LOGO_TAB[k]?.[1] ?? PARTS[k].label}</button>`).join("");
   $("saved").innerHTML = saved.map((s, i) => `<div class="slot" data-i="${i}" title="${s ? "Încarcă" : "Salvează aici"}">${s ? svg(s, 56) + `<button class="x" data-del="${i}">✕</button>` : "<span>★</span>"}</div>`).join("");
   $("focus").classList.toggle("on", focus);
   $("bgmode").textContent = lightBg ? "Fundal: deschis" : "Fundal: întunecat";
   $("compare").innerHTML = [["Curent", S], ...saved.map((s, i) => s && [`#${i + 1}`, s]).filter(Boolean)].map(([n, s]) =>
-    `<div class="cmp"><div class="pair"><div class="dark">${svg(s, 92)}</div><div class="light">${svg(s, 92)}</div></div><div class="lk dark" style="min-height:0;padding:8px">${lockup(s, 46)}</div>${n}</div>`).join("");
-  drawGrid();
+    `<div class="cmp"><div class="pair"><div class="dark">${svg(s, 92)}</div><div class="light">${svg(s, 92, null, true)}</div></div><div class="lk dark" style="min-height:0;padding:8px">${lockup(s, 46)}</div>${n}</div>`).join("");
+  drawGrid(keepCustom);
   history.replaceState(null, "", "#" + new URLSearchParams(Object.entries(S).map(([k, v]) => [k, String(v)])));
   store();
 }
 
-function drawGrid() {
-  $("custom").innerHTML = "";
+function drawGrid(keepCustom) {
+  if (!keepCustom) $("custom").innerHTML = "";
+  if (ACCENTS.includes(tab)) {
+    const k = tab, n = ACCENTS.indexOf(k) + 1;
+    $("grid").classList.remove("wide");
+    $("hint").textContent = `Accent ${n}: alege forma; dedesubt poziția, culoarea, mărimea, rotația, deplasarea și opacitatea. Poți combina până la 4 accente.`;
+    if (!keepCustom) $("custom").innerHTML =
+      `<label>Poziție <select data-acc="${k}p">${POSITIONS.map((p, i) => `<option value="${i}" ${S[k + "p"] === i ? "selected" : ""}>${p[0]}</option>`).join("")}</select></label>` +
+      ` <label>Culoare <select data-acc="${k}c" data-str="1">${ACOLORS.map(([v, l]) => `<option value="${v}" ${S[k + "c"] === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>` +
+      ` <label>Mărime <input type="range" min="4" max="70" data-acc="${k}z" value="${S[k + "z"]}"></label>` +
+      ` <label>Rotație <input type="range" min="-180" max="180" step="5" data-acc="${k}r" value="${S[k + "r"]}"></label>` +
+      ` <label>X <input type="range" min="-70" max="70" data-acc="${k}x" value="${S[k + "x"]}"></label>` +
+      ` <label>Y <input type="range" min="-70" max="70" data-acc="${k}y" value="${S[k + "y"]}"></label>` +
+      ` <label>Opacitate <input type="range" min=".15" max="1" step=".05" data-acc="${k}o" value="${S[k + "o"]}"></label>`;
+    $("grid").innerHTML = SHAPES.map((sh, i) =>
+      `<div class="opt ${S[k] === i ? "on" : ""}" data-pick="${i}">${svg({ ...S, [k]: i }, 120, focus ? k : null)}<small>${sh[0]}</small></div>`).join("");
+    return;
+  }
+  if (keepCustom) return;
   $("grid").classList.toggle("wide", tab in LOGO_TAB);
   if (tab in LOGO_TAB) {
     const [, label, list] = LOGO_TAB[tab];
@@ -340,7 +434,8 @@ function drawGrid() {
   if (tab === "__colors") {
     $("hint").textContent = "Click pe o culoare o aplică elementului; selectorul din dreapta acceptă orice culoare. Gradient = accent și braț drept cu degrade.";
     $("custom").innerHTML = COLOR_TABS.map(([k, n]) => `<label>${n} <input type="color" data-color="${k}" value="${cval(k)}"></label>`).join(" · ") +
-      ` · <label><input type="checkbox" id="grad" ${S.gradient ? "checked" : ""}> Gradient</label>`;
+      ` · <label><input type="checkbox" id="grad" ${S.gradient ? "checked" : ""}> Gradient</label>` +
+      ` · <label><input type="checkbox" id="autolight" ${S.autoLight ? "checked" : ""}> Pe fundal alb, albul devine închis (fără container)</label>`;
     $("grid").innerHTML = COLOR_TABS.flatMap(([k, n]) => PALETTES[k].map(c =>
       `<div class="opt ${cval(k) === c ? "on" : ""}" data-set-color="${k}" data-value="${c}"><div class="swatch" style="background:${k === "box" ? "transparent" : "#0b0c10"}">${svg({ ...S, ...colorPatch(k, c) }, 96)}</div><small>${n}<br>${c}</small></div>`)).join("");
     return;
@@ -350,12 +445,12 @@ function drawGrid() {
   $("grid").innerHTML = part.items.map((item, i) =>
     `<div class="opt ${S[tab] === i ? "on" : ""}" data-pick="${i}">${svg({ ...S, [tab]: i }, 120, focus && tab !== "weight" ? tab : null)}<small>${item[0]}</small></div>`).join("");
 }
-const cval = k => ({ box: S.box, left: S.leftc, right: S.rightc, accent: S.accent })[k];
+const cval = k => ({ box: S.box, left: S.leftc, right: S.rightc, accent: S.accent, accent2: S.accent2 })[k];
 const LOGO_TABS = [["layout", "Logo: aranjare", LAYOUTS], ["font", "Logo: font", FONTS.map(x => x[0])], ["tstyle", "Logo: stil text", TSTYLES]];
 const LOGO_TAB = Object.fromEntries(LOGO_TABS.map(t => [t[0], t]));
 /** Light-background variant: light text turns dark so the wordmark stays readable. */
-function onLight(s) { const n = parseInt(s.wordc.slice(1), 16); const lum = (n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11; return lum > 150 ? { ...s, wordc: "#16171d" } : s; }
-const colorPatch = (k, c) => ({ box: { box: c }, left: { leftc: c }, right: { rightc: c }, accent: { accent: c } })[k];
+function onLight(s) { const n = parseInt(s.wordc.slice(1), 16); const lum = (n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11; return { ...s, _light: true, ...(lum > 150 ? { wordc: "#16171d" } : {}) }; }
+const colorPatch = (k, c) => ({ box: { box: c }, left: { leftc: c }, right: { rightc: c }, accent: { accent: c }, accent2: { accent2: c } })[k];
 
 // ── Events ─────────────────────────────────────────────────────────────────────────────────
 $("tabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b) { tab = b.dataset.tab; draw(); } };
@@ -366,8 +461,16 @@ $("grid").onclick = e => {
 $("custom").oninput = e => {
   if (e.target.dataset.color) set(colorPatch(e.target.dataset.color, e.target.value));
   if (e.target.id === "grad") set({ gradient: e.target.checked });
+  if (e.target.id === "autolight") set({ autoLight: e.target.checked });
   if (e.target.dataset.text) { Object.assign(S, { [e.target.dataset.text]: e.target.value }); $("logo-dark").innerHTML = lockup(S, 120); $("logo-light").innerHTML = lockup(onLight(S), 120); store(); }
 };
+$("custom").addEventListener("input", e => {
+  const key = e.target.dataset.acc; if (!key) return;
+  if (!e.target._started) { hist.push({ ...S }); e.target._started = true; }
+  S[key] = e.target.dataset.str ? e.target.value : Number(e.target.value);
+  draw(true);
+});
+$("custom").addEventListener("change", e => { if (e.target.dataset.acc) e.target._started = false; });
 $("custom").onchange = e => { if (e.target.dataset.text) set({}); };
 $("saved").onclick = e => {
   const del = e.target.closest("[data-del]"); if (del) { saved[del.dataset.del] = null; return draw(); }
@@ -377,7 +480,11 @@ $("saved").onclick = e => {
 $("undo").onclick = () => { if (hist.length) { S = hist.pop(); draw(); } };
 document.onkeydown = e => { if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); $("undo").click(); } };
 $("reset").onclick = () => set({ ...BASE });
-$("random").onclick = () => set(Object.fromEntries([...ORDER, "weight"].map(k => [k, Math.floor(Math.random() * PARTS[k].items.length)])));
+const rnd = n => Math.floor(Math.random() * n);
+$("random").onclick = () => set({
+  ...Object.fromEntries([...ORDER, "weight"].map(k => [k, rnd(PARTS[k].items.length)])),
+  ...Object.fromEntries(ACCENTS.flatMap((k, i) => [[k, i < 2 || Math.random() < .4 ? rnd(SHAPES.length) : 0], [k + "p", rnd(POSITIONS.length)], [k + "z", 8 + rnd(28)], [k + "r", [0, 0, 15, -15, 45][rnd(5)]], [k + "x", 0], [k + "y", 0], [k + "c", ["accent", "accent2"][rnd(2)]]])),
+});
 $("focus").onclick = () => { focus = !focus; draw(); };
 $("bgmode").onclick = () => { lightBg = !lightBg; draw(); };
 const download = (name, blob) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
