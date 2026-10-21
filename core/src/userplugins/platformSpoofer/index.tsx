@@ -468,22 +468,46 @@ function alignPlatformSubmenu(): void {
     submenu.style.translate = `0 ${offset}px`;
 }
 
+/**
+ * Keeps the platform submenu aligned while the status menu is open, and only then.
+ *
+ * This used to observe the whole document for the lifetime of the plugin. Chat scrolling mutates
+ * the DOM every frame, so every frame ran two attribute-suffix document queries (they cannot use
+ * the id index): ~0.5 s of main-thread time per 35 s of scrolling. Now the menu render starts the
+ * observer and it stops itself as soon as the menu is gone.
+ */
 function watchPlatformSubmenu(): void {
+    if (submenuObserver) return;
+    // The menu patch runs before the menu is in the DOM; only stop once it was shown and is gone.
+    let menuSeen = false;
     submenuObserver = new MutationObserver(() => {
         if (submenuAlignmentFrame) return;
         submenuAlignmentFrame = requestAnimationFrame(() => {
             submenuAlignmentFrame = 0;
+            const open = !!document.querySelector('#vc-platform-spoofer, [id$="-vc-platform-spoofer"]');
+            if (!open) {
+                if (menuSeen) stopWatchingPlatformSubmenu();
+                return;
+            }
+            menuSeen = true;
             alignPlatformSubmenu();
         });
     });
+    submenuObserver.observe(document.body, { childList: true, subtree: true });
+    // Safety net: if the menu never showed up (render without mount), do not keep observing.
+    const observer = submenuObserver;
+    setTimeout(() => {
+        if (!menuSeen && submenuObserver === observer) stopWatchingPlatformSubmenu();
+    }, 10_000);
+}
 
-    const observe = () => {
-        if (submenuObserver && document.body) {
-            submenuObserver.observe(document.body, { childList: true, subtree: true });
-        }
-    };
-    if (document.body) observe();
-    else window.addEventListener("DOMContentLoaded", observe, { once: true });
+function stopWatchingPlatformSubmenu(): void {
+    submenuObserver?.disconnect();
+    submenuObserver = null;
+    if (submenuAlignmentFrame) {
+        cancelAnimationFrame(submenuAlignmentFrame);
+        submenuAlignmentFrame = 0;
+    }
 }
 
 
@@ -519,6 +543,8 @@ const statusMenuPatch: GlobalContextMenuPatchCallback = (navId, children) => {
         return;
     }
 
+    // The menu is being rendered: align its submenu until it closes.
+    watchPlatformSubmenu();
     const current = settings.store.platform as PlatformKey;
     onlineGroup.push(
         <Menu.MenuItem
@@ -560,7 +586,6 @@ export default definePlugin({
         const generation = pluginGeneration;
         initialReconnectAttempted = false;
         addGlobalContextMenuPatch(statusMenuPatch);
-        watchPlatformSubmenu();
         scheduleEarlyFastConnectPatch(generation);
         wrapErlpack();
         waitForStore("GatewayConnectionStore", (store: GatewayConnectionStoreType) => {
@@ -574,12 +599,7 @@ export default definePlugin({
     stop() {
         pluginGeneration++;
         removeGlobalContextMenuPatch(statusMenuPatch);
-        submenuObserver?.disconnect();
-        submenuObserver = null;
-        if (submenuAlignmentFrame) {
-            cancelAnimationFrame(submenuAlignmentFrame);
-            submenuAlignmentFrame = 0;
-        }
+        stopWatchingPlatformSubmenu();
         if (initialReconnectTimer !== null) {
             clearTimeout(initialReconnectTimer);
             initialReconnectTimer = null;
