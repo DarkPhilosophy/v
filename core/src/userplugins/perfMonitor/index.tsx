@@ -83,8 +83,12 @@ let lastWarning = 0;
 function onFrames(list: PerformanceObserverEntryList) {
     const threshold = settings.store.slowFrameMs;
     for (const raw of list.getEntries()) {
-        const entry = raw as LoafEntry;
-        if (entry.duration < threshold) continue;
+        const entry = raw as LoafEntry & { blockingDuration?: number; };
+        // A frame can span many seconds without doing work: hidden/occluded window, suspend, or
+        // waiting on the network. That is not jank. Count only time the main thread was blocked.
+        if (document.visibilityState === "hidden") continue;
+        const busy = entry.blockingDuration ?? entry.duration;
+        if (busy < threshold) continue;
         const end = entry.startTime + entry.duration;
         const bySource: Record<string, number> = {};
         // CSS cost = style/layout at the end of the frame plus what scripts forced mid-frame. The
