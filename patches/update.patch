@@ -54,7 +54,7 @@ index 1955f7d..124e75d 100644
 +const UPSTREAM_REPO = process.env.VENCORD_UPSTREAM || "https://github.com/Vendicated/Vencord.git";
 +const RUNTIME_DIR = join(homedir(), ".config", "Vencord");
 +const RUNTIME_ASAR = join(RUNTIME_DIR, "app.asar");
-+const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch", "runtime-noise.patch"] as const;
++const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch", "runtime-noise.patch", "hide-media.patch"] as const;
  
  const execFile = promisify(cpExecFile);
  

@@ -92,7 +92,7 @@ prepare_build() {
         "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
         || die "custom plugin inventory failed"
     cp -r "$PKG/patches/." "$BUILD/custom-patches/"
-    for p in translate.patch update.patch userplugin-manager.patch runtime-noise.patch cloudsync.patch; do
+    for p in translate.patch update.patch userplugin-manager.patch runtime-noise.patch cloudsync.patch hide-media.patch; do
         if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
             :
         elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then

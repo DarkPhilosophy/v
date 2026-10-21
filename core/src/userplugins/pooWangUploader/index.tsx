@@ -229,6 +229,28 @@ function UploadRouteModal(props: {
         props.rootProps.onClose();
     };
 
+    // What Enter picks: Discord, unless Discord cannot take these files (no ATTACH_FILES) or
+    // they are oversized while "auto reroute large files" is on. poo.wang needs a token.
+    const oversized = props.files.some(file => file.size >= settings.store.largeFileThresholdMb * 1024 * 1024);
+    const defaultPooWang = props.tokenConfigured
+        && (!!props.options.discordUnavailable || (oversized && settings.store.autoRerouteLargeFiles));
+    const enterChoice: boolean | undefined = defaultPooWang ? true
+        : props.options.discordUnavailable ? undefined : false;
+
+    useEffect(() => {
+        if (enterChoice === undefined) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+            // The modal's focus lock may start on Cancel or the switch; Enter must still pick the
+            // default, not whatever control happened to receive focus.
+            event.preventDefault();
+            event.stopPropagation();
+            close(enterChoice);
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    });
+
     return (
         <Modal {...props.rootProps} onClose={() => { props.resolve(undefined); props.rootProps.onClose(); }} title="Choose upload destination">
             <Forms.FormText>
@@ -246,9 +268,9 @@ function UploadRouteModal(props: {
                 <Forms.FormText>Remember this choice (change it later from the + button's right-click menu)</Forms.FormText>
             </label>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-                <Button onClick={() => { props.resolve(undefined); props.rootProps.onClose(); }}>Cancel</Button>
-                {!props.options.discordUnavailable && <Button onClick={() => close(false)}>Upload with Discord</Button>}
-                <Button onClick={() => close(true)} disabled={!props.tokenConfigured}>Upload with poo.wang</Button>
+                <Button variant="secondary" onClick={() => { props.resolve(undefined); props.rootProps.onClose(); }}>Cancel</Button>
+                {!props.options.discordUnavailable && <Button variant={enterChoice === false ? "primary" : "secondary"} onClick={() => close(false)}>Upload with Discord{enterChoice === false ? " (Enter)" : ""}</Button>}
+                <Button variant={enterChoice === true ? "primary" : "secondary"} onClick={() => close(true)} disabled={!props.tokenConfigured}>Upload with poo.wang{enterChoice === true ? " (Enter)" : ""}</Button>
             </div>
         </Modal>
     );

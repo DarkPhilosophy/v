@@ -176,8 +176,14 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, />Cancel</);
     assert.match(source, /Upload route chooser dismissed; draft kept/);
     assert.doesNotMatch(source, /Cleared draft attachments after upload route cancellation/);
-    assert.match(source, />Upload with Discord</);
-    assert.match(source, />Upload with poo\.wang</);
+    assert.match(source, />Upload with Discord\{/);
+    assert.match(source, />Upload with poo\.wang\{/);
+    // Enter picks Discord unless Discord cannot take the files or they are oversized while
+    // auto reroute is on; Enter works no matter which control the modal focused first.
+    assert.match(source, /\(!!props\.options\.discordUnavailable \|\| \(oversized && settings\.store\.autoRerouteLargeFiles\)\)/);
+    assert.match(source, /: props\.options\.discordUnavailable \? undefined : false;/);
+    assert.match(source, /close\(enterChoice\);/);
+    assert.doesNotMatch(source, /closest\("button, input, \[role='switch'\]"\)/);
 });
 
 test("Linux token storage falls back to Secret Service without plaintext files", () => {

@@ -66,7 +66,7 @@ for handler in ("GET_REPO", "GET_UPDATES", "UPDATE"):
 assert "+    return CUSTOM_REPO;" in git_diff
 assert '+    const { buildHash, overlayHash } = await resolveBuildInputs();' in git_diff
 assert "+    // The actual update is performed by build() in a disposable workspace." in git_diff
-assert '+const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch", "runtime-noise.patch"]' in git_diff
+assert '+const CUSTOM_OVERLAY_PATCHES = ["translate.patch", "update.patch", "userplugin-manager.patch", "runtime-noise.patch", "hide-media.patch"]' in git_diff
 assert "+        await applyOverlay(source);" in git_diff
 assert "+ipcMain.handle(IpcEvents.BUILD, serializeErrors(() => build()));" in git_diff
 assert "VENCORD_SRC_DIR" not in "\n".join(
