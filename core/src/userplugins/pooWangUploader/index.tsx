@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import "./styles.css";
+
 import { addGlobalContextMenuPatch, type GlobalContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
 import type { MessageObject, SendMessageOptions, SendMessageProps } from "@api/MessageEvents";
 import { definePluginSettings } from "@api/Settings";
@@ -263,14 +265,16 @@ function UploadRouteModal(props: {
                     <Button onClick={() => { props.resolve(undefined); props.rootProps.onClose(); openTokenConfiguration(); }}>Configure token</Button>
                 </div>
             )}
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
+            <label className="vc-poo-wang-route-remember">
                 <Switch checked={remember} onChange={setRemember} />
-                <Forms.FormText>Remember this choice (change it later from the + button's right-click menu)</Forms.FormText>
+                Remember this choice
             </label>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-                <Button variant="secondary" onClick={() => { props.resolve(undefined); props.rootProps.onClose(); }}>Cancel</Button>
-                {!props.options.discordUnavailable && <Button variant={enterChoice === false ? "primary" : "secondary"} onClick={() => close(false)}>Upload with Discord{enterChoice === false ? " (Enter)" : ""}</Button>}
-                <Button variant={enterChoice === true ? "primary" : "secondary"} onClick={() => close(true)} disabled={!props.tokenConfigured}>Upload with poo.wang{enterChoice === true ? " (Enter)" : ""}</Button>
+            <div className="vc-poo-wang-route-buttons">
+                <Button size="small" variant="secondary" onClick={() => { props.resolve(undefined); props.rootProps.onClose(); }}>Cancel</Button>
+                {!props.options.discordUnavailable && (
+                    <Button size="small" variant={enterChoice === false ? "primary" : "secondary"} className={enterChoice === false ? "vc-poo-wang-route-default" : undefined} onClick={() => close(false)}>Discord</Button>
+                )}
+                <Button size="small" variant={enterChoice === true ? "primary" : "secondary"} className={enterChoice === true ? "vc-poo-wang-route-default" : undefined} onClick={() => close(true)} disabled={!props.tokenConfigured}>poo.wang</Button>
             </div>
         </Modal>
     );

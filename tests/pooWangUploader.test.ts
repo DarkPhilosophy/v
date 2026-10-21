@@ -176,8 +176,10 @@ test("plugin keeps native draft previews and reroutes only when sending", () => 
     assert.match(source, />Cancel</);
     assert.match(source, /Upload route chooser dismissed; draft kept/);
     assert.doesNotMatch(source, /Cleared draft attachments after upload route cancellation/);
-    assert.match(source, />Upload with Discord\{/);
-    assert.match(source, />Upload with poo\.wang\{/);
+    assert.match(source, /onClick=\{\(\) => close\(false\)\}>Discord</);
+    assert.match(source, /disabled=\{!props\.tokenConfigured\}>poo\.wang</);
+    assert.doesNotMatch(source, /\(Enter\)/);
+    assert.match(source, /vc-poo-wang-route-default/);
     // Enter picks Discord unless Discord cannot take the files or they are oversized while
     // auto reroute is on; Enter works no matter which control the modal focused first.
     assert.match(source, /\(!!props\.options\.discordUnavailable \|\| \(oversized && settings\.store\.autoRerouteLargeFiles\)\)/);

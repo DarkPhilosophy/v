@@ -1,0 +1,55 @@
+/* Upload destination chooser */
+.vc-poo-wang-route-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.vc-poo-wang-route-remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+/* The button Enter will press: a slow light travelling around its edge instead of a text hint. */
+@property --vc-poo-wang-angle {
+    syntax: "<angle>";
+    initial-value: 0deg;
+    inherits: false;
+}
+
+.vc-poo-wang-route-default {
+    position: relative;
+    isolation: isolate;
+}
+
+.vc-poo-wang-route-default::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    z-index: -1;
+    border-radius: inherit;
+    padding: 2px;
+    background: conic-gradient(from var(--vc-poo-wang-angle), transparent 0deg, var(--brand-360, #c9b8ff) 70deg, transparent 140deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: vc-poo-wang-orbit 2.4s linear infinite;
+    pointer-events: none;
+}
+
+@keyframes vc-poo-wang-orbit {
+    to { --vc-poo-wang-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vc-poo-wang-route-default::before {
+        animation: none;
+        background: var(--brand-360, #c9b8ff);
+    }
+}
