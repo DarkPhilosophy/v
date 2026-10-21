@@ -1,0 +1,153 @@
+diff --git a/src/webpack/patchWebpack.ts b/src/webpack/patchWebpack.ts
+index b6a2c4c..11d2d2f 100644
+--- a/src/webpack/patchWebpack.ts
++++ b/src/webpack/patchWebpack.ts
+@@ -501,7 +501,148 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
+  * @param originalFactory The original module factory
+  * @returns The patched module factory
+  */
++// ── Fast path ─────────────────────────────────────────────────────────────────────────────────────
++//
++// Upstream's patchFactory (patchFactorySlow below, unchanged) costs two things at startup:
++//   1. Every module factory is checked against every pending patch with one `includes` each:
++//      ~16k modules x ~250 finds over ~32 MB of source.
++//   2. After EVERY replacement the whole patched module is compiled with eval, only to detect a
++//      broken replacement early. A 1.3 MB Discord module patched by 17 replacements is compiled
++//      17 times; only the last compilation is used.
++// The fast path below fixes both without changing results:
++//   1. One combined regex of all string finds rejects the ~98% of modules no patch can match,
++//      before any per-patch `includes` runs. It may be a superset (removed patches stay in it
++//      until the next rebuild), never a subset, so it cannot hide a match.
++//   2. Replacements are applied as plain string operations and the module is compiled once at
++//      the end. If anything throws (a replacement function, or that single compilation), the
++//      module is redone by the untouched upstream algorithm, which reports and reverts the
++//      offending replacement exactly as before. The patch list is only mutated once the result
++//      is final, so the fallback starts from the same state.
++
++let stringFindPrefilter: RegExp | null = null;
++const prefilteredPatches = new Set<Patch>();
++let prefilterPatchCount = -1;
++
++function escapeRegex(text: string) {
++    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
++}
++
++/** Whether `code` contains at least one string find of a pending patch (false => none can match). */
++function mayMatchStringFind(code: string) {
++    if (patches.length !== prefilterPatchCount) {
++        prefilterPatchCount = patches.length;
++        // Removals keep the regex a valid superset; only patches it does not know require a rebuild.
++        if (patches.some(patch => typeof patch.find === "string" && !prefilteredPatches.has(patch))) {
++            prefilteredPatches.clear();
++            const finds: string[] = [];
++            for (const patch of patches) {
++                if (typeof patch.find !== "string") continue;
++                prefilteredPatches.add(patch);
++                finds.push(escapeRegex(patch.find));
++            }
++            stringFindPrefilter = finds.length ? new RegExp(finds.join("|")) : null;
++        }
++    }
++    return stringFindPrefilter !== null && stringFindPrefilter.test(code);
++}
++
+ function patchFactory(moduleId: PropertyKey, originalFactory: AnyModuleFactory): PatchedModuleFactory {
++    if (IS_REPORTER) return patchFactorySlow(moduleId, originalFactory);
++
++    const originalFactoryCode = String(originalFactory);
++    const isArrowFunction = originalFactoryCode.startsWith("(");
++    const anyStringFind = mayMatchStringFind(originalFactoryCode);
++
++    let patchedCode = "0," + (!isArrowFunction ? "function" : "") + originalFactoryCode.slice(originalFactoryCode.indexOf("("));
++    const patchedBy = new Set<string>();
++    const consumed: Patch[] = [];
++    const warnings: string[] = [];
++    const buildNumber = getBuildNumber();
++    const shouldCheckBuildNumber = buildNumber !== -1;
++
++    try {
++        for (const patch of patches) {
++            if (
++                shouldCheckBuildNumber &&
++                ((patch.fromBuild != null && buildNumber < patch.fromBuild) || (patch.toBuild != null && buildNumber > patch.toBuild))
++            ) {
++                consumed.push(patch);
++                continue;
++            }
++
++            const moduleMatches = typeof patch.find === "string"
++                ? anyStringFind && originalFactoryCode.includes(patch.find)
++                : (patch.find.global && (patch.find.lastIndex = 0), patch.find.test(originalFactoryCode));
++            if (!moduleMatches) continue;
++
++            const previousPatchedCode = patchedCode;
++            let markedAsPatched = false;
++            let restore = false;
++
++            for (const replacement of patch.replacement as PatchReplacement[]) {
++                if (
++                    shouldCheckBuildNumber &&
++                    ((replacement.fromBuild != null && buildNumber < replacement.fromBuild) || (replacement.toBuild != null && buildNumber > replacement.toBuild))
++                ) continue;
++
++                const match = replacement.match;
++                if (typeof match !== "string" && match.global) match.lastIndex = 0;
++                const newPatchedCode = patchedCode.replace(match, replacement.replace as string);
++
++                if (newPatchedCode === patchedCode) {
++                    if (!(patch.noWarn || replacement.noWarn))
++                        warnings.push(`Patch by ${patch.plugin} had no effect (Module id is ${String(moduleId)}): ${replacement.match}`);
++                    if (patch.group) {
++                        warnings.push(`Undoing patch group ${patch.find} by ${patch.plugin} because replacement ${replacement.match} had no effect`);
++                        restore = true;
++                        break;
++                    }
++                    continue;
++                }
++
++                if (!patchedBy.has(patch.plugin)) {
++                    patchedBy.add(patch.plugin);
++                    markedAsPatched = true;
++                }
++                patchedCode = newPatchedCode;
++            }
++
++            if (restore) {
++                patchedCode = previousPatchedCode;
++                if (markedAsPatched) patchedBy.delete(patch.plugin);
++            }
++            if (!patch.all) consumed.push(patch);
++        }
++
++        let patchedFactory = originalFactory;
++        let patchedSource = patchedCode;
++        if (patchedBy.size) {
++            patchedSource = `// Webpack Module ${String(moduleId)} - Patched by ${[...patchedBy].join(", ")}\n${patchedCode}\n//# sourceURL=file:///WebpackModule${String(moduleId)}`;
++            patchedFactory = (0, eval)(patchedSource);
++        }
++
++        // Final: now commit the side effects upstream performs inline.
++        for (const warning of warnings) logger.warn(warning);
++        for (const patch of consumed) {
++            const index = patches.indexOf(patch);
++            if (index !== -1) patches.splice(index, 1);
++        }
++
++        patchedFactory[SYM_ORIGINAL_FACTORY] = originalFactory;
++        if (IS_DEV && patchedFactory !== originalFactory) {
++            originalFactory[SYM_PATCHED_SOURCE] = patchedSource;
++            originalFactory[SYM_PATCHED_BY] = patchedBy;
++        }
++        return patchedFactory as PatchedModuleFactory;
++    } catch {
++        // A replacement threw or the combined result does not compile: let the upstream algorithm
++        // find, report and revert the culprit, one replacement at a time.
++        return patchFactorySlow(moduleId, originalFactory);
++    }
++}
++
++
++function patchFactorySlow(moduleId: PropertyKey, originalFactory: AnyModuleFactory): PatchedModuleFactory {
+     const originalFactoryCode = String(originalFactory);
+     const isArrowFunction = originalFactoryCode.startsWith("(");
+ 
