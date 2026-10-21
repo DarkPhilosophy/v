@@ -191,9 +191,14 @@ export function TranslationAccessory({ message }: { message: Message; }) {
         // message.content: an edit must be translated again.
     }, [autoTranslateReceived, message.id, message.content, receivedInput, receivedOutput, service, sentOriginal?.original]);
 
-    if (!view?.showAlt) return null;
+    if (!view) return null;
+    // Messages that continue a group have no header, so the header toggle cannot appear there.
+    // This inline copy covers them; CSS hides it whenever the row does have a header.
+    const inlineToggle = <TranslationToggle message={message} inline />;
+    if (!view.showAlt) return <div className={cl("inline-only")}>{inlineToggle}</div>;
     return (
         <div className={cl("alt", "hide-original")}>
+            {inlineToggle}
             {renderMarkdown(view.altText, message)}
         </div>
     );
@@ -201,7 +206,7 @@ export function TranslationAccessory({ message }: { message: Message; }) {
 
 // ── Header toggle: next to the name, only on messages that have an alternative ──
 
-export function TranslationToggle({ message }: { message: Message; }) {
+export function TranslationToggle({ message, inline = false }: { message: Message; inline?: boolean; }) {
     const view = useMessageView(message.id);
     if (!view) return null;
 
@@ -217,7 +222,7 @@ export function TranslationToggle({ message }: { message: Message; }) {
             aria-pressed={showing}
             aria-label={label}
             title={label}
-            className={cl("toggle", { "toggle-off": !showing })}
+            className={cl("toggle", { "toggle-off": !showing, "inline-toggle": inline })}
             onClick={event => { event.stopPropagation(); toggleView(message.id); }}
             onKeyDown={event => {
                 if (event.key !== "Enter" && event.key !== " ") return;

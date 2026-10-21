@@ -51,6 +51,22 @@ li[id^="chat-messages-"]:has(.vc-trans-hide-original) [id^="message-content-"] {
     opacity: 1;
 }
 
+/* Inline fallback for messages that continue a group (no header, so no name to sit next to).
+   Rows that start a group have an <h3> header carrying the main toggle; hide the copy there. */
+.vc-trans-inline-toggle {
+    margin-left: 0;
+    margin-right: 0.35rem;
+}
+
+li[id^="chat-messages-"]:has(h3) .vc-trans-inline-toggle,
+li[id^="chat-messages-"]:has(h3) .vc-trans-inline-only {
+    display: none;
+}
+
+.vc-trans-inline-only {
+    line-height: 1rem;
+}
+
 .vc-trans-auto-translate {
     color: var(--green-360);
 }
