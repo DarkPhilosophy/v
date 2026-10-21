@@ -269,7 +269,7 @@ const BASE = { container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark
   a2: 0, a2p: 0, a2z: 18, a2r: 0, a2x: 0, a2y: 0, a2o: 1, a2c: "accent2",
   a3: 0, a3p: 2, a3z: 12, a3r: 0, a3x: 0, a3y: 0, a3o: 1, a3c: "accent2",
   a4: 0, a4p: 7, a4z: 10, a4r: 0, a4x: 0, a4y: 0, a4o: 1, a4c: "accent",
-  layout: 0, font: 0, tstyle: 3, word: "vencord custom", tag: "redistributed · improved", wordc: "#f4f4f7" };
+  layout: 0, font: 0, tstyle: 3, word: "vencord custom", tag: "redistributed · improved", wordc: "#f4f4f7", wc2: "#eb6f92", tagc: "#9a9cad", tago: 1, wsz: 100, wls: 0, tsz: 100, tdy: 0, wdy: 0, gap: 0 };
 
 // ── Logo (icon + wordmark) ─────────────────────────────────────────────────────────────────
 const FONTS = [
@@ -297,14 +297,15 @@ function measure(text, font, spacing) {
 /** Wordmark as <text> with tspans; returns [markup, approximate width]. */
 function wordmark(s, x, y, size, anchor = "start") {
   const [, family, weight, ratio] = FONTS[s.font];
-  let text = s.word, spacing = -size * .02;
+  size = size * (s.wsz ?? 100) / 100; y += s.wdy ?? 0;
+  let text = s.word, spacing = -size * .02 + (s.wls ?? 0);
   if (s.tstyle === 0) text = text.toLowerCase();
   if (s.tstyle === 1) text = text.replace(/\b\w/g, c => c.toUpperCase());
   if (s.tstyle === 2) { text = text.toUpperCase(); spacing = size * .12; }
   const words = text.split(" ");
   let spans;
-  if (s.tstyle === 3) spans = words.map((w, i) => `<tspan fill="${i ? s.accent : s.wordc}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
-  else if (s.tstyle === 4) spans = `<tspan fill="${s.accent}">${esc(text[0])}</tspan>${esc(text.slice(1))}`;
+  if (s.tstyle === 3) spans = words.map((w, i) => `<tspan fill="${i ? s.wc2 : s.wordc}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
+  else if (s.tstyle === 4) spans = `<tspan fill="${s.wc2}">${esc(text[0])}</tspan>${esc(text.slice(1))}`;
   else if (s.tstyle === 5) spans = words.map((w, i) => `<tspan font-weight="${i ? 300 : weight}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
   else spans = esc(text);
   const estimate = text.length * size * (s.tstyle === 2 ? ratio + .22 : ratio) * 1.08;
@@ -313,7 +314,8 @@ function wordmark(s, x, y, size, anchor = "start") {
 }
 function tagline(s, x, y, size, anchor = "start") {
   if (!s.tag) return ["", 0];
-  return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${FONTS[s.font][1].replace(/"/g, "'")}" font-size="${f(size)}" letter-spacing="${f(size * .06)}" fill="${s.wordc}" opacity=".6">${esc(s.tag)}</text>`, s.tag.length * size * .56];
+  size = size * (s.tsz ?? 100) / 100; y += (s.tdy ?? 0) + (s.wdy ?? 0);
+  return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${FONTS[s.font][1].replace(/"/g, "'")}" font-size="${f(size)}" letter-spacing="${f(size * .06)}" fill="${s.tagc}" opacity="${s.tago}">${esc(s.tag)}</text>`, s.tag.length * size * .56];
 }
 const inner = s => svg(s, 256, null, s._light).replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
 
@@ -329,22 +331,27 @@ function lockup(s, h = 80) {
       break;
     }
     case 2: { const [t, tw] = wordmark(s, 0, 92, 96); const [g, gw] = tagline(s, 4, 140, 30); W = Math.max(tw, gw) + 10; H = s.tag ? 156 : 120; body = t + g; break; }
-    case 3: { const [t, tw] = wordmark(s, 76, 58, 56); W = 76 + tw + 10; H = 80; body = icon(0, 6, 64) + t; break; }
+    case 3: { const G = s.gap ?? 0; const [t, tw] = wordmark(s, 76 + G, 58, 56); W = 76 + G + tw + 10; H = 80; body = icon(0, 6, 64) + t; break; }
     case 4: { // badge
       const [t, tw] = wordmark(s, 150, 104, 60); const [g] = tagline(s, 152, 140, 22);
       W = 150 + tw + 46; H = 180;
       body = `<rect width="${f(W)}" height="${H}" rx="40" fill="${s.box}"/>` + icon(18, 26, 128).replace(/<rect x="6"[^>]*\/>|<circle cx="128" cy="128" r="122"[^>]*\/>/, "") + t + g;
       break;
     }
-    case 5: { const [t, tw] = wordmark(s, 0, 112, 84); const [g, gw] = tagline(s, 4, 152, 28); const w = Math.max(tw, gw); W = w + 190; H = 180; body = t + g + icon(w + 24, 6, 168); break; }
-    default: { const [t, tw] = wordmark(s, 196, 112, 84); const [g, gw] = tagline(s, 200, 152, 28); W = 196 + Math.max(tw, gw) + 10; H = 180; body = icon(0, 6, 168) + t + g; }
+    case 5: { const [t, tw] = wordmark(s, 0, 112, 84); const [g, gw] = tagline(s, 4, 152, 28); const w = Math.max(tw, gw) + (s.gap ?? 0); W = w + 190; H = 180; body = t + g + icon(w + 24, 6, 168); break; }
+    default: { const G = s.gap ?? 0; const [t, tw] = wordmark(s, 196 + G, 112, 84); const [g, gw] = tagline(s, 200 + G, 152, 28); W = 196 + G + Math.max(tw, gw) + 10; H = 180; body = icon(0, 6, 168) + t + g; }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f(W)} ${f(H)}" height="${h}" width="${f(h * W / H)}">${body}</svg>`;
 }
 const KEY = "vBrandStudio";
 let S = { ...BASE, ...load("cur") };
 const fromHash = new URLSearchParams(location.hash.slice(1));
-if (fromHash.size) for (const [k, v] of fromHash) if (k in BASE) S[k] = typeof BASE[k] === "number" ? Number(v) : typeof BASE[k] === "boolean" ? v === "true" : v;
+if (fromHash.size) for (const [k, v] of fromHash) {
+  if (v === "undefined") continue;
+  if (k in BASE) S[k] = typeof BASE[k] === "number" ? Number(v) : typeof BASE[k] === "boolean" ? v === "true" : v;
+  else if (/^[a-z0-9]+[XYRZL]$/.test(k)) S[k] = Number(v);
+  else if (/^[a-z0-9]+F$/.test(k)) S[k] = v === "true";
+}
 let hist = [];
 let tab = load("tab") || "left";
 let saved = load("saved") || [null, null, null, null, null];
@@ -371,14 +378,26 @@ function svg(s, size = 256, dim, light) {
     return c;
   };
   const fade = (key, g) => dim && key !== dim && key !== "container" && g ? `<g opacity=".18">${g}</g>` : g;
-  let body = ORDER.map(part => {
-    let g = PARTS[part].items[s[part]][1](w).replaceAll("#C", paint(part, colorFor(part, s))).replaceAll("#BOX", s.box).replaceAll("#ACC", s.accent);
-    if (PARTS[part].mirrored) g = mirror(g);
-    return fade(part, g);
-  }).join("");
-  body += ACCENTS.map(k => fade(k, accentLayer(s, k, paint))).join("");
+  const layers = [
+    ...ORDER.map((part, i) => {
+      let g = PARTS[part].items[s[part]][1](w).replaceAll("#C", paint(part, colorFor(part, s))).replaceAll("#BOX", s.box).replaceAll("#ACC", s.accent);
+      if (PARTS[part].mirrored) g = mirror(g);
+      return [layerOf(s, part, i), part, fade(part, place(s, part, g))];
+    }),
+    ...ACCENTS.map((k, i) => [layerOf(s, k, 10 + i), k, fade(k, place(s, k, accentLayer(s, k, paint)))]),
+  ].sort((a, b) => a[0] - b[0]);
+  const container = layers.filter(l => l[1] === "container").map(l => l[2]).join("");
+  let body = container + place(s, "all", layers.filter(l => l[1] !== "container").map(l => l[2]).join(""));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="${size}" height="${size}">${defs ? `<defs>${defs}</defs>` : ""}${body}</svg>`;
 }
+/** Per-element move/rotate/scale around the icon centre; `all` moves the whole mark. */
+function place(s, key, g) {
+  if (!g) return g;
+  const x = s[key + "X"] ?? 0, y = s[key + "Y"] ?? 0, r = s[key + "R"] ?? 0, z = (s[key + "Z"] ?? 100) / 100, fx = s[key + "F"] ? -1 : 1;
+  if (!x && !y && !r && z === 1 && fx === 1) return g;
+  return `<g transform="translate(${f(128 + x)} ${f(128 + y)}) rotate(${r}) scale(${f(z * fx * 1000) / 1000} ${f(z * 1000) / 1000}) translate(-128 -128)">${g}</g>`;
+}
+function layerOf(s, key, fallback) { return s[key + "L"] ?? fallback; }
 function lum(hex) { if (!/^#[0-9a-f]{6}$/i.test(hex)) return 0; const n = parseInt(hex.slice(1), 16); return (n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11; }
 function shade(hex, a) { const n = parseInt(hex.slice(1), 16); return "#" + [n >> 16, n >> 8 & 255, n & 255].map(v => Math.max(0, Math.min(255, Math.round(v + (a < 0 ? v : 255 - v) * a))).toString(16).padStart(2, "0")).join(""); }
 
@@ -392,19 +411,26 @@ function draw(keepCustom) {
   $("logo-dark").innerHTML = lockup(S, 120);
   $("logo-light").innerHTML = lockup(onLight(S), 120);
   $("sizes").innerHTML = [16, 24, 32, 48, 64, 96].map(n => `<figure>${svg(S, n)}<figcaption>${n}</figcaption></figure>`).join("");
-  $("tabs").innerHTML = [...ORDER, ...ACCENTS, "weight", "__colors", ...LOGO_TABS.map(t => t[0])].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : ACCENTS.includes(k) ? `✦ Accent ${ACCENTS.indexOf(k) + 1}${S[k] ? "" : " (gol)"}` : LOGO_TAB[k]?.[1] ?? PARTS[k].label}</button>`).join("");
+  $("tabs").innerHTML = [...ORDER, ...ACCENTS, "all", "weight", "__colors", ...LOGO_TABS.map(t => t[0])].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : ACCENTS.includes(k) ? `✦ Accent ${ACCENTS.indexOf(k) + 1}${S[k] ? "" : " (gol)"}` : k === "all" ? "⤧ Tot logo-ul" : LOGO_TAB[k]?.[1] ?? PARTS[k].label}</button>`).join("");
   $("saved").innerHTML = saved.map((s, i) => `<div class="slot" data-i="${i}" title="${s ? "Încarcă" : "Salvează aici"}">${s ? svg(s, 56) + `<button class="x" data-del="${i}">✕</button>` : "<span>★</span>"}</div>`).join("");
   $("focus").classList.toggle("on", focus);
   $("bgmode").textContent = lightBg ? "Fundal: deschis" : "Fundal: întunecat";
   $("compare").innerHTML = [["Curent", S], ...saved.map((s, i) => s && [`#${i + 1}`, s]).filter(Boolean)].map(([n, s]) =>
     `<div class="cmp"><div class="pair"><div class="dark">${svg(s, 92)}</div><div class="light">${svg(s, 92, null, true)}</div></div><div class="lk dark" style="min-height:0;padding:8px">${lockup(s, 46)}</div>${n}</div>`).join("");
   drawGrid(keepCustom);
-  history.replaceState(null, "", "#" + new URLSearchParams(Object.entries(S).map(([k, v]) => [k, String(v)])));
+  history.replaceState(null, "", "#" + new URLSearchParams(Object.entries(S).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])));
   store();
 }
 
 function drawGrid(keepCustom) {
   if (!keepCustom) $("custom").innerHTML = "";
+  if (tab === "all") {
+    $("grid").classList.remove("wide");
+    $("hint").textContent = "Tot logo-ul: mută, rotește, scalează sau oglindește toate elementele odată, în interiorul containerului.";
+    if (!keepCustom) $("custom").innerHTML = transformControls("all");
+    $("grid").innerHTML = "";
+    return;
+  }
   if (ACCENTS.includes(tab)) {
     const k = tab, n = ACCENTS.indexOf(k) + 1;
     $("grid").classList.remove("wide");
@@ -416,7 +442,7 @@ function drawGrid(keepCustom) {
       ` <label>Rotație <input type="range" min="-180" max="180" step="5" data-acc="${k}r" value="${S[k + "r"]}"></label>` +
       ` <label>X <input type="range" min="-70" max="70" data-acc="${k}x" value="${S[k + "x"]}"></label>` +
       ` <label>Y <input type="range" min="-70" max="70" data-acc="${k}y" value="${S[k + "y"]}"></label>` +
-      ` <label>Opacitate <input type="range" min=".15" max="1" step=".05" data-acc="${k}o" value="${S[k + "o"]}"></label>`;
+      ` <label>Opacitate <input type="range" min=".15" max="1" step=".05" data-acc="${k}o" value="${S[k + "o"]}"></label><br>` + transformControls(k, 10 + ACCENTS.indexOf(k));
     $("grid").innerHTML = SHAPES.map((sh, i) =>
       `<div class="opt ${S[k] === i ? "on" : ""}" data-pick="${i}">${svg({ ...S, [k]: i }, 120, focus ? k : null)}<small>${sh[0]}</small></div>`).join("");
     return;
@@ -426,7 +452,12 @@ function drawGrid(keepCustom) {
   if (tab in LOGO_TAB) {
     const [, label, list] = LOGO_TAB[tab];
     $("hint").textContent = `${label}: alege; iconița rămâne cea compusă de tine.`;
-    $("custom").innerHTML = `<label>Text <input type="text" data-text="word" value="${esc(S.word)}"></label> · <label>Slogan <input type="text" data-text="tag" value="${esc(S.tag)}"></label> · <label>Culoare text <input type="color" data-text="wordc" value="${S.wordc}"></label>`;
+    $("custom").innerHTML = `<label>Text <input type="text" data-text="word" value="${esc(S.word)}"></label> <label>Slogan <input type="text" data-text="tag" value="${esc(S.tag)}"></label><br>` +
+      `<b style="color:var(--text)">Culori</b> <label>Cuvânt 1 <input type="color" data-text="wordc" value="${S.wordc}"></label> <label>Cuvânt 2 / literă accent <input type="color" data-text="wc2" value="${S.wc2}"></label> <label>Slogan <input type="color" data-text="tagc" value="${S.tagc}"></label>` +
+      ` <label>Opacitate slogan <input type="range" min=".2" max="1" step=".05" data-acc="tago" value="${S.tago}"></label><br>` +
+      `<b style="color:var(--text)">Mărimi</b> <label>Text <input type="range" min="50" max="160" data-acc="wsz" value="${S.wsz}"></label> <label>Spațiere litere <input type="range" min="-6" max="20" data-acc="wls" value="${S.wls}"></label>` +
+      ` <label>Slogan <input type="range" min="50" max="180" data-acc="tsz" value="${S.tsz}"></label> <label>Text sus/jos <input type="range" min="-40" max="40" data-acc="wdy" value="${S.wdy}"></label>` +
+      ` <label>Slogan sus/jos <input type="range" min="-30" max="40" data-acc="tdy" value="${S.tdy}"></label> <label>Distanță iconă–text <input type="range" min="-40" max="120" data-acc="gap" value="${S.gap}"></label>`;
     $("grid").innerHTML = list.map((name, i) =>
       `<div class="opt ${S[tab] === i ? "on" : ""}" data-pick="${i}"><div class="lkc">${lockup({ ...S, [tab]: i }, 90)}</div><small>${name}</small></div>`).join("");
     return;
@@ -440,16 +471,29 @@ function drawGrid(keepCustom) {
       `<div class="opt ${cval(k) === c ? "on" : ""}" data-set-color="${k}" data-value="${c}"><div class="swatch" style="background:${k === "box" ? "transparent" : "#0b0c10"}">${svg({ ...S, ...colorPatch(k, c) }, 96)}</div><small>${n}<br>${c}</small></div>`)).join("");
     return;
   }
+  if (tab !== "weight") $("custom").innerHTML = transformControls(tab, ORDER.indexOf(tab));
   const part = PARTS[tab];
   $("hint").textContent = tab === "weight" ? "Grosimea tuturor elementelor." : `${part.label}: ${part.items.length} variante. Restul logo-ului rămâne cum l-ai ales${focus ? " (estompat ca să vezi elementul)" : ""}.`;
   $("grid").innerHTML = part.items.map((item, i) =>
     `<div class="opt ${S[tab] === i ? "on" : ""}" data-pick="${i}">${svg({ ...S, [tab]: i }, 120, focus && tab !== "weight" ? tab : null)}<small>${item[0]}</small></div>`).join("");
 }
 const cval = k => ({ box: S.box, left: S.leftc, right: S.rightc, accent: S.accent, accent2: S.accent2 })[k];
+/** Sliders that move one element anywhere: position, full rotation, scale, mirror and layer. */
+function transformControls(key, layer) {
+  const v = (k, d) => S[key + k] ?? d;
+  return `<b style="color:var(--text)">Poziționare</b>` +
+    ` <label>X <input type="range" min="-128" max="128" data-acc="${key}X" value="${v("X", 0)}"></label>` +
+    ` <label>Y <input type="range" min="-128" max="128" data-acc="${key}Y" value="${v("Y", 0)}"></label>` +
+    ` <label>Rotație <input type="range" min="-180" max="180" data-acc="${key}R" value="${v("R", 0)}"></label>` +
+    ` <label>Mărime <input type="range" min="20" max="200" data-acc="${key}Z" value="${v("Z", 100)}"></label>` +
+    (key === "all" ? "" : ` <label>Strat <input type="range" min="0" max="20" data-acc="${key}L" value="${v("L", layer)}" title="mai mare = deasupra"></label>`) +
+    ` <label><input type="checkbox" data-flip="${key}F" ${S[key + "F"] ? "checked" : ""}> Oglindit</label>` +
+    ` <button data-reset-t="${key}">Reset poziție</button>`;
+}
 const LOGO_TABS = [["layout", "Logo: aranjare", LAYOUTS], ["font", "Logo: font", FONTS.map(x => x[0])], ["tstyle", "Logo: stil text", TSTYLES]];
 const LOGO_TAB = Object.fromEntries(LOGO_TABS.map(t => [t[0], t]));
 /** Light-background variant: light text turns dark so the wordmark stays readable. */
-function onLight(s) { const n = parseInt(s.wordc.slice(1), 16); const lum = (n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11; return { ...s, _light: true, ...(lum > 150 ? { wordc: "#16171d" } : {}) }; }
+function onLight(s) { const dark = c => lum(c) > 170 ? "#16171d" : c; return { ...s, _light: true, wordc: dark(s.wordc), wc2: dark(s.wc2), tagc: lum(s.tagc) > 170 ? "#5d5f6e" : s.tagc }; }
 const colorPatch = (k, c) => ({ box: { box: c }, left: { leftc: c }, right: { rightc: c }, accent: { accent: c }, accent2: { accent2: c } })[k];
 
 // ── Events ─────────────────────────────────────────────────────────────────────────────────
@@ -470,7 +514,13 @@ $("custom").addEventListener("input", e => {
   S[key] = e.target.dataset.str ? e.target.value : Number(e.target.value);
   draw(true);
 });
-$("custom").addEventListener("change", e => { if (e.target.dataset.acc) e.target._started = false; });
+$("custom").addEventListener("click", e => {
+  const key = e.target.dataset.resetT; if (!key) return;
+  set(Object.fromEntries(["X", "Y", "R", "Z", "L", "F"].map(k => [key + k, undefined])));
+  drawGrid();
+});
+$("custom").addEventListener("change", e => {
+  if (e.target.dataset.flip) { set({ [e.target.dataset.flip]: e.target.checked }); return; } if (e.target.dataset.acc) e.target._started = false; });
 $("custom").onchange = e => { if (e.target.dataset.text) set({}); };
 $("saved").onclick = e => {
   const del = e.target.closest("[data-del]"); if (del) { saved[del.dataset.del] = null; return draw(); }
