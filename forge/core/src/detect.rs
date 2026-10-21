@@ -253,6 +253,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))] // Linux layouts are not scanned on Windows
     fn finds_all_four_native_channels_and_newest_app_dir() {
         let root = scratch("native");
         let home = root.join("home");
@@ -267,6 +268,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))] // Linux layouts are not scanned on Windows
     fn flatpak_prefers_packaged_resources_over_updater_copy() {
         let root = scratch("flatpak");
         let home = root.join("home");
