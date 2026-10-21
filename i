@@ -92,7 +92,8 @@ prepare_build() {
         "$BUILD/src/userplugins" "$USERPLUGIN_INVENTORY" \
         || die "custom plugin inventory failed"
     cp -r "$PKG/patches/." "$BUILD/custom-patches/"
-    for p in translate.patch update.patch userplugin-manager.patch runtime-noise.patch cloudsync.patch hide-media.patch; do
+    # patches/series is the single ordered list, shared with the in-app updater.
+    for p in $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$PKG/patches/series"); do
         if git -C "$BUILD" apply --reverse --check "$BUILD/custom-patches/$p" 2>/dev/null; then
             :
         elif git -C "$BUILD" apply --check "$BUILD/custom-patches/$p" 2>/dev/null; then
@@ -119,12 +120,20 @@ prepare_build() {
     fi
 }
 
+# Fallback order on upstream drift: the upstream this machine last installed successfully
+# (recorded below, so it advances on its own), then the committed upstream.lock seed.
+STATE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/vencord-custom"
+LOCAL_GOOD="$STATE_DIR/upstream.good"
 if ! prepare_build HEAD; then
-    [ -s "$UPSTREAM_LOCK" ] || die "upstream drift and no $UPSTREAM_LOCK to fall back to (the existing runtime was left untouched)"
-    PINNED="$(tr -d '[:space:]' < "$UPSTREAM_LOCK")"
-    [ "${#PINNED}" -eq 40 ] || die "invalid upstream.lock"
-    say "Falling back to the last known-good upstream $PINNED"
-    prepare_build "$PINNED" || die "overlay does not build even on the pinned upstream $PINNED (the existing runtime was left untouched)"
+    BUILT=""
+    for candidate in "$(tr -d '[:space:]' < "$LOCAL_GOOD" 2>/dev/null)" "$(tr -d '[:space:]' < "$UPSTREAM_LOCK" 2>/dev/null)"; do
+        [ "${#candidate}" -eq 40 ] || continue
+        [ "$candidate" = "$BUILT" ] && continue
+        say "Falling back to the last known-good upstream $candidate"
+        if prepare_build "$candidate"; then BUILT="ok"; break; fi
+        BUILT="$candidate"
+    done
+    [ "$BUILT" = ok ] || die "overlay does not build on upstream HEAD nor on any known-good upstream (the existing runtime was left untouched)"
 fi
 say "Building"
 (cd "$BUILD" && VENCORD_HASH="$BUILD_HASH" pnpm build) || die "build failed"
@@ -251,6 +260,10 @@ if ! python3 "$OPENASAR_HELPER" verify-chain "$resources" "$VENCORD/app.asar" au
     restore_runtime || die "bootstrap verification failed and runtime rollback failed"
     die "OpenAsar/Vencord bootstrap verification failed; previous runtime restored"
 fi
+
+# The chain is verified: this upstream + overlay is known-good on this machine. Record it so a
+# future upstream drift falls back to it instead of an older committed seed.
+mkdir -p "$STATE_DIR" && printf '%s\n' "$UPSTREAM_HASH" > "$LOCAL_GOOD.tmp" && mv -f "$LOCAL_GOOD.tmp" "$LOCAL_GOOD"
 
 # Remove artifacts from older integrated installs only after the new chain is
 # verified, retaining settings/user data and the active runtime.

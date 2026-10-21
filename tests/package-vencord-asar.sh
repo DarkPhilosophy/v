@@ -127,7 +127,7 @@ assert patch.index(generator) < patch.index(build)
 assert 'join(source, "dist", "userPluginSeeds")' not in patch
 assert 'await run("git", ["fetch", "--depth", "1", "origin", upstreamHash], source);' in patch
 assert "UPSTREAM_TARBALL" not in patch
-assert 'import { cp, mkdir, mkdtemp, rm } from "fs/promises";' in patch
+assert 'import { cp, mkdir, mkdtemp, readFile, rm } from "fs/promises";' in patch
 assert 'await cp(join(overlay, "core", "src"), join(source, "src"), { recursive: true });' in patch
 assert 'await run("cp"' not in patch
 assert 'if (userpluginsRoot) await materializeUserPluginsTree(source, userpluginsRoot);' in patch
@@ -136,7 +136,12 @@ assert patch.count('join(overlay, "scripts", "verify-userplugins-build.py")') ==
 assert './core/src/userplugins' in installer
 assert '$PKG/userplugins' not in installer
 assert installer.count('$PKG/scripts/verify-userplugins-build.py') == 2
-assert "runtime-noise.patch" in installer
+patches_dir = Path(sys.argv[7]).parent
+series = [l.split("#")[0].strip() for l in (patches_dir / "series").read_text().splitlines()]
+series = [l for l in series if l]
+assert "$PKG/patches/series" in installer
+assert series.index("runtime-noise.patch") < series.index("cloudsync.patch")  # both edit noTrack.ts
+assert all((patches_dir / name).is_file() for name in series)
 assert 'event.error.message === "Sentry successfully disabled"' in runtime_noise_patch
 assert "event.preventDefault();" in runtime_noise_patch
 assert 'installNoopSentryIpc(window as unknown as Record<string, unknown>);' in runtime_noise_patch
@@ -152,7 +157,7 @@ assert 'playstation: { label: "PlayStation", os: "Playstation", browser: "Discor
 assert 'xbox: { label: "Xbox", os: "Xbox", browser: "Discord Embedded" }' in platform_spoofer
 assert 'find: "CloudSync is not supported on this platform"' in cloudsync_patch
 assert 'replace: "$&||(0,$1.isLinux)()"' in cloudsync_patch
-assert "cloudsync.patch" in installer
+assert "cloudsync.patch" in series and "hide-media.patch" in series
 assert 'playstation: { label: "PlayStation", os: "Playstation", browser: "Discord Client" }' not in platform_spoofer
 assert 'xbox: { label: "Xbox", os: "Xbox", browser: "Discord Client" }' not in platform_spoofer
 assert '"$BUILD/dist/renderer.js" "$BUILD/dist/renderer.js.map"' in installer

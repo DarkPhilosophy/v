@@ -137,6 +137,7 @@ v/
 │   ├── translate.patch
 │   ├── runtime-noise.patch           # NoTrack/Sentry preload noise suppression
 │   ├── hide-media.patch              # HideMedia: auto-hide all media, click to show
+│   ├── series                        # ordered patch list used by ./i and the in-app updater
 │   ├── update.patch                  # temporary clean-build updater
 │   └── userplugin-manager.patch      # Vencord/Electron manager wiring
 ├── scripts/
