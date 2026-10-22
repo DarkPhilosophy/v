@@ -406,7 +406,21 @@ if (S.tstyle > 3 || (S.tstyle === 3 && !("w1w" in Object.fromEntries(fromHash)) 
 S.v = 2;
 let hist = [];
 let tab = load("tab") || "left";
-let saved = load("saved") || [null, null, null, null, null];
+/** Pre-v2 saved designs: same fields, old text styles turned into per-word colour/weight. */
+function migrateOld(o) {
+  if (!o || o.v === 2) return o;
+  const s = { ...BASE, ...o };
+  const old = o.tstyle ?? 3;
+  s.tstyle = old === 0 ? 1 : old === 1 ? 2 : old === 2 ? 3 : 0;
+  if (old === 4) Object.assign(s, { fl: true, flc: s.wc2 ?? s.accent, wc2: s.wordc });
+  if (old === 5) s.w2w = 300;
+  if (old === 3 && !o.wc2) s.wc2 = s.accent;
+  s.v = 2;
+  return s;
+}
+let saved = load("saved") || (() => {
+  try { return (JSON.parse(localStorage.vBrandStudiosaved) || []).map(migrateOld).concat([null, null, null, null, null]).slice(0, 5); } catch { return null; }
+})() || [null, null, null, null, null];
 let focus = true, lightBg = false, uid = 0;
 function load(k) { try { return JSON.parse(localStorage[KEY + k]); } catch { return null; } }
 function store() { localStorage[KEY + "cur"] = JSON.stringify(S); localStorage[KEY + "tab"] = JSON.stringify(tab); localStorage[KEY + "saved"] = JSON.stringify(saved); }
