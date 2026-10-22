@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vencord custom — Vencord, redistributed and improved</title>
+<meta name="description" content="A Vencord redistribution: extra plugins, faster startup, OpenAsar, and an app to choose exactly what gets installed.">
+<link rel="icon" href="brand/v-icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#000000">
+<style>
+*{box-sizing:border-box}
+:root{--bg:#000;--card:#0b0b0f;--line:#1c1c24;--line2:#2a2a35;--text:#eef0f6;--muted:#8f92a6;--pink:#eb6f92;--gold:#f5c211;--green:#a6e3a1;color-scheme:dark}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+nav.top{position:sticky;top:0;z-index:5;background:rgba(0,0,0,.78);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+nav.top .wrap{display:flex;align-items:center;gap:22px;height:60px}
+nav.top img{height:30px}
+nav.top .links{margin-left:auto;display:flex;gap:20px;font-size:14px}
+nav.top .links a{text-decoration:none;color:var(--muted);transition:color .15s}
+nav.top .links a:hover{color:var(--text)}
+.hero{padding:96px 0 72px;text-align:center;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-40% -10% auto;height:620px;background:radial-gradient(closest-side,rgba(235,111,146,.16),transparent),radial-gradient(closest-side at 70% 60%,rgba(245,194,17,.09),transparent);pointer-events:none}
+.hero img.mark{width:132px;height:132px;position:relative;filter:drop-shadow(0 20px 50px rgba(235,111,146,.25))}
+.hero h1{font-size:clamp(40px,7vw,72px);line-height:1.02;letter-spacing:-.03em;margin:22px 0 12px;position:relative}
+.hero h1 b{font-weight:800}
+.hero h1 span{font-weight:300;color:var(--gold)}
+.hero p.lead{color:var(--muted);font-size:clamp(17px,2.2vw,20px);max-width:640px;margin:0 auto 34px;position:relative}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;position:relative}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 20px;border-radius:12px;border:1px solid var(--line2);text-decoration:none;font-weight:600;font-size:15px;transition:transform .12s,border-color .15s,background .15s}
+.btn:hover{transform:translateY(-1px);border-color:#3a3a48}
+.btn.primary{background:linear-gradient(135deg,var(--pink),#c9567a);border:0;color:#fff}
+section{padding:70px 0;border-top:1px solid var(--line)}
+section h2{font-size:clamp(26px,3.6vw,36px);letter-spacing:-.02em;margin:0 0 8px}
+section p.sub{color:var(--muted);margin:0 0 30px;max-width:680px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;transition:border-color .15s,transform .15s}
+.card:hover{border-color:var(--line2);transform:translateY(-2px)}
+.card h3{margin:0 0 6px;font-size:17px}
+.card p{margin:0;color:var(--muted);font-size:14.5px}
+.card .tag{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--pink);margin-bottom:8px;font-weight:700}
+.install{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+pre{margin:12px 0 0;background:#060609;border:1px solid var(--line);border-radius:12px;padding:14px 76px 14px 16px;overflow:auto;font:14px/1.5 "JetBrains Mono",ui-monospace,monospace;position:relative}
+pre button{position:absolute;right:8px;top:8px;background:#121218;color:var(--muted);border:1px solid var(--line2);border-radius:8px;padding:4px 10px;cursor:pointer;font:12px system-ui}
+pre button:hover{color:var(--text)}
+.steps{counter-reset:s;display:grid;gap:10px}
+.steps li{list-style:none;counter-increment:s;display:flex;gap:14px;align-items:flex-start;color:#c7c9d6}
+.steps li::before{content:counter(s);flex:none;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line2);display:grid;place-items:center;font-size:12px;color:var(--muted);margin-top:1px}
+.steps{padding:0;margin:0}
+.notice{background:#140f00;border:1px solid #4a3a06;color:#f2dfa0;border-radius:14px;padding:16px 18px;font-size:14.5px}
+footer{border-top:1px solid var(--line);padding:36px 0 50px;color:var(--muted);font-size:14px}
+footer .wrap{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+footer img{height:26px}
+footer .links{margin-left:auto;display:flex;gap:18px}
+footer a{text-decoration:none}
+footer a:hover{color:var(--text)}
+@media (max-width:760px){.install{grid-template-columns:1fr}nav.top .links{display:none}}
+</style>
+</head>
+<body>
+<nav class="top"><div class="wrap">
+  <a href="#"><img src="brand/v-logo.svg" alt="vencord custom"></a>
+  <div class="links">
+    <a href="#features">Features</a><a href="#install">Install</a><a href="#forge">Forge</a><a href="brand/">Brand</a><a href="https://github.com/DarkPhilosophy/v">GitHub</a>
+  </div>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <img class="mark" src="brand/v-icon.svg" alt="">
+  <h1><b>vencord</b> <span>custom</span></h1>
+  <p class="lead">Vencord, redistributed and improved. Extra plugins, a faster start, OpenAsar, and an app that installs exactly what you choose into any Discord.</p>
+  <div class="cta">
+    <a class="btn primary" href="#install">Install</a>
+    <a class="btn" href="#forge">Get the app</a>
+    <a class="btn" href="https://github.com/DarkPhilosophy/v">Source</a>
+  </div>
+</div></header>
+
+<section id="features"><div class="wrap">
+  <h2>What you get</h2>
+  <p class="sub">Everything from Vencord, plus these. Each plugin and optional patch can be turned off, and stays off across updates.</p>
+  <div class="grid" id="plugins">
+    <div class="card"><span class="tag">Plugin</span><h3>PooWangUploader</h3><p>Send attachments through poo.wang with retention-controlled links instead of storing them on Discord.</p></div>
+    <div class="card"><span class="tag">Plugin</span><h3>PrivacyPruner</h3><p>Deletes your expired messages per channel retention policy, keeping messages marked Keep.</p></div>
+    <div class="card"><span class="tag">Plugin</span><h3>PlatformSpoofer</h3><p>Appear as Desktop, Mobile, Web or Console. Switch from the status menu.</p></div>
+    <div class="card"><span class="tag">Plugin</span><h3>QuestCompleter</h3><p>Completes enrolled Discord quests without installing the advertised game.</p></div>
+    <div class="card"><span class="tag">Plugin</span><h3>SteamRichPresence</h3><p>Shows the Steam game you are playing, including Proton games.</p></div>
+    <div class="card"><span class="tag">Plugin</span><h3>PerfMonitor</h3><p>Warns when Discord stalls and shows whether plugins, themes or Discord caused it.</p></div>
+    <div class="card"><span class="tag">Patch</span><h3>Fast startup patching</h3><p>Vencord's module patcher skips modules no plugin touches and compiles each patched module once.</p></div>
+    <div class="card"><span class="tag">Patch</span><h3>HideMedia auto-hide</h3><p>Media is not loaded until you click it.</p></div>
+    <div class="card"><span class="tag">Built in</span><h3>User Plugin Manager</h3><p>Install and update custom plugins right from Discord settings.</p></div>
+    <div class="card"><span class="tag">Built in</span><h3>OpenAsar</h3><p>Faster, leaner startup code, with Linux GPU and Flatpak fixes. Your original is backed up.</p></div>
+  </div>
+</div></section>
+
+<section id="install"><div class="wrap">
+  <h2>Install</h2>
+  <p class="sub">Two ways, same result. Both build Vencord from source with your selection and only swap it in once every step verifies.</p>
+  <div class="install">
+    <div class="card">
+      <span class="tag">Linux · one line</span>
+      <h3>Shell installer</h3>
+      <p>Needs git, node, pnpm and python3. Detects Stable, PTB, Canary and Development, native or Flatpak.</p>
+      <pre><code>curl -fsL https://darkphilosophy.github.io/v/i | sh</code><button data-copy>Copy</button></pre>
+    </div>
+    <div class="card" id="forge">
+      <span class="tag">Linux · Windows</span>
+      <h3>Vencord Forge</h3>
+      <p>A desktop app: pick the Discord, plugins, patches and OpenAsar, then install. Needs nothing preinstalled; it fetches Node.js when missing.</p>
+      <pre><code>git clone https://github.com/DarkPhilosophy/v
+cd v/forge && cargo build --release
+./target/release/vencord-forge</code><button data-copy>Copy</button></pre>
+      <p style="margin-top:10px">Ready-made builds: <a href="https://github.com/DarkPhilosophy/v/actions/workflows/forge.yml">latest Linux and Windows builds</a> · <a href="https://github.com/DarkPhilosophy/v/releases">releases</a></p>
+    </div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="sub">No fork to drift, no prebuilt blobs: the newest Vencord, rebuilt with our changes on your machine.</p>
+  <ol class="steps">
+    <li>Fetch the newest upstream Vencord and this overlay.</li>
+    <li>Copy in the custom plugins you kept and apply the patches you kept.</li>
+    <li>Type-check against upstream. If upstream moved, fall back to the last version that built.</li>
+    <li>Build, then verify every custom plugin is really in the bundle.</li>
+    <li>Install the runtime, the loader and OpenAsar transactionally, verify the whole chain, and roll back on any failure.</li>
+    <li>Update automatically later, from Discord's settings or on schedule, keeping your selection.</li>
+  </ol>
+</div></section>
+
+<section><div class="wrap">
+  <div class="notice">Not affiliated with Discord, Vencord or OpenAsar. Client modifications are against Discord's Terms of Service; use them at your own risk. Everything changed is backed up, and "Restore stock Discord" in Forge undoes it.</div>
+</div></section>
+
+<footer><div class="wrap">
+  <img src="brand/v-logo.svg" alt="vencord custom">
+  <span>GPL-3.0-or-later · built on <a href="https://github.com/Vendicated/Vencord">Vencord</a> and <a href="https://github.com/GooseMod/OpenAsar">OpenAsar</a></span>
+  <div class="links"><a href="https://github.com/DarkPhilosophy/v">GitHub</a><a href="https://github.com/DarkPhilosophy/v/issues">Issues</a><a href="brand/">Brand</a></div>
+</div></footer>
+
+<script>
+for (const button of document.querySelectorAll("[data-copy]")) {
+  button.onclick = async () => {
+    await navigator.clipboard.writeText(button.parentElement.querySelector("code").textContent);
+    button.textContent = "Copied";
+    setTimeout(() => button.textContent = "Copy", 1400);
+  };
+}
+</script>
+</body>
+</html>
