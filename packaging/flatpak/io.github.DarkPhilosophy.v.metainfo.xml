@@ -62,11 +62,10 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="0.1.1" date="2026-10-22">
+    <release version="0.1.0" date="2026-10-22">
       <description>
-        <p>First Flathub release: runs in the Flatpak sandbox, changing Discord's files through a helper on the host.</p>
+        <p>First release.</p>
       </description>
     </release>
-    <release version="0.1.0" date="2026-10-22"/>
   </releases>
 </component>
