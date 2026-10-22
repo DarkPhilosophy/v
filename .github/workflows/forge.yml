@@ -17,7 +17,7 @@ on:
       - patches/**
       - core/src/**
       - scripts/**
-      - .github/README.md
+      # README.md itself is not listed: editing it needs no build.
       - .github/CHANGELOG.md
       - packaging/flatpak/**
       - .github/workflows/forge.yml
