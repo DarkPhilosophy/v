@@ -118,6 +118,8 @@ footer a:hover{color:var(--text)}
       <p>A desktop app: pick the Discord, plugins, patches and OpenAsar, then install. Needs nothing preinstalled; it fetches Node.js when missing.</p>
       <div class="downloads" id="downloads"><a class="btn" href="https://github.com/DarkPhilosophy/v/releases">Releases</a></div>
       <p class="muted-small" id="release-info">Download one file and run it.</p>
+      <pre><code>flatpak remote-add --user --if-not-exists --from vencord-forge https://darkphilosophy.github.io/v/flatpak/vencord-forge.flatpakrepo
+flatpak install --user vencord-forge io.github.DarkPhilosophy.VencordForge</code><button data-copy>Copy</button></pre>
     </div>
   </div>
 </div></section>
@@ -174,6 +176,7 @@ const card = (tag, title, text) => `<div class="card"><span class="tag">${tag}</
       [/\.AppImage$/, "Linux · AppImage", "Linux"],
       [/^vencord-forge-linux-x86_64$/, "Linux · binary", "Linux"],
       [/^vencord-forge-windows-x86_64\.exe$/, "Windows · .exe", "Windows"],
+      [/\.flatpak$/, "Linux · .flatpak", "Flatpak"],
     ];
     const mine = navigator.userAgent.includes("Windows") ? "Windows" : "Linux";
     let primaryGiven = false;
@@ -182,6 +185,8 @@ const card = (tag, title, text) => `<div class="card"><span class="tag">${tag}</
       if (primary) primaryGiven = true;
       return `<a class="btn ${primary ? "primary" : ""}" href="${a.browser_download_url}">${text}</a>`;
     }));
+    // The Flatpak repository gives updates through `flatpak update`; the .flatpakref adds it in one click.
+    buttons.push(`<a class="btn" href="flatpak/vencord-forge.flatpakref">Flatpak repo (auto-updates)</a>`);
     document.getElementById("downloads").innerHTML = buttons.join("") + `<a class="btn" href="${release.html_url}">Release notes</a>`;
     document.getElementById("release-info").textContent = `Version ${release.tag_name.replace("forge-v", "")}, published ${new Date(release.published_at).toLocaleDateString()}. Download one file and run it (on Linux, make it executable first).`;
   } catch { /* the Releases button stays */ }
