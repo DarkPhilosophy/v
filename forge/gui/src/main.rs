@@ -926,11 +926,13 @@ fn register_launcher() {
     let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".local/share"));
     let icon_dir = data.join("icons/hicolor/scalable/apps");
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=Vencord Forge\nComment=Build and install Vencord with your plugins into Discord\nExec=\"{}\"\nIcon=vencord-forge\nTerminal=false\nCategories=Utility;Network;\nStartupWMClass=vencord-forge\n",
-        exe.display()
+        "[Desktop Entry]\nType=Application\nName=Vencord Forge\nComment=Build and install Vencord with your plugins into Discord\nExec=\"{}\"\nIcon={}\nTerminal=false\nCategories=Utility;Network;\nStartupWMClass=vencord-forge\n",
+        exe.display(),
+        // Absolute path: shells do not always pick up a new icon in the user's hicolor theme.
+        icon_dir.join("vencord-forge.svg").display()
     );
     let path = data.join("applications/vencord-forge.desktop");
-    if std::fs::read_to_string(&path).ok().as_deref() != Some(entry.as_str()) {
+    if std::fs::read(icon_dir.join("vencord-forge.svg")).ok().as_deref() != Some(ICON_SVG) || std::fs::read_to_string(&path).ok().as_deref() != Some(entry.as_str()) {
         let _ = std::fs::create_dir_all(&icon_dir);
         let _ = std::fs::write(icon_dir.join("vencord-forge.svg"), ICON_SVG);
         let _ = std::fs::create_dir_all(path.parent().unwrap());

@@ -338,7 +338,7 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
         && let Some(id) = &target.flatpak_id
     {
         // Flatpak Discord must be allowed to read the runtime outside its sandbox.
-        let mut command = std::process::Command::new("flatpak");
+        let mut command = crate::process::host_command("flatpak");
         command.args(["override", "--user", &format!("--filesystem={}", runtime_dir.display()), id]);
         let _ = command.status();
     }
@@ -352,7 +352,7 @@ fn privileged_bootstrap(resources: &Path, loader: &Path, runtime: &Path, action:
     }
     sink(Event::Log("Discord's files are system-owned; asking for permission".into()));
     let cli = cli_path()?;
-    let mut command = std::process::Command::new("pkexec");
+    let mut command = crate::process::host_command("pkexec");
     command.arg(&cli).arg("privileged-bootstrap").arg(resources).arg(loader).arg(runtime).arg(action.as_str());
     if let Some(candidate) = candidate {
         command.arg(candidate);
@@ -370,8 +370,10 @@ pub fn cli_path() -> Result<PathBuf> {
     let dir = exe.parent().unwrap();
     let sibling = dir.join(if cfg!(windows) { "vforge.exe" } else { "vforge" });
     let program = if sibling.is_file() { sibling } else { exe.clone() };
+    // AppImage: the executable is on a FUSE mount root cannot read. Flatpak: it is under /app,
+    // which does not exist on the host where pkexec runs. Either way, run a copy in the cache.
     let in_appimage = std::env::var_os("APPIMAGE").is_some() || program.starts_with("/tmp/.mount_");
-    if !in_appimage {
+    if !in_appimage && !paths::in_flatpak() {
         return Ok(program);
     }
     let copy = paths::cache_dir().join("bin").join(program.file_name().unwrap());
@@ -392,7 +394,7 @@ pub fn uninstall(target: &Install, sink: Sink) -> Result<()> {
         return Resources::new(&target.resources)?.uninstall();
     }
     ensure!(cfg!(target_os = "linux"), "run Forge as administrator to modify {}", target.resources.display());
-    let status = std::process::Command::new("pkexec").arg(cli_path()?).arg("privileged-uninstall").arg(&target.resources).status()?;
+    let status = crate::process::host_command("pkexec").arg(cli_path()?).arg("privileged-uninstall").arg(&target.resources).status()?;
     ensure!(status.success(), "privileged uninstall failed or was refused");
     Ok(())
 }
@@ -402,6 +404,10 @@ pub fn discord_running() -> bool {
     if cfg!(windows) {
         let out = std::process::Command::new("tasklist").args(["/FO", "CSV", "/NH"]).output();
         return out.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("\"discord"));
+    }
+    if paths::in_flatpak() {
+        // The sandbox has its own process namespace; ask the host.
+        return crate::process::host_command("pgrep").args(["-x", "-i", "discord|discordptb|discordcanary|discorddevelopment|Discord"]).output().is_ok_and(|o| o.status.success());
     }
     fs::read_dir("/proc").into_iter().flatten().flatten().any(|e| {
         fs::read_to_string(e.path().join("comm")).is_ok_and(|c| {

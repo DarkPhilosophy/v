@@ -1,0 +1,43 @@
+# Packaging for the self-hosted Flatpak repository (https://darkphilosophy.github.io/v/flatpak/).
+# Not a Flathub submission: Flathub requires manifests written without AI assistance.
+#
+# Packages the release binary built by CI (vencord-forge-linux-x86_64), which needs only glibc.
+app-id: io.github.DarkPhilosophy.VencordForge
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: vencord-forge
+finish-args:
+  - --share=network          # downloads Vencord, Node.js, pnpm and OpenAsar
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=home        # ~/.config/Vencord (runtime), ~/.config/discord*, build cache
+  - --filesystem=/opt:ro     # detect Discord installed under /opt
+  - --filesystem=/var/lib/flatpak/app:ro          # detect system-wide Flatpak Discord
+  - --filesystem=~/.local/share/flatpak/app:ro    # detect per-user Flatpak Discord
+  - --filesystem=~/.var/app/com.discordapp.Discord:ro
+  - --filesystem=~/.var/app/com.discordapp.DiscordPTB:ro
+  - --filesystem=~/.var/app/com.discordapp.DiscordCanary:ro
+  - --filesystem=~/.var/app/com.discordapp.DiscordDevelopment:ro
+  # Replacing Discord's system-owned files needs pkexec on the host, and Flatpak Discord needs a
+  # `flatpak override` so it can read the runtime: both go through flatpak-spawn --host.
+  - --talk-name=org.freedesktop.Flatpak
+modules:
+  - name: vencord-forge
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 vencord-forge-linux-x86_64 /app/bin/vencord-forge
+      - install -Dm644 icon.svg /app/share/icons/hicolor/scalable/apps/io.github.DarkPhilosophy.VencordForge.svg
+      - install -Dm644 io.github.DarkPhilosophy.VencordForge.desktop -t /app/share/applications
+      - install -Dm644 io.github.DarkPhilosophy.VencordForge.metainfo.xml -t /app/share/metainfo
+    sources:
+      - type: file
+        path: vencord-forge-linux-x86_64
+      - type: file
+        path: ../../forge/gui/assets/icon.svg
+      - type: file
+        path: io.github.DarkPhilosophy.VencordForge.desktop
+      - type: file
+        path: io.github.DarkPhilosophy.VencordForge.metainfo.xml

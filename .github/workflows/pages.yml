@@ -1,10 +1,14 @@
 name: Publish installer
 
 on:
+  workflow_run:
+    workflows: ["Vencord Forge"]
+    types: [completed]
   push:
     branches: [main]
     paths:
       - i
+      - packaging/flatpak/**
       - site/**
       - forge.json
       - patches/series
@@ -28,6 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/configure-pages@v5
         with:
           enablement: true
@@ -35,6 +42,9 @@ jobs:
           mkdir _site
           cp -r site/. _site/
           cp i _site/i
+          # Self-hosted Flatpak repository (built by the Vencord Forge workflow) + install files.
+          if git fetch -q origin flatpak-repo; then git archive origin/flatpak-repo repo | tar -x -C _site --transform 's,^repo,flatpak,'; fi
+          python3 packaging/flatpak/gen-install-files.py _site/flatpak
           cp forge.json _site/forge.json
           cp patches/series _site/series
           # Link previews (Discord, Telegram, X) need a raster image; render it from the SVG card.

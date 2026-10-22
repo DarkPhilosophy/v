@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.DarkPhilosophy.VencordForge</id>
+  <name>Vencord Forge</name>
+  <summary>Build and install Vencord with your plugins into Discord</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.DarkPhilosophy"><name>DarkPhilosophy</name></developer>
+  <url type="homepage">https://darkphilosophy.github.io/v/</url>
+  <url type="bugtracker">https://github.com/DarkPhilosophy/v/issues</url>
+  <url type="vcs-browser">https://github.com/DarkPhilosophy/v</url>
+  <description>
+    <p>Pick a Discord installation, the custom plugins and patches you want and whether to use OpenAsar; Forge builds Vencord with exactly that and installs it, verifying every step and rolling back on failure.</p>
+    <p>Not affiliated with Discord, Vencord or OpenAsar.</p>
+  </description>
+  <launchable type="desktop-id">io.github.DarkPhilosophy.VencordForge.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-22"/>
+  </releases>
+</component>

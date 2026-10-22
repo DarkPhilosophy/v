@@ -17,6 +17,18 @@ pub fn hide_window(command: &mut Command) {
     let _ = command;
 }
 
+/// A command that runs on the host: directly, or through `flatpak-spawn --host` inside Forge's
+/// Flatpak (pkexec, `flatpak override`, process listing).
+pub fn host_command(program: &str) -> Command {
+    if crate::paths::in_flatpak() {
+        let mut command = Command::new("flatpak-spawn");
+        command.arg("--host").arg(program);
+        command
+    } else {
+        Command::new(program)
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct Cancel(Arc<AtomicBool>);
 

@@ -106,8 +106,8 @@ impl Roots {
         let home = crate::paths::home();
         Self {
             root: if cfg!(windows) { PathBuf::new() } else { PathBuf::from("/") },
-            config_home: std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()).map(PathBuf::from),
-            data_home: std::env::var_os("XDG_DATA_HOME").filter(|v| !v.is_empty()).map(PathBuf::from),
+            config_home: crate::paths::xdg("XDG_CONFIG_HOME"),
+            data_home: crate::paths::xdg("XDG_DATA_HOME"),
             local_app_data: std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
             home,
         }

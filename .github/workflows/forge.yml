@@ -137,6 +137,8 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [build, equivalence]
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.exists.outputs.exists == 'false' || inputs.republish }}
     steps:
       - uses: actions/checkout@v4
       - name: Version
@@ -179,3 +181,55 @@ jobs:
               --title "Vencord Forge $VERSION" --generate-notes \
               --notes "Vencord Forge $VERSION for Linux and Windows. Download one file and run it: vencord-forge-*.AppImage or vencord-forge-linux-x86_64 on Linux (chmod +x first), vencord-forge-windows-x86_64.exe on Windows. vforge-* is the same engine as a command line."
           fi
+
+  flatpak:
+    # Packages the released Linux binary as a Flatpak: a .flatpak bundle on the release, and a
+    # signed repository published at https://darkphilosophy.github.io/v/flatpak/ (branch flatpak-repo).
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: vencord-forge-linux-x86_64
+          path: dist
+      - name: Tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq flatpak flatpak-builder >/dev/null
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build
+        env:
+          GPG_KEY: ${{ secrets.FLATPAK_GPG_KEY }}
+        run: |
+          export GNUPGHOME=$(mktemp -d)
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
+          KEY=$(gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          cp dist/vencord-forge-linux-x86_64 packaging/flatpak/
+          # Start from the published repository so existing users get updates, not a new history.
+          git fetch origin flatpak-repo && git worktree add pub origin/flatpak-repo || { mkdir -p pub; }
+          mkdir -p pub/repo
+          [ -f pub/repo/config ] || ostree init --mode=archive-z2 --repo=pub/repo
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean \
+            --repo=pub/repo --gpg-sign="$KEY" --default-branch=stable build packaging/flatpak/io.github.DarkPhilosophy.VencordForge.yml
+          flatpak build-update-repo --gpg-sign="$KEY" --generate-static-deltas --prune --prune-depth=3 pub/repo
+          flatpak build-bundle --gpg-sign="$KEY" --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            pub/repo dist/vencord-forge.flatpak io.github.DarkPhilosophy.VencordForge stable
+          echo "KEY=$KEY" >> "$GITHUB_ENV"
+      - name: Publish bundle and repository as the owner
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' forge/Cargo.toml | head -n1)
+          gh release upload "forge-v$version" dist/vencord-forge.flatpak --clobber -R "${{ github.repository }}"
+          cd pub
+          git config user.name "DarkPhilosophy"
+          git config user.email "19309990+DarkPhilosophy@users.noreply.github.com"
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then git init -q -b flatpak-repo .; git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}"; fi
+          git add -A repo
+          git commit -qm "flatpak: Vencord Forge $version" || exit 0
+          git push origin HEAD:flatpak-repo
+
