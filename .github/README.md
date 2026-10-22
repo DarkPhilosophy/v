@@ -21,8 +21,6 @@ A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds
 There is no Vencord fork, persistent upstream checkout or committed build output. Vencord Forge (below) is the optional app that does the same as the installer with a window.
 
 <!-- DEMO-START -->
-[![Vencord Forge installing Vencord, click to play the demo](https://darkphilosophy.github.io/v/screenshots/install.png)](https://darkphilosophy.github.io/v/screenshots/demo.webm)
-
 <p align="center"><strong>▶ <a href="https://darkphilosophy.github.io/v/screenshots/demo.webm">Watch the demo</a></strong></p>
 
 <img src="https://darkphilosophy.github.io/v/screenshots/discord.png" width="24%" alt="discord"> <img src="https://darkphilosophy.github.io/v/screenshots/plugins.png" width="24%" alt="plugins"> <img src="https://darkphilosophy.github.io/v/screenshots/themes.png" width="24%" alt="themes"> <img src="https://darkphilosophy.github.io/v/screenshots/about.png" width="24%" alt="about">

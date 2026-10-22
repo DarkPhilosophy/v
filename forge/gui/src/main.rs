@@ -662,9 +662,12 @@ impl App {
     fn source_settings(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.label(RichText::new("SOURCE").small().strong().color(ACCENT));
         wrapped(ui, RichText::new("Build from another GitHub repository or a local folder that contains a forge.json. Leave the default to get the published distribution.").color(MUTED).small());
-        ui.horizontal(|ui| {
-            let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(ui.available_width() - 90.0));
-            let reset = ui.button("Default").clicked();
+        // Button first, from the right, at its natural size; the field takes the rest. The page
+        // wraps text, which squeezed the button into two lines when it came last.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            let reset = ui.add(egui::Button::new("Default").min_size(egui::vec2(90.0, 30.0))).clicked();
+            let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(ui.available_width()).min_size(egui::vec2(0.0, 30.0)).vertical_align(egui::Align::Center));
             if reset {
                 self.source_text = forge_core::manifest::DEFAULT_SOURCE.to_owned();
             }

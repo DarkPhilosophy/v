@@ -168,7 +168,7 @@ jobs:
           EXISTS: ${{ steps.exists.outputs.exists }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASE_TOKEN secret is not set; refusing to publish as a bot"; exit 1; fi
-          cp ../LICENSE ../.github/THIRD_PARTY_NOTICES.md dist/ && cd dist && chmod +x vencord-forge-* && sha256sum vencord-forge-* > SHA256SUMS
+          cp LICENSE .github/THIRD_PARTY_NOTICES.md dist/ && cd dist && chmod +x vencord-forge-* && sha256sum vencord-forge-* > SHA256SUMS
           assets=$(ls vencord-forge-* SHA256SUMS LICENSE THIRD_PARTY_NOTICES.md)
           if [ "$EXISTS" = true ]; then
             # Same version rebuilt: point the tag at this commit, replace every asset.
