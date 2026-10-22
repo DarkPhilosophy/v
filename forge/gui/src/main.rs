@@ -14,10 +14,11 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 const ACCENT: Color32 = Color32::from_rgb(0xeb, 0x6f, 0x92);
-const BG: Color32 = Color32::from_rgb(0x0f, 0x10, 0x14);
-const PANEL: Color32 = Color32::from_rgb(0x17, 0x18, 0x1e);
-const CARD: Color32 = Color32::from_rgb(0x1e, 0x1f, 0x28);
-const LINE: Color32 = Color32::from_rgb(0x2a, 0x2c, 0x38);
+// Pure black (OLED); depth comes from hairlines and slightly lifted cards.
+const BG: Color32 = Color32::BLACK;
+const PANEL: Color32 = Color32::BLACK;
+const CARD: Color32 = Color32::from_rgb(0x0c, 0x0c, 0x10);
+const LINE: Color32 = Color32::from_rgb(0x1f, 0x1f, 0x27);
 const MUTED: Color32 = Color32::from_rgb(0x9a, 0x9c, 0xad);
 const OK: Color32 = Color32::from_rgb(0x2d, 0xd4, 0xa3);
 const BAD: Color32 = Color32::from_rgb(0xff, 0x6b, 0x6b);
@@ -29,6 +30,7 @@ enum Page {
     Patches,
     OpenAsar,
     Install,
+    About,
 }
 
 impl Page {
@@ -40,15 +42,7 @@ impl Page {
             Page::Patches => "Patches",
             Page::OpenAsar => "OpenAsar",
             Page::Install => "Install",
-        }
-    }
-    fn icon(self) -> &'static str {
-        match self {
-            Page::Discord => "1",
-            Page::Plugins => "2",
-            Page::Patches => "3",
-            Page::OpenAsar => "4",
-            Page::Install => "5",
+            Page::About => "About",
         }
     }
 }
@@ -85,6 +79,7 @@ struct App {
     log: Vec<String>,
     result: Option<Result<String, String>>,
     show_log: bool,
+    logo: Option<egui::TextureHandle>,
     /// FORGE_SCREENSHOT_DIR: render every page, save PNGs, exit (visual checks without screen capture).
     shots: Option<(PathBuf, usize, u32)>,
 }
@@ -125,6 +120,7 @@ impl App {
             log: Vec::new(),
             result: None,
             show_log: false,
+            logo: icon().map(|i| cc.egui_ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied([i.width as usize, i.height as usize], &i.rgba), egui::TextureOptions::LINEAR)),
             shots: std::env::var_os("FORGE_SCREENSHOT_DIR").map(|d| (PathBuf::from(d), 0, 0)),
         };
         app.load_distribution(&cc.egui_ctx);
@@ -519,30 +515,139 @@ impl App {
     }
 }
 
+// Window buttons in the colours of the Vencord theme in use (yellow, green, pink).
+const BTN_MIN: Color32 = Color32::from_rgb(0xf9, 0xe2, 0xaf);
+const BTN_MAX: Color32 = Color32::from_rgb(0xa6, 0xe3, 0xa1);
+const BTN_CLOSE: Color32 = Color32::from_rgb(0xf3, 0x8b, 0xa8);
+
+/// One round window button; shows its symbol while hovered.
+fn window_button(ui: &mut egui::Ui, color: Color32, symbol: u8) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+    let c = rect.center();
+    let hover = ui.ctx().animate_bool_responsive(response.id, response.hovered());
+    ui.painter().circle_filled(c, 7.5 + hover * 1.0, color);
+    if hover > 0.05 {
+        let ink = Stroke::new(1.6_f32, Color32::from_black_alpha((170.0 * hover) as u8));
+        let d = 3.2;
+        match symbol {
+            0 => {
+                ui.painter().line_segment([c - egui::vec2(d, 0.0), c + egui::vec2(d, 0.0)], ink);
+            }
+            1 => {
+                ui.painter().line_segment([c - egui::vec2(d, 0.0), c + egui::vec2(d, 0.0)], ink);
+                ui.painter().line_segment([c - egui::vec2(0.0, d), c + egui::vec2(0.0, d)], ink);
+            }
+            _ => {
+                ui.painter().line_segment([c - egui::vec2(d, d), c + egui::vec2(d, d)], ink);
+                ui.painter().line_segment([c + egui::vec2(-d, d), c + egui::vec2(d, -d)], ink);
+            }
+        }
+    }
+    response
+}
+
+impl App {
+    /// Our own title bar (the window has no system decorations): drag to move, double-click to
+    /// maximize, theme-coloured minimize / maximize / close.
+    fn title_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("titlebar").exact_height(40.0).frame(egui::Frame::new().fill(BG).stroke(Stroke::new(1.0_f32, LINE)).inner_margin(egui::Margin::symmetric(14, 0))).show(ctx, |ui| {
+            let bar = ui.max_rect();
+            let drag = ui.interact(bar, egui::Id::new("titlebar-drag"), egui::Sense::click_and_drag());
+            if drag.double_clicked() {
+                let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+            } else if drag.drag_started_by(egui::PointerButton::Primary) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            ui.horizontal_centered(|ui| {
+                ui.label(RichText::new("Vencord Forge").strong().color(MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if window_button(ui, BTN_CLOSE, 2).on_hover_text("Close").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    if window_button(ui, BTN_MAX, 1).on_hover_text("Maximize").clicked() {
+                        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                    }
+                    if window_button(ui, BTN_MIN, 0).on_hover_text("Minimize").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
+                });
+            });
+        });
+    }
+
+    /// Without decorations the compositor gives no resize borders: start a resize from the edges.
+    fn resize_edges(&self, ctx: &egui::Context) {
+        use egui::viewport::ResizeDirection as D;
+        let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+            return;
+        }
+        let rect = ctx.content_rect();
+        let m = 6.0;
+        let (l, r, t, b) = (pos.x < rect.left() + m, pos.x > rect.right() - m, pos.y < rect.top() + m, pos.y > rect.bottom() - m);
+        let dir = match (l, r, t, b) {
+            (true, _, true, _) => Some(D::NorthWest),
+            (_, true, true, _) => Some(D::NorthEast),
+            (true, _, _, true) => Some(D::SouthWest),
+            (_, true, _, true) => Some(D::SouthEast),
+            (true, ..) => Some(D::West),
+            (_, true, ..) => Some(D::East),
+            (_, _, true, _) => Some(D::North),
+            (.., true) => Some(D::South),
+            _ => None,
+        };
+        let Some(dir) = dir else { return };
+        ctx.set_cursor_icon(match dir {
+            D::North | D::South => egui::CursorIcon::ResizeVertical,
+            D::East | D::West => egui::CursorIcon::ResizeHorizontal,
+            D::NorthWest | D::SouthEast => egui::CursorIcon::ResizeNwSe,
+            _ => egui::CursorIcon::ResizeNeSw,
+        });
+        if ctx.input(|i| i.pointer.primary_pressed()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
+        }
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
         self.screenshots(ctx);
-        egui::SidePanel::left("nav").exact_width(220.0).frame(egui::Frame::new().fill(PANEL).inner_margin(egui::Margin::same(16))).show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.label(RichText::new("Vencord Forge").size(20.0).strong());
-            ui.label(RichText::new(self.dist.as_ref().map(|d| d.manifest.name.clone()).unwrap_or_else(|| "loading…".into())).color(MUTED).small());
-            ui.add_space(16.0);
-            for page in Page::ALL {
-                let selected = self.page == page;
-                let text = RichText::new(format!("{}   {}", page.icon(), page.title())).size(16.0).color(if selected { Color32::WHITE } else { MUTED });
-                let button = egui::Button::new(text).fill(if selected { Color32::from_rgb(0x2a, 0x1d, 0x25) } else { Color32::TRANSPARENT }).stroke(Stroke::new(1.0_f32, if selected { ACCENT } else { Color32::TRANSPARENT })).min_size(egui::vec2(188.0, 38.0));
-                if ui.add(button).clicked() {
+        self.title_bar(ctx);
+        self.resize_edges(ctx);
+        egui::SidePanel::left("nav").exact_width(236.0).resizable(false).frame(egui::Frame::new().fill(PANEL).stroke(Stroke::new(1.0_f32, LINE)).inner_margin(egui::Margin::same(16))).show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(logo) = &self.logo {
+                    ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(40.0, 40.0)));
+                }
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(RichText::new("Vencord Forge").size(18.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new(self.dist.as_ref().map(|d| d.manifest.name.clone()).unwrap_or_else(|| "loading…".into())).color(MUTED).small());
+                });
+            });
+            ui.add_space(22.0);
+            ui.label(RichText::new("SETUP").small().color(MUTED).strong());
+            let current = Page::ALL.iter().position(|p| *p == self.page);
+            for (i, page) in Page::ALL.into_iter().enumerate() {
+                if nav_item(ui, page.title(), Some((i + 1, current.is_some_and(|c| i < c))), self.page == page).clicked() {
                     self.page = page;
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                ui.add_space(4.0);
-                let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(188.0).font(egui::TextStyle::Small));
+                ui.label(RichText::new(concat!("v", env!("CARGO_PKG_VERSION"), " · GPL-3.0-or-later")).color(MUTED).small());
+                if nav_item(ui, "About", None, self.page == Page::About).clicked() {
+                    self.page = Page::About;
+                }
+                ui.add_space(6.0);
+                let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(204.0).font(egui::TextStyle::Small));
                 if edit.lost_focus() && self.job == Job::Idle {
                     self.load_distribution(ctx);
                 }
-                ui.label(RichText::new("Source (GitHub URL or folder)").color(MUTED).small());
+                ui.label(RichText::new("SOURCE").small().color(MUTED).strong());
             });
         });
         egui::CentralPanel::default().frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::symmetric(28, 18))).show(ctx, |ui| {
@@ -567,9 +672,10 @@ impl eframe::App for App {
                     Page::Patches => self.page_patches(ui),
                     Page::OpenAsar => self.page_openasar(ui),
                     Page::Install => self.page_install(ui, ctx),
+                    Page::About => self.page_about(ui),
                 }
                 ui.add_space(12.0);
-                let index = Page::ALL.iter().position(|p| *p == self.page).unwrap();
+                let Some(index) = Page::ALL.iter().position(|p| *p == self.page) else { return };
                 ui.horizontal(|ui| {
                     if index > 0 && ui.button("Back").clicked() {
                         self.page = Page::ALL[index - 1];
@@ -583,7 +689,120 @@ impl eframe::App for App {
     }
 }
 
+/// Sidebar entry: numbered (done steps get a check) or plain.
+fn nav_item(ui: &mut egui::Ui, title: &str, step: Option<(usize, bool)>, selected: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+    let hover = ui.ctx().animate_bool_responsive(response.id, response.hovered() || selected);
+    let fill = if selected { Color32::from_rgb(0x1d, 0x0c, 0x13) } else { Color32::from_white_alpha((8.0 * hover) as u8) };
+    ui.painter().rect(rect, CornerRadius::same(10), fill, Stroke::new(1.0_f32, if selected { ACCENT.gamma_multiply(0.7) } else { Color32::TRANSPARENT }), egui::StrokeKind::Inside);
+    let mut x = rect.left() + 12.0;
+    if let Some((n, done)) = step {
+        let c = egui::pos2(x + 11.0, rect.center().y);
+        if selected {
+            ui.painter().circle_filled(c, 11.0, ACCENT);
+        } else {
+            ui.painter().circle_stroke(c, 10.0, Stroke::new(1.5_f32, if done { OK } else { LINE.gamma_multiply(2.0) }));
+        }
+        if done && !selected {
+            let pts = [c + egui::vec2(-4.5, 0.5), c + egui::vec2(-1.2, 3.8), c + egui::vec2(4.8, -3.6)];
+            ui.painter().line_segment([pts[0], pts[1]], Stroke::new(2.0_f32, OK));
+            ui.painter().line_segment([pts[1], pts[2]], Stroke::new(2.0_f32, OK));
+        } else {
+            ui.painter().text(c, egui::Align2::CENTER_CENTER, n.to_string(), egui::FontId::proportional(12.0), if selected { Color32::BLACK } else { MUTED });
+        }
+        x += 32.0;
+    }
+    ui.painter().text(egui::pos2(x, rect.center().y), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(15.0), if selected { Color32::WHITE } else { MUTED.lerp_to_gamma(Color32::WHITE, hover * 0.5) });
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn open_url(url: &str) {
+    let program = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let _ = std::process::Command::new(program).arg(url).spawn();
+}
+
+const CREDITS: &[(&str, &[(&str, &str, &str)])] = &[
+    ("BUILT ON", &[
+        ("Vencord", "The Discord client mod this distribution builds on.", "https://github.com/Vendicated/Vencord"),
+        ("OpenAsar", "Faster, leaner replacement for Discord's startup code.", "https://github.com/GooseMod/OpenAsar"),
+        ("Node.js · pnpm", "Build Vencord; downloaded on demand when missing.", "https://nodejs.org"),
+    ]),
+    ("INTERFACE", &[
+        ("egui · eframe", "This window: immediate-mode UI in Rust.", "https://github.com/emilk/egui"),
+        ("winit · glow", "Native windows on Wayland, X11 and Windows, drawn with OpenGL.", "https://github.com/rust-windowing/winit"),
+        ("AccessKit", "Screen-reader access to the interface.", "https://accesskit.dev"),
+    ]),
+    ("ENGINE", &[
+        ("Rust", "Everything Forge does, in one native program.", "https://www.rust-lang.org"),
+        ("ureq · rustls", "Downloads over HTTPS, no system TLS needed.", "https://github.com/algesten/ureq"),
+        ("Serde", "Reads forge.json, profiles and ASAR headers.", "https://serde.rs"),
+        ("flate2 · tar · zip", "Unpacks Vencord sources and Node.js.", "https://github.com/rust-lang/flate2-rs"),
+        ("RustCrypto sha2", "Checksums for downloads and ASAR integrity.", "https://github.com/RustCrypto/hashes"),
+    ]),
+    ("INSPIRATION", &[
+        ("veskforge", "A custom Vencord build manager for Vesktop.", "https://github.com/Microck/veskforge"),
+    ]),
+];
+
 impl App {
+    fn page_about(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(6.0);
+        card(ui, false, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(logo) = &self.logo {
+                    ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(88.0, 88.0)));
+                }
+                ui.add_space(8.0);
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.label(RichText::new("vencord").size(30.0).strong().color(Color32::WHITE));
+                        ui.label(RichText::new("custom").size(30.0).color(Color32::from_rgb(0xf5, 0xc2, 0x11)));
+                    });
+                    wrapped(ui, RichText::new("Vencord, redistributed and improved: pick your plugins, patches and OpenAsar, and Forge builds and installs exactly that.").color(MUTED));
+                    ui.label(RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION"), " · GPL-3.0-or-later")).color(MUTED).small());
+                });
+            });
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                for (label, url) in [
+                    ("Source", "https://github.com/DarkPhilosophy/v"),
+                    ("Issues", "https://github.com/DarkPhilosophy/v/issues"),
+                    ("Website", "https://darkphilosophy.github.io/v/"),
+                    ("Brand", "https://darkphilosophy.github.io/v/brand/"),
+                    ("License", "https://www.gnu.org/licenses/gpl-3.0.html"),
+                ] {
+                    if ui.button(label).clicked() {
+                        open_url(url);
+                    }
+                }
+            });
+        });
+        ui.add_space(4.0);
+        egui::Frame::new().fill(Color32::from_rgb(0x1a, 0x14, 0x02)).stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x5c, 0x48, 0x08))).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(14)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            wrapped(ui, RichText::new("Not affiliated with Discord, Vencord or OpenAsar. Client modifications are against Discord's Terms of Service; use them at your own risk. Forge comes with no warranty: it backs up and verifies everything it changes, and \"Restore stock Discord\" undoes it.").color(Color32::from_rgb(0xf5, 0xe1, 0xa0)));
+        });
+        ui.add_space(6.0);
+        wrapped(ui, RichText::new("Forge stands on these projects. Click one to visit it.").color(MUTED));
+        for (section, credits) in CREDITS {
+            ui.add_space(8.0);
+            ui.label(RichText::new(*section).small().strong().color(ACCENT));
+            for (name, role, url) in *credits {
+                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 34.0), egui::Sense::click());
+                if response.hovered() {
+                    ui.painter().rect_filled(rect, CornerRadius::same(8), CARD);
+                }
+                ui.painter().text(rect.left_center() + egui::vec2(10.0, 0.0), egui::Align2::LEFT_CENTER, *name, egui::FontId::proportional(14.5), Color32::WHITE);
+                ui.painter().text(rect.left_center() + egui::vec2(170.0, 0.0), egui::Align2::LEFT_CENTER, *role, egui::FontId::proportional(13.5), MUTED);
+                ui.painter().text(rect.right_center() - egui::vec2(10.0, 0.0), egui::Align2::RIGHT_CENTER, "↗", egui::FontId::proportional(14.0), if response.hovered() { ACCENT } else { MUTED });
+                if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    open_url(url);
+                }
+            }
+        }
+    }
+
     fn screenshots(&mut self, ctx: &egui::Context) {
         let Some((dir, page, frames)) = self.shots.as_mut() else { return };
         let saved = ctx.input(|i| i.raw.events.iter().find_map(|e| match e {
@@ -591,7 +810,7 @@ impl App {
             _ => None,
         }));
         if let Some(image) = saved {
-            let path = dir.join(format!("{}-{}.png", *page, Page::ALL[*page].title().to_lowercase()));
+            let path = dir.join(format!("{}-{}.png", *page, SHOT_PAGES[*page].title().to_lowercase()));
             let file = std::fs::File::create(&path).expect("screenshot file");
             let mut encoder = png::Encoder::new(file, image.size[0] as u32, image.size[1] as u32);
             encoder.set_color(png::ColorType::Rgba);
@@ -599,13 +818,13 @@ impl App {
             encoder.write_header().unwrap().write_image_data(image.as_raw()).unwrap();
             *page += 1;
             *frames = 0;
-            if *page >= Page::ALL.len() {
+            if *page >= SHOT_PAGES.len() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
             }
         }
-        self.page = Page::ALL[(*page).min(Page::ALL.len() - 1)];
-        if *page == Page::ALL.len() - 1 {
+        self.page = SHOT_PAGES[(*page).min(SHOT_PAGES.len() - 1)];
+        if SHOT_PAGES[(*page).min(SHOT_PAGES.len() - 1)] == Page::Install {
             self.show_log = true;
         }
         *frames += 1;
@@ -619,11 +838,15 @@ impl App {
     }
 }
 
+const SHOT_PAGES: [Page; 6] = [Page::Discord, Page::Plugins, Page::Patches, Page::OpenAsar, Page::Install, Page::About];
+
 const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 const ICON_SVG: &[u8] = include_bytes!("../assets/icon.svg");
 
 fn icon() -> Option<egui::IconData> {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(ICON_PNG)).read_info().ok()?;
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(ICON_PNG));
+    decoder.set_transformations(png::Transformations::normalize_to_color8() | png::Transformations::ALPHA);
+    let mut reader = decoder.read_info().ok()?;
     let mut buf = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buf).ok()?;
     buf.truncate(info.buffer_size());
@@ -654,7 +877,7 @@ fn register_launcher() {
 
 fn main() -> eframe::Result<()> {
     register_launcher();
-    let mut viewport = egui::ViewportBuilder::default().with_title("Vencord Forge").with_app_id("vencord-forge");
+    let mut viewport = egui::ViewportBuilder::default().with_title("Vencord Forge").with_app_id("vencord-forge").with_decorations(false).with_resizable(true);
     if let Some(icon) = icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -665,4 +888,13 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native("Vencord Forge", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn embedded_icon_decodes_to_rgba8() {
+        let icon = super::icon().expect("icon decodes");
+        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
+    }
 }
