@@ -13,5 +13,6 @@ pub mod paths;
 pub mod pipeline;
 pub mod process;
 pub mod profile;
+pub mod themes;
 pub mod toolchain;
 pub mod userplugins;

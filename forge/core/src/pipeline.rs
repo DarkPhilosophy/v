@@ -289,8 +289,34 @@ pub fn apply_bootstrap(resources: &Path, loader: &Path, runtime: &Path, action: 
     res.verify_chain(runtime, None)
 }
 
+pub struct InstallReport {
+    pub bootstrap: BootstrapKind,
+    /// None when no theme was selected.
+    pub themes: Option<crate::themes::Applied>,
+}
+
+/// Put the selected themes in place for this Discord (on the host when sandboxed).
+fn install_themes(dist: &Distribution, profile: &Profile, target: &Install, work: &Path, sink: Sink) -> Result<Option<crate::themes::Applied>> {
+    let selected: Vec<(String, crate::themes::Theme)> = profile.themes.iter().filter_map(|id| dist.manifest.themes.get(id).map(|t| (id.clone(), t.clone()))).collect();
+    if selected.is_empty() {
+        return Ok(None);
+    }
+    sink(Event::Step("Installing themes".into()));
+    let plan = crate::themes::plan(&dist.root, &selected)?;
+    let vencord = crate::themes::vencord_dir(target);
+    let enable = !discord_running();
+    if !paths::in_flatpak() {
+        return crate::themes::apply(&vencord, &plan, enable).map(Some);
+    }
+    let plan_path = work.join("themes.json");
+    fs::write(&plan_path, serde_json::to_vec(&plan)?)?;
+    let output = crate::process::host_cli(&cli_path()?).arg("apply-themes").arg(&vencord).arg(&plan_path).arg(if enable { "enable" } else { "files" }).output()?;
+    ensure!(output.status.success(), "themes: {}", String::from_utf8_lossy(&output.stderr).trim());
+    Ok(Some(if enable { crate::themes::Applied::Enabled } else { crate::themes::Applied::FilesOnly }))
+}
+
 /// Install a built runtime into one Discord installation.
-pub fn install(dist: &Distribution, built: &Built, target: &Install, action: OpenAsarAction, profile: &Profile, sink: Sink) -> Result<BootstrapKind> {
+pub fn install(dist: &Distribution, built: &Built, target: &Install, action: OpenAsarAction, profile: &Profile, sink: Sink) -> Result<InstallReport> {
     sink(Event::Step(format!("Installing into {}", target.title())));
     sink(Event::Progress(0.9));
     let runtime_dir = paths::runtime_dir();
@@ -348,8 +374,9 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
         command.args(["override", "--user", &format!("--filesystem={}", runtime_dir.display()), id]);
         let _ = command.status();
     }
+    let themes = install_themes(dist, &profile, target, &built.work, sink)?;
     sink(Event::Progress(1.0));
-    Ok(kind)
+    Ok(InstallReport { bootstrap: kind, themes })
 }
 
 fn privileged_bootstrap(resources: &Path, loader: &Path, runtime: &Path, action: OpenAsarAction, candidate: Option<&Path>, sink: Sink) -> Result<BootstrapKind> {

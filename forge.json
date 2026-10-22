@@ -17,7 +17,9 @@
         "patches": "patches",
         "series": "patches/series",
         "userplugins": "core/src/userplugins",
-        "shared": ["_shared"]
+        "shared": [
+            "_shared"
+        ]
     },
     "build": {
         "embeddedSeeds": "src/main/userPluginManager/embeddedSeeds.generated.ts",
@@ -28,7 +30,9 @@
         "perfMonitor": {
             "title": "PerfMonitor",
             "description": "Warns when Discord stalls and shows whether plugins, themes or Discord caused it.",
-            "recommends": ["perf-attribution.patch"]
+            "recommends": [
+                "perf-attribution.patch"
+            ]
         },
         "platformSpoofer": {
             "title": "PlatformSpoofer",
@@ -97,5 +101,15 @@
                 "to": "--enable-features=${process.platform===\"linux\"?\"\":\"EnableDrDc,\"}CanvasOopRasterization"
             }
         ]
+    },
+    "themes": {
+        "crearts": {
+            "title": "CreArts v3 (repatched)",
+            "description": "CreArts v3 fixed for current Discord. The original theme is archived upstream.",
+            "author": "Daniel Klingel / CreArts-Community; fixes by DarkPhilosophy",
+            "license": "MIT",
+            "file": "themes/crearts-repatched.css",
+            "homepage": "https://github.com/CreArts-Community/CreArts-Discord"
+        }
     }
 }

@@ -36,12 +36,16 @@
       <image>https://darkphilosophy.github.io/v/screenshots/openasar.png</image>
     </screenshot>
     <screenshot>
+      <caption>Add bundled themes</caption>
+      <image>https://darkphilosophy.github.io/v/screenshots/themes.png</image>
+    </screenshot>
+    <screenshot>
       <caption>About and credits</caption>
       <image>https://darkphilosophy.github.io/v/screenshots/about.png</image>
     </screenshot>
     <screenshot>
       <caption>Application full guide</caption>
-      <video container="webm" codec="vp9" width="1600" height="1088">https://darkphilosophy.github.io/v/screenshots/demo.webm</video>
+      <video container="webm" codec="vp9" width="1600" height="1092">https://darkphilosophy.github.io/v/screenshots/demo.webm</video>
     </screenshot>
   </screenshots>
   <branding>
@@ -66,6 +70,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.1" date="2026-10-22">
+      <description>
+        <p>Themes step with the repatched CreArts v3, a clearer install page with hold-to-install and a full-height build log, and smaller, faster binaries.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-22">
       <description>
         <p>First release.</p>

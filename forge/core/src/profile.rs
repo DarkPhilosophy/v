@@ -25,6 +25,9 @@ pub struct Profile {
     pub exclude_plugins: BTreeSet<String>,
     #[serde(default)]
     pub exclude_patches: BTreeSet<String>,
+    /// Themes to install (opt-in, unlike plugins and patches).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub themes: BTreeSet<String>,
 }
 
 fn one() -> u32 {
@@ -52,6 +55,7 @@ impl Profile {
     pub fn sanitize(&mut self, manifest: &Manifest) {
         self.exclude_patches.retain(|p| !manifest.patches.get(p).is_some_and(|i| i.required));
         self.exclude_plugins.retain(|p| !manifest.overlay.shared.contains(p) && !p.contains(['/', '\\']) && !p.starts_with('.'));
+        self.themes.retain(|t| manifest.themes.contains_key(t));
     }
 
     pub fn patch_enabled(&self, name: &str) -> bool {

@@ -225,7 +225,8 @@ pub fn discover(roots: &Roots) -> Vec<Install> {
     // runs; a copy under its config dir (`app-*`) is a leftover of Discord's own updater.
     let packaged: Vec<String> = list.iter().filter(|i| i.kind == InstallKind::Flatpak && i.resources.ends_with("files/discord/resources")).filter_map(|i| i.flatpak_id.clone()).collect();
     list.retain(|i| i.kind != InstallKind::Flatpak || i.resources.ends_with("files/discord/resources") || !i.flatpak_id.as_ref().is_some_and(|id| packaged.contains(id)));
-    list.sort_by(|a, b| (a.channel, a.resources.clone()).cmp(&(b.channel, b.resources.clone())));
+    // Compare in place: cloning the paths for every comparison allocates on each step of the sort.
+    list.sort_by(|a, b| a.channel.cmp(&b.channel).then_with(|| a.resources.cmp(&b.resources)));
     list
 }
 

@@ -3,7 +3,7 @@ resolver = "3"
 members = ["core", "cli", "gui"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
 rust-version = "1.88"
@@ -15,6 +15,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [profile.release]
-lto = "thin"
+# Measured: fat LTO is smaller and no slower than thin. Panics unwind so a failing install
+# thread is reported in the window instead of closing it.
+lto = "fat"
 codegen-units = 1
 strip = true

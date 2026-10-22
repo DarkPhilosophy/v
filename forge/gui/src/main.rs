@@ -29,18 +29,20 @@ enum Page {
     Plugins,
     Patches,
     OpenAsar,
+    Themes,
     Install,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 5] = [Page::Discord, Page::Plugins, Page::Patches, Page::OpenAsar, Page::Install];
+    const ALL: [Page; 6] = [Page::Discord, Page::Plugins, Page::Patches, Page::OpenAsar, Page::Themes, Page::Install];
     fn title(self) -> &'static str {
         match self {
             Page::Discord => "Discord",
             Page::Plugins => "Plugins",
             Page::Patches => "Patches",
             Page::OpenAsar => "OpenAsar",
+            Page::Themes => "Themes",
             Page::Install => "Install",
             Page::About => "About",
         }
@@ -48,7 +50,8 @@ impl Page {
 }
 
 enum Msg {
-    Distribution(Result<Distribution, String>),
+    // Boxed: a distribution is ~640 bytes, every other message is small.
+    Distribution(Box<Result<Distribution, String>>),
     Event(Event),
     Done(Result<String, String>),
 }
@@ -79,8 +82,15 @@ struct App {
     log: Vec<String>,
     result: Option<Result<String, String>>,
     show_log: bool,
+    /// Details was just opened: scroll the progress bar to the top of the page once.
+    scroll_to_status: u8,
     logo: Option<egui::TextureHandle>,
+    /// Last answer of `pipeline::discord_running` and when it was asked (the check scans every
+    /// process, or runs a host command inside Flatpak, so it must not run on every frame).
+    discord_running: std::cell::Cell<Option<(std::time::Instant, bool)>>,
     last_step: Page,
+    /// The last install in this session succeeded: step 5 shows as done.
+    installed: bool,
     /// FORGE_SCREENSHOT_DIR: render every page, save PNGs, exit (visual checks without screen capture).
     shots: Option<(PathBuf, usize, u32)>,
 }
@@ -117,7 +127,10 @@ impl App {
             log: Vec::new(),
             result: None,
             show_log: false,
+            discord_running: std::cell::Cell::new(None),
+            scroll_to_status: 0,
             last_step: Page::Discord,
+            installed: false,
             logo: icon().map(|i| cc.egui_ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied([i.width as usize, i.height as usize], &i.rgba), egui::TextureOptions::LINEAR)),
             shots: std::env::var_os("FORGE_SCREENSHOT_DIR").map(|d| (PathBuf::from(d), 0, 0)),
         };
@@ -135,8 +148,10 @@ impl App {
         self.dist_error = None;
         let (tx, source, ctx) = (self.tx.clone(), self.source(), ctx.clone());
         std::thread::spawn(move || {
-            let result = pipeline::fetch_distribution(&source, &mut |_| {}).map_err(|e| format!("{e:#}"));
-            let _ = tx.send(Msg::Distribution(result));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pipeline::fetch_distribution(&source, &mut |_| {})))
+                .map_err(|_| "internal error while loading the distribution".to_owned())
+                .and_then(|r| r.map_err(|e| format!("{e:#}")));
+            let _ = tx.send(Msg::Distribution(Box::new(result)));
             ctx.request_repaint();
         });
     }
@@ -162,16 +177,24 @@ impl App {
                 let _ = tx.send(Msg::Event(event));
                 ctx.request_repaint();
             };
-            let result = (|| -> anyhow::Result<String> {
+            let work = std::panic::AssertUnwindSafe(|| -> anyhow::Result<String> {
                 if uninstall {
                     pipeline::uninstall(&target, &mut sink)?;
                     return Ok(format!("{} is back to stock. Restart Discord.", target.title()));
                 }
                 let built = pipeline::build(&dist, &profile, &cancel, &mut sink)?;
-                let kind = pipeline::install(&dist, &built, &target, action, &profile, &mut sink)?;
-                Ok(format!("Installed into {} with {} bootstrap. Restart Discord.", target.title(), if kind == BootstrapKind::Openasar { "OpenAsar" } else { "the original" }))
-            })()
-            .map_err(|e| format!("{e:#}"));
+                let report = pipeline::install(&dist, &built, &target, action, &profile, &mut sink)?;
+                let themes = match report.themes {
+                    Some(forge_core::themes::Applied::Enabled) => " Themes are switched on.",
+                    Some(forge_core::themes::Applied::FilesOnly) => " Themes are in place: Discord was running, so switch them on in Vencord > Themes.",
+                    None => "",
+                };
+                Ok(format!("Installed into {} with {} bootstrap. Restart Discord.{themes}", target.title(), if report.bootstrap == BootstrapKind::Openasar { "OpenAsar" } else { "the original" }))
+            });
+            let result = match std::panic::catch_unwind(work) {
+                Ok(result) => result.map_err(|e| format!("{e:#}")),
+                Err(panic) => Err(format!("internal error: {}", panic.downcast_ref::<&str>().copied().or_else(|| panic.downcast_ref::<String>().map(String::as_str)).unwrap_or("unknown"))),
+            };
             let _ = tx.send(Msg::Done(result));
             ctx.request_repaint();
         });
@@ -182,7 +205,7 @@ impl App {
             match msg {
                 Msg::Distribution(result) => {
                     self.job = Job::Idle;
-                    match result {
+                    match *result {
                         Ok(dist) => {
                             self.profile.sanitize(&dist.manifest);
                             self.dist = Some(dist);
@@ -203,6 +226,7 @@ impl App {
                 Msg::Event(Event::Progress(p)) => self.progress = p,
                 Msg::Done(result) => {
                     self.job = Job::Idle;
+                    self.installed = result.as_ref().is_ok_and(|text| text.starts_with("Installed"));
                     if result.is_ok() {
                         self.progress = 1.0;
                     }
@@ -247,13 +271,18 @@ fn card(ui: &mut egui::Ui, selected: bool, add: impl FnOnce(&mut egui::Ui)) -> e
         .stroke(Stroke::new(if selected { 1.5_f32 } else { 1.0 }, if selected { ACCENT } else { LINE }))
         .corner_radius(CornerRadius::same(12))
         .inner_margin(egui::Margin::same(14));
-    let response = frame
+    frame
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
         })
-        .response;
-    response.interact(egui::Sense::click())
+        .response
+}
+
+/// A card chosen as a whole (radio-style): the entire card is the click target. Only for cards
+/// without controls inside, which would otherwise lose their clicks to the card.
+fn select_card(ui: &mut egui::Ui, selected: bool, add: impl FnOnce(&mut egui::Ui)) -> egui::Response {
+    card(ui, selected, add).interact(egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Radio dot drawn with shapes (font independent).
@@ -306,7 +335,7 @@ impl App {
         let mut pick = None;
         for (i, install) in self.installs.iter().enumerate() {
             let selected = self.target == Some(i);
-            let response = card(ui, selected, |ui| {
+            let response = select_card(ui, selected, |ui| {
                 ui.horizontal_top(|ui| {
                     radio(ui, selected);
                     ui.vertical(|ui| {
@@ -425,6 +454,42 @@ impl App {
         });
     }
 
+    fn page_themes(&mut self, ui: &mut egui::Ui) {
+        heading(ui, "Themes", "Optional. Picked themes are added to Vencord with this install; you can still turn them off in Vencord > Themes.");
+        let Some(dist) = &self.dist else { return };
+        let themes: Vec<(String, forge_core::themes::Theme)> = dist.manifest.themes.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        if themes.is_empty() {
+            ui.label(RichText::new("This distribution has no themes.").color(MUTED));
+            return;
+        }
+        for (id, theme) in themes {
+            let mut on = self.profile.themes.contains(&id);
+            card(ui, false, |ui| {
+                ui.horizontal(|ui| {
+                    let text_width = (ui.available_width() - 60.0).max(120.0);
+                    ui.allocate_ui_with_layout(egui::vec2(text_width, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.set_width(text_width);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&theme.title).strong().size(16.0));
+                            ui.label(RichText::new(if theme.url.is_some() { "online" } else { "bundled" }).color(MUTED).small());
+                        });
+                        wrapped(ui, RichText::new(&theme.description).color(MUTED));
+                        let credit = format!("by {} · {}", theme.author, theme.license);
+                        if theme.homepage.is_empty() {
+                            ui.label(RichText::new(credit).color(MUTED).small());
+                        } else if ui.add(egui::Label::new(RichText::new(format!("{credit} ↗")).color(MUTED).small()).sense(egui::Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            open_url(&theme.homepage);
+                        }
+                    });
+                    ui.add_space(ui.available_width() - 44.0);
+                    if switch(ui, &mut on, true).changed() {
+                        if on { self.profile.themes.insert(id.clone()); } else { self.profile.themes.remove(&id); }
+                    }
+                });
+            });
+        }
+    }
+
     fn page_openasar(&mut self, ui: &mut egui::Ui) {
         heading(ui, "OpenAsar", "A faster, leaner replacement for Discord's own startup code. Your original is backed up.");
         let current = self.target.and_then(|t| self.installs.get(t)).and_then(|i| i.modded);
@@ -435,7 +500,7 @@ impl App {
         ];
         for (action, title, text) in options {
             let selected = self.openasar == action;
-            if card(ui, selected, |ui| {
+            if select_card(ui, selected, |ui| {
                 ui.horizontal_top(|ui| {
                     radio(ui, selected);
                     ui.vertical(|ui| {
@@ -452,82 +517,162 @@ impl App {
     }
 
     fn page_install(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        heading(ui, "Install", "Builds Vencord with your selection, then swaps it in only once everything verifies.");
+        heading(ui, "Install", "Everything below will be installed. Nothing changes until every step verifies.");
         let target = self.target.and_then(|t| self.installs.get(t)).cloned();
-        card(ui, false, |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            egui::Grid::new("summary").num_columns(2).spacing([24.0, 8.0]).show(ui, |ui| {
-                ui.label(RichText::new("Discord").color(MUTED));
-                ui.label(target.as_ref().map(|t| t.title()).unwrap_or_else(|| "none selected".into()));
-                ui.end_row();
-                if let Some(dist) = &self.dist {
-                    let on_plugins = dist.plugins.iter().filter(|p| self.profile.plugin_enabled(&p.id)).count();
-                    let on_patches = dist.patches.iter().filter(|p| p.required || self.profile.patch_enabled(&p.id)).count();
-                    ui.label(RichText::new("Plugins").color(MUTED));
-                    ui.label(format!("{on_plugins} of {}", dist.plugins.len()));
-                    ui.end_row();
-                    ui.label(RichText::new("Patches").color(MUTED));
-                    ui.label(format!("{on_patches} of {}", dist.patches.len()));
-                    ui.end_row();
-                }
-                ui.label(RichText::new("OpenAsar").color(MUTED));
-                ui.label(self.openasar.as_str());
-                ui.end_row();
-            });
-        });
-        ui.add_space(8.0);
         let busy = self.job != Job::Idle;
-        let ready = target.is_some() && self.dist.is_some();
-        ui.horizontal(|ui| {
-            let install = egui::Button::new(RichText::new("  Install  ").strong().size(17.0).color(Color32::BLACK)).fill(ACCENT).min_size(egui::vec2(160.0, 42.0));
-            if ui.add_enabled(ready && !busy, install).clicked() {
-                self.start(ctx, false);
+
+        // Overview: one card per step in rows of two with equal height; each opens its step.
+        let mut go = None;
+        let mut tiles: Vec<(&str, String, String, bool, Page)> = Vec::new();
+        let (discord, version) = target.as_ref().map(|t| (t.title(), t.version.clone().unwrap_or_default())).unwrap_or_else(|| ("No Discord selected".into(), String::new()));
+        tiles.push(("Discord", discord, version, target.is_some(), Page::Discord));
+        let openasar = match self.openasar {
+            OpenAsarAction::Install => ("Install / update", "faster startup"),
+            OpenAsarAction::Keep => ("Keep as it is", "no change"),
+            OpenAsarAction::Remove => ("Remove", "restore Discord's original"),
+        };
+        tiles.push(("OpenAsar", openasar.0.into(), openasar.1.into(), true, Page::OpenAsar));
+        if let Some(dist) = &self.dist {
+            let on: Vec<&str> = dist.plugins.iter().filter(|p| self.profile.plugin_enabled(&p.id)).map(|p| p.title.as_str()).collect();
+            tiles.push(("Plugins", format!("{} of {}", on.len(), dist.plugins.len()), if on.is_empty() { "none".into() } else { on.join(" · ") }, true, Page::Plugins));
+            let off: Vec<&str> = dist.patches.iter().filter(|p| !p.required && !self.profile.patch_enabled(&p.id)).map(|p| p.title.as_str()).collect();
+            tiles.push(("Patches", format!("{} of {}", dist.patches.len() - off.len(), dist.patches.len()), if off.is_empty() { "all on".into() } else { format!("off: {}", off.join(", ")) }, true, Page::Patches));
+            if !dist.manifest.themes.is_empty() {
+                let picked: Vec<&str> = dist.manifest.themes.iter().filter(|(id, _)| self.profile.themes.contains(*id)).map(|(_, t)| t.title.as_str()).collect();
+                tiles.push(("Themes", if picked.is_empty() { "none".into() } else { format!("{} selected", picked.len()) }, picked.join(" · "), true, Page::Themes));
             }
-            if busy && self.job == Job::Running && ui.button("Cancel").clicked() {
-                self.cancel.cancel();
+        }
+        for row in tiles.chunks(2) {
+            ui.columns(2, |cols| {
+                for (col, (label, value, detail, ok, page)) in cols.iter_mut().zip(row) {
+                    if summary_card(col, label, value, detail, *ok).clicked() {
+                        go = Some(*page);
+                    }
+                }
+            });
+        }
+        if let Some(page) = go.filter(|_| !busy) {
+            self.page = page;
+        }
+        ui.add_space(14.0);
+
+        // Progress and result (the Install button itself is in the footer). Its top is where the
+        // view scrolls when Details opens, so the progress bar stays visible above the console.
+        ui.add_space(6.0);
+        let status_top = ui.cursor().top();
+        match (&self.result, self.job == Job::Running) {
+            (_, true) => {
+                ui.add(egui::ProgressBar::new(self.progress).text(RichText::new(self.step.clone()).color(Color32::WHITE)).animate(true).fill(ACCENT).corner_radius(CornerRadius::same(10)).desired_height(30.0));
             }
-            if !busy && target.as_ref().is_some_and(|t| t.modded.is_some()) && ui.button("Restore stock Discord").clicked() {
+            (Some(Ok(text)), false) => {
+                egui::Frame::new().fill(Color32::from_rgb(0x06, 0x1a, 0x13)).stroke(Stroke::new(1.0_f32, OK.gamma_multiply(0.6))).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::same(16)).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        check_badge(ui, 34.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("Installed").size(20.0).strong().color(OK));
+                            wrapped(ui, RichText::new(text).color(Color32::WHITE));
+                        });
+                    });
+                });
+            }
+            (Some(Err(text)), false) => {
+                egui::Frame::new().fill(Color32::from_rgb(0x1f, 0x08, 0x0a)).stroke(Stroke::new(1.0_f32, BAD.gamma_multiply(0.6))).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(12)).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    wrapped(ui, RichText::new(format!("Failed: {text}")).color(BAD));
+                });
+            }
+            (None, false) => {
+                if self.discord_running() {
+                    ui.label(RichText::new("Discord is running. That's fine on Linux; restart it afterwards. On Windows close it first.").color(MUTED).small());
+                }
+            }
+        }
+        if !busy && target.as_ref().is_some_and(|t| t.modded.is_some()) {
+            ui.add_space(8.0);
+            if ui.button("Restore stock Discord").clicked() {
                 self.start(ctx, true);
             }
-        });
-        if pipeline::discord_running() && !busy {
-            ui.label(RichText::new("Discord is running. That's fine on Linux; restart it afterwards. On Windows close it first.").color(MUTED).small());
         }
-        if self.job == Job::Running || self.progress > 0.0 {
-            ui.add_space(6.0);
-            ui.add(egui::ProgressBar::new(self.progress).text(self.step.clone()).animate(self.job == Job::Running).fill(ACCENT).corner_radius(CornerRadius::same(8)));
-        }
-        if let Some(result) = &self.result {
-            match result {
-                Ok(text) => wrapped(ui, RichText::new(format!("Done. {text}")).color(OK).size(16.0)),
-                Err(text) => wrapped(ui, RichText::new(format!("Failed: {text}")).color(BAD)),
-            };
-        }
-        ui.add_space(6.0);
-        ui.checkbox(&mut self.show_log, "Show details");
-        egui::CollapsingHeader::new(RichText::new("Advanced").color(MUTED)).show(ui, |ui| {
-            wrapped(ui, RichText::new("Build from another GitHub repository or a local folder that contains a forge.json. Leave the default to get the published distribution.").color(MUTED).small());
-            ui.horizontal(|ui| {
-                let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(ui.available_width() - 90.0));
-                let reset = ui.button("Default").clicked();
-                if reset {
-                    self.source_text = forge_core::manifest::DEFAULT_SOURCE.to_owned();
-                }
-                if (edit.lost_focus() || reset) && self.job == Job::Idle {
-                    self.dist = None;
-                    self.load_distribution(ctx);
-                }
-            });
-        });
-        if self.show_log {
-            egui::Frame::new().fill(Color32::from_rgb(0x0b, 0x0c, 0x10)).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                egui::ScrollArea::vertical().stick_to_bottom(true).max_height(260.0).auto_shrink([false, false]).show(ui, |ui| {
-                    for line in &self.log {
-                        ui.label(RichText::new(line).monospace().size(12.0).color(if line.starts_with('»') { ACCENT } else { MUTED }));
-                    }
+
+        // Details: the build log. Opening it scrolls the progress bar to the top and gives the
+        // console all the height that is left in the window below it.
+        {
+            ui.add_space(10.0);
+            let header = ui
+                .horizontal(|ui| {
+                    // Disclosure triangle drawn as a shape (the default font has no arrow glyphs).
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                    let c = rect.center();
+                    let points = if self.show_log {
+                        vec![c + egui::vec2(-5.0, -2.5), c + egui::vec2(5.0, -2.5), c + egui::vec2(0.0, 3.5)]
+                    } else {
+                        vec![c + egui::vec2(-2.5, -5.0), c + egui::vec2(3.5, 0.0), c + egui::vec2(-2.5, 5.0)]
+                    };
+                    ui.painter().add(egui::Shape::convex_polygon(points, MUTED, Stroke::NONE));
+                    ui.label(RichText::new("Details").color(MUTED));
+                })
+                .response
+                .interact(egui::Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if header.clicked() {
+                self.show_log = !self.show_log;
+                self.scroll_to_status = if self.show_log { 3 } else { 0 };
+            }
+            if self.show_log {
+                // Visible height of the page, minus what sits between the status top and the console.
+                let viewport = ui.clip_rect();
+                let above = ui.cursor().top() - status_top;
+                let frame_padding = 2.0 * 10.0 + 2.0;
+                let height = (viewport.height() - above - frame_padding - 16.0).max(140.0);
+                egui::Frame::new().fill(Color32::from_rgb(0x07, 0x07, 0x0a)).stroke(Stroke::new(1.0_f32, LINE)).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("console").stick_to_bottom(true).min_scrolled_height(height).max_height(height).auto_shrink([false, false]).show(ui, |ui| {
+                        if self.log.is_empty() {
+                            ui.label(RichText::new("No output yet. The build log appears here when you install.").monospace().size(12.0).color(MUTED));
+                        }
+                        for line in &self.log {
+                            ui.label(RichText::new(line).monospace().size(12.0).color(if line.starts_with('»') { ACCENT } else { MUTED }));
+                        }
+                    });
                 });
-            });
+                // Repeated for a few frames: the first frame after opening has not laid out the console yet.
+                if self.scroll_to_status > 0 {
+                    self.scroll_to_status -= 1;
+                    ctx.request_repaint();
+                    let target = egui::Rect::from_min_max(egui::pos2(viewport.left(), status_top), egui::pos2(viewport.right(), status_top + 1.0));
+                    ui.scroll_to_rect_animation(target, Some(egui::Align::TOP), egui::style::ScrollAnimation::none());
+                }
+            }
         }
+    }
+
+    fn discord_running(&self) -> bool {
+        const FRESH: std::time::Duration = std::time::Duration::from_secs(3);
+        match self.discord_running.get() {
+            Some((at, running)) if at.elapsed() < FRESH => running,
+            _ => {
+                let running = pipeline::discord_running();
+                self.discord_running.set(Some((std::time::Instant::now(), running)));
+                running
+            }
+        }
+    }
+
+    /// Where Forge gets the distribution from (normally the published one).
+    fn source_settings(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.label(RichText::new("SOURCE").small().strong().color(ACCENT));
+        wrapped(ui, RichText::new("Build from another GitHub repository or a local folder that contains a forge.json. Leave the default to get the published distribution.").color(MUTED).small());
+        ui.horizontal(|ui| {
+            let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(ui.available_width() - 90.0));
+            let reset = ui.button("Default").clicked();
+            if reset {
+                self.source_text = forge_core::manifest::DEFAULT_SOURCE.to_owned();
+            }
+            if (edit.lost_focus() || reset) && self.job == Job::Idle {
+                self.dist = None;
+                self.load_distribution(ctx);
+            }
+        });
     }
 }
 
@@ -587,7 +732,7 @@ impl App {
             ui.horizontal_centered(|ui| {
                 let back = self.back_target();
                 let (rect, response) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), if back.is_some() { egui::Sense::click() } else { egui::Sense::hover() });
-                if back.is_some() {
+                if let Some(back) = back {
                     let hover = ctx.animate_bool_responsive(response.id, response.hovered());
                     ui.painter().rect_filled(rect, CornerRadius::same(9), Color32::from_white_alpha((14.0 * hover) as u8));
                     let c = rect.center();
@@ -595,7 +740,7 @@ impl App {
                     ui.painter().line_segment([c + egui::vec2(3.0, -6.0), c + egui::vec2(-3.0, 0.0)], ink);
                     ui.painter().line_segment([c + egui::vec2(-3.0, 0.0), c + egui::vec2(3.0, 6.0)], ink);
                     if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        self.page = back.unwrap();
+                        self.page = back;
                     }
                 }
                 ui.add_space(6.0);
@@ -629,7 +774,21 @@ impl App {
                     self.page = Page::ALL[index - 1];
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if index + 1 < Page::ALL.len() {
+                    if self.page == Page::Install {
+                        let ctx = ui.ctx().clone();
+                        if self.job == Job::Running {
+                            if ui.add(egui::Button::new("Cancel").min_size(egui::vec2(110.0, 38.0))).clicked() {
+                                self.cancel.cancel();
+                            }
+                        } else {
+                            let ready = self.dist.is_some() && self.target.is_some_and(|t| t < self.installs.len());
+                            let label = if self.installed { "Hold to install again" } else { "Hold to install" };
+                            if hold_button(ui, label, ready && self.job == Job::Idle).fired {
+                                self.result = None;
+                                self.start(&ctx, false);
+                            }
+                        }
+                    } else if index + 1 < Page::ALL.len() {
                         let next = egui::Button::new(RichText::new(format!("Next: {}", Page::ALL[index + 1].title())).strong().color(Color32::BLACK)).fill(ACCENT).min_size(egui::vec2(150.0, 38.0));
                         if ui.add(next).clicked() {
                             self.page = Page::ALL[index + 1];
@@ -703,7 +862,8 @@ impl eframe::App for App {
             ui.label(RichText::new("SETUP").small().color(MUTED).strong());
             let current = Page::ALL.iter().position(|p| *p == self.page);
             for (i, page) in Page::ALL.into_iter().enumerate() {
-                if nav_item(ui, page.title(), Some((i + 1, current.is_some_and(|c| i < c))), self.page == page).clicked() {
+                let done = current.is_some_and(|c| i < c) || (page == Page::Install && self.installed);
+                if nav_item(ui, page.title(), Some((i + 1, done)), self.page == page).clicked() {
                     self.page = page;
                 }
             }
@@ -730,7 +890,8 @@ impl eframe::App for App {
                     self.load_distribution(ctx);
                 }
             }
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            // One scroll position per page: switching pages opens the new one at its top.
+            egui::ScrollArea::vertical().id_salt(self.page.title()).auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_max_width(ui.available_width().min(820.0));
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                 match self.page {
@@ -738,14 +899,98 @@ impl eframe::App for App {
                     Page::Plugins => self.page_plugins(ui),
                     Page::Patches => self.page_patches(ui),
                     Page::OpenAsar => self.page_openasar(ui),
+                    Page::Themes => self.page_themes(ui),
                     Page::Install => self.page_install(ui, ctx),
-                    Page::About => self.page_about(ui),
+                    Page::About => self.page_about(ui, ctx),
                 }
                 ui.add_space(12.0);
             });
             });
         });
     }
+}
+
+/// A clickable summary tile on the install page.
+fn summary_card(ui: &mut egui::Ui, label: &str, value: &str, detail: &str, ok: bool) -> egui::Response {
+    let response = egui::Frame::new()
+        .fill(CARD)
+        .stroke(Stroke::new(1.0_f32, LINE))
+        .corner_radius(CornerRadius::same(12))
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(86.0);
+            ui.label(RichText::new(label.to_uppercase()).small().strong().color(MUTED));
+            ui.label(RichText::new(value).size(16.0).strong().color(if ok { Color32::WHITE } else { BAD }));
+            if !detail.is_empty() {
+                wrapped(ui, RichText::new(detail).small().color(MUTED));
+            }
+        })
+        .response
+        .interact(egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.hovered() {
+        ui.painter().rect_stroke(response.rect, CornerRadius::same(12), Stroke::new(1.0_f32, ACCENT.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+    }
+    ui.add_space(8.0);
+    response
+}
+
+fn check_badge(ui: &mut egui::Ui, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let c = rect.center();
+    ui.painter().circle_filled(c, size / 2.0, OK);
+    let k = size / 34.0;
+    let ink = Stroke::new(3.0 * k, Color32::BLACK);
+    ui.painter().line_segment([c + egui::vec2(-7.0, 0.5) * k, c + egui::vec2(-2.0, 5.5) * k], ink);
+    ui.painter().line_segment([c + egui::vec2(-2.0, 5.5) * k, c + egui::vec2(8.0, -5.0) * k], ink);
+}
+
+struct Hold {
+    fired: bool,
+}
+
+/// A button that has to be held down: colour spreads from the centre as a circle while it is
+/// pressed and the action fires when the button is full, so an install never starts by accident.
+/// Releasing early drains it again.
+fn hold_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> Hold {
+    const HOLD: f32 = 1.2;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(210.0, 40.0), if enabled { egui::Sense::click_and_drag() } else { egui::Sense::hover() });
+    let id = response.id.with("hold");
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
+    let pressed = enabled && response.is_pointer_button_down_on();
+    let (mut progress, mut done): (f32, bool) = ui.data(|d| d.get_temp(id)).unwrap_or((0.0, false));
+    let mut fired = false;
+    if pressed && !done {
+        progress = (progress + dt / HOLD).min(1.0);
+        if progress >= 1.0 {
+            fired = true;
+            done = true;
+        }
+    } else if !pressed {
+        done = false;
+        progress = (progress - dt * 3.0 / HOLD).max(0.0);
+    }
+    ui.data_mut(|d| d.insert_temp(id, (progress, done)));
+    if pressed || progress > 0.0 {
+        ui.ctx().request_repaint();
+    }
+    let painter = ui.painter_at(rect);
+    let radius = CornerRadius::same(10);
+    let base = if enabled { Color32::from_rgb(0x2a, 0x10, 0x1a) } else { Color32::from_rgb(0x16, 0x16, 0x1c) };
+    painter.rect_filled(rect, radius, base);
+    if progress > 0.0 {
+        // Ease out so the fill feels quick at first and settles at the edges.
+        let eased = 1.0 - (1.0 - progress).powi(3);
+        let full = rect.size().length() / 2.0;
+        painter.circle_filled(rect.center(), full * eased, ACCENT);
+    }
+    let hover = enabled && response.hovered();
+    painter.rect_stroke(rect, radius, Stroke::new(1.5_f32, if enabled { ACCENT.gamma_multiply(if hover { 1.0 } else { 0.75 }) } else { LINE }), egui::StrokeKind::Inside);
+    let color = if !enabled { MUTED } else if progress > 0.45 { Color32::BLACK } else { Color32::WHITE };
+    painter.text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(16.0).clone(), color);
+    response.on_hover_cursor(if enabled { egui::CursorIcon::PointingHand } else { egui::CursorIcon::NotAllowed });
+    Hold { fired }
 }
 
 /// Sidebar entry: numbered (done steps get a check) or plain.
@@ -762,7 +1007,11 @@ fn nav_item(ui: &mut egui::Ui, title: &str, step: Option<(usize, bool)>, selecte
         } else {
             ui.painter().circle_stroke(c, 10.0, Stroke::new(1.5_f32, if done { OK } else { LINE.gamma_multiply(2.0) }));
         }
-        if done && !selected {
+        if done && selected {
+            let ink = Stroke::new(2.0_f32, Color32::BLACK);
+            ui.painter().line_segment([c + egui::vec2(-4.5, 0.5), c + egui::vec2(-1.2, 3.8)], ink);
+            ui.painter().line_segment([c + egui::vec2(-1.2, 3.8), c + egui::vec2(4.8, -3.6)], ink);
+        } else if done {
             let pts = [c + egui::vec2(-4.5, 0.5), c + egui::vec2(-1.2, 3.8), c + egui::vec2(4.8, -3.6)];
             ui.painter().line_segment([pts[0], pts[1]], Stroke::new(2.0_f32, OK));
             ui.painter().line_segment([pts[1], pts[2]], Stroke::new(2.0_f32, OK));
@@ -780,7 +1029,10 @@ fn open_url(url: &str) {
     let _ = std::process::Command::new(program).arg(url).spawn();
 }
 
-const CREDITS: &[(&str, &[(&str, &str, &str)])] = &[
+/// (name, what it does for Forge, link)
+type Credit = (&'static str, &'static str, &'static str);
+
+const CREDITS: &[(&str, &[Credit])] = &[
     ("BUILT ON", &[
         ("Vencord", "The Discord client mod this distribution builds on.", "https://github.com/Vendicated/Vencord"),
         ("OpenAsar", "Faster, leaner replacement for Discord's startup code.", "https://github.com/GooseMod/OpenAsar"),
@@ -804,7 +1056,7 @@ const CREDITS: &[(&str, &[(&str, &str, &str)])] = &[
 ];
 
 impl App {
-    fn page_about(&mut self, ui: &mut egui::Ui) {
+    fn page_about(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.add_space(6.0);
         card(ui, false, |ui| {
             ui.horizontal(|ui| {
@@ -860,6 +1112,8 @@ impl App {
                 }
             }
         }
+        ui.add_space(18.0);
+        self.source_settings(ui, ctx);
     }
 
     fn screenshots(&mut self, ctx: &egui::Context) {
@@ -884,11 +1138,24 @@ impl App {
         }
         self.page = SHOT_PAGES[(*page).min(SHOT_PAGES.len() - 1)];
         if SHOT_PAGES[(*page).min(SHOT_PAGES.len() - 1)] == Page::Install {
+            if !self.show_log {
+                // Screenshot preview of a running install with the console open.
+                self.scroll_to_status = 3;
+                self.job = Job::Running;
+                self.progress = 0.55;
+                self.step = "Type-checking against upstream".into();
+                self.log = (1..=60).map(|i| if i % 12 == 1 { format!("» step {i}") } else { format!("build output line {i}") }).collect();
+            }
             self.show_log = true;
+        } else if self.job == Job::Running && !self.log.is_empty() {
+            // Past the Install page: end the simulated install so later pages are captured.
+            self.job = Job::Idle;
+            self.log.clear();
+            self.progress = 0.0;
         }
         *frames += 1;
         // Let the distribution load and animations settle before capturing.
-        if *frames == 15 && self.job == Job::Idle {
+        if *frames == 15 && (self.job == Job::Idle || self.page == Page::Install) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         } else if *frames > 15 && self.job != Job::Idle {
             *frames = 0;
@@ -897,7 +1164,7 @@ impl App {
     }
 }
 
-const SHOT_PAGES: [Page; 6] = [Page::Discord, Page::Plugins, Page::Patches, Page::OpenAsar, Page::Install, Page::About];
+const SHOT_PAGES: [Page; 7] = [Page::Discord, Page::Plugins, Page::Patches, Page::OpenAsar, Page::Themes, Page::Install, Page::About];
 
 const ICON_SVG: &[u8] = include_bytes!("../assets/icon.svg");
 

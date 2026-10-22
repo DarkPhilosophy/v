@@ -27,6 +27,8 @@ pub struct Manifest {
     #[serde(default)]
     pub patches: BTreeMap<String, Item>,
     pub openasar: Option<OpenAsar>,
+    #[serde(default)]
+    pub themes: BTreeMap<String, crate::themes::Theme>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

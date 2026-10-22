@@ -15,7 +15,7 @@ USAGE:
   vencord-forge detect [--json]
   vencord-forge list [--source <url|dir>] [--json]
   vencord-forge install [--source <url|dir>] [--target <resources-dir|index>] [--openasar keep|install|remove]
-                        [--disable-plugin <name>]... [--disable-patch <name>]... [--enable-all]
+                        [--disable-plugin <name>]... [--disable-patch <name>]... [--theme <id>]... [--enable-all]
   vencord-forge build [--source <url|dir>] --out <file.asar> [--disable-plugin <name>]... [--disable-patch <name>]...
   vencord-forge uninstall [--target <resources-dir|index>]
   vencord-forge status
@@ -155,7 +155,7 @@ fn run(argv: Vec<String>) -> Result<()> {
             let dist = pipeline::fetch_distribution(&src, &mut sink())?;
             let profile = Profile::load(&paths::runtime_dir());
             if json {
-                println!("{}", serde_json::to_string_pretty(&serde_json::json!({"plugins": dist.plugins, "patches": dist.patches}))?);
+                println!("{}", serde_json::to_string_pretty(&serde_json::json!({"plugins": dist.plugins, "patches": dist.patches, "themes": dist.manifest.themes}))?);
             } else {
                 println!("{} @ {}\n\nPlugins:", dist.manifest.name, &dist.revision[..dist.revision.len().min(12)]);
                 for p in &dist.plugins {
@@ -166,6 +166,12 @@ fn run(argv: Vec<String>) -> Result<()> {
                     let mark = if p.required { "req" } else if profile.patch_enabled(&p.id) { " x " } else { "   " };
                     println!("  [{mark}] {:<28} {}", p.id, p.description);
                 }
+                if !dist.manifest.themes.is_empty() {
+                    println!("\nThemes (opt-in with --theme <id>):");
+                    for (id, t) in &dist.manifest.themes {
+                        println!("  [{}] {:<28} {}", if profile.themes.contains(id) { "x" } else { " " }, id, t.description);
+                    }
+                }
             }
         }
         "install" => {
@@ -175,6 +181,7 @@ fn run(argv: Vec<String>) -> Result<()> {
             let disable_plugins = args.values("--disable-plugin")?;
             let disable_patches = args.values("--disable-patch")?;
             let enable_all = args.flag("--enable-all");
+            let themes = args.values("--theme")?;
             args.done()?;
             let target = pick_target(target)?;
             let mut out = sink();
@@ -182,15 +189,21 @@ fn run(argv: Vec<String>) -> Result<()> {
             let mut profile = if enable_all { Profile::default() } else { Profile::load(&paths::runtime_dir()) };
             profile.exclude_plugins.extend(disable_plugins);
             profile.exclude_patches.extend(disable_patches);
-            for (patch, dep) in profile.unmet_requirements(&dist.manifest) {
+            profile.themes.extend(themes);
+            if let Some((patch, dep)) = profile.unmet_requirements(&dist.manifest).first() {
                 bail!("{patch} requires {dep}, which is turned off");
             }
             if pipeline::discord_running() {
                 eprintln!("note: Discord is running; restart it after installing (Windows: close it first)");
             }
             let built = pipeline::build(&dist, &profile, &Cancel::default(), &mut out)?;
-            let kind = pipeline::install(&dist, &built, &target, action, &profile, &mut out)?;
-            println!("Installed into {} (bootstrap: {}). Restart Discord.", target.title(), kind.label());
+            let report = pipeline::install(&dist, &built, &target, action, &profile, &mut out)?;
+            println!("Installed into {} (bootstrap: {}). Restart Discord.", target.title(), report.bootstrap.label());
+            match report.themes {
+                Some(forge_core::themes::Applied::Enabled) => println!("Themes installed and switched on."),
+                Some(forge_core::themes::Applied::FilesOnly) => println!("Themes installed; Discord was running, so switch them on in Vencord > Themes."),
+                None => {}
+            }
         }
         "build" => {
             let src = source(&mut args)?;
@@ -252,6 +265,15 @@ fn run(argv: Vec<String>) -> Result<()> {
         "build-loader" => {
             let [runtime, out] = two(&args.0)?;
             bootstrap::build_loader(Path::new(runtime), Path::new(out))?;
+        }
+        "apply-themes" => {
+            // Host helper for the Flatpak: apply-themes <vencord-dir> <plan.json> <enable|files>
+            let a = &args.0;
+            if a.len() != 3 {
+                bail!("{USAGE}");
+            }
+            let plan: forge_core::themes::Plan = serde_json::from_slice(&std::fs::read(&a[1])?)?;
+            forge_core::themes::apply(Path::new(&a[0]), &plan, a[2] == "enable")?;
         }
         "verify-chain" => {
             let [resources, runtime] = two(&args.0)?;
