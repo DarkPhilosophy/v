@@ -709,8 +709,16 @@ const plugin = definePlugin({
         if (!uploads.length) return;
 
         const handledUploadIds = uploads.map(upload => upload.id);
+        // upload.cancel() sends DELETE /attachments/<upload> to Discord. Calling it on every retry
+        // below sent three DELETEs per file: the 2nd and 3rd 404, then Discord rate-limits the
+        // attachments endpoint (429), which stalls the next paste's upload and with it sending.
+        // Cancel once; the retries only re-dispatch the local removal.
+        let cancelled = false;
         const removeHandledUploads = () => {
-            uploads.forEach(upload => upload.cancel());
+            if (!cancelled) {
+                cancelled = true;
+                uploads.forEach(upload => upload.cancel());
+            }
             FluxDispatcher.dispatch({
                 type: "UPLOAD_ATTACHMENT_REMOVE_FILES",
                 channelId,
