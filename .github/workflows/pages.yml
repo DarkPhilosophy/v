@@ -6,6 +6,8 @@ on:
     paths:
       - i
       - site/**
+      - forge.json
+      - patches/series
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -33,6 +35,8 @@ jobs:
           mkdir _site
           cp -r site/. _site/
           cp i _site/i
+          cp forge.json _site/forge.json
+          cp patches/series _site/series
       - uses: actions/upload-pages-artifact@v3
       - name: Deploy
         id: deployment

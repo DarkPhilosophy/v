@@ -1,5 +1,13 @@
 name: Vencord Forge
 
+# Builds Forge for Linux and Windows on every change, keeps the generated README blocks in sync,
+# and publishes a release whenever forge/Cargo.toml's version has no release yet.
+#
+# Releases and README commits are made with the repository owner's token (secret RELEASE_TOKEN,
+# a fine-grained PAT with Contents: read and write on this repository), so they are authored by
+# the owner and not by github-actions[bot]. Without that secret those two steps fail loudly
+# instead of silently falling back to the bot.
+
 on:
   push:
     branches: [main]
@@ -7,20 +15,19 @@ on:
       - forge/**
       - forge.json
       - patches/**
-      - core/src/main/updater/**
+      - core/src/**
       - scripts/**
+      - .github/README.md
       - .github/workflows/forge.yml
   pull_request:
-    paths:
-      - forge/**
-      - forge.json
-      - patches/**
   workflow_dispatch:
-  release:
-    types: [published]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: forge-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -58,19 +65,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p ../dist/vencord-forge
+          # The app calls vforge (next to it) for privileged steps: ship both together.
           cp target/release/vforge${{ matrix.exe }} target/release/vencord-forge${{ matrix.exe }} ../dist/vencord-forge/
+          cp ../LICENSE ../dist/vencord-forge/
           cd ../dist
           if [ "${{ runner.os }}" = Windows ]; then 7z a vencord-forge-${{ matrix.name }}.zip vencord-forge >/dev/null; else tar czf vencord-forge-${{ matrix.name }}.tar.gz vencord-forge; fi
       - uses: actions/upload-artifact@v4
         with:
           name: vencord-forge-${{ matrix.name }}
           path: dist/vencord-forge-${{ matrix.name }}.*
-      - name: Attach to release
-        if: github.event_name == 'release'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" ../dist/vencord-forge-${{ matrix.name }}.* --clobber
 
   equivalence:
     runs-on: ubuntu-latest
@@ -88,3 +91,61 @@ jobs:
         run: |
           sh tests/update-persistence.sh
           sh tests/package-vencord-asar.sh
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ github.event_name == 'push' && secrets.RELEASE_TOKEN || github.token }}
+      - name: README is generated from forge.json, patches/series and the plugins
+        if: github.event_name != 'push'
+        run: python3 scripts/gen-docs.py --check
+      - name: Regenerate and commit as the owner
+        if: github.event_name == 'push'
+        env:
+          HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          python3 scripts/gen-docs.py
+          if git diff --quiet; then echo "README up to date"; exit 0; fi
+          if [ "$HAS_TOKEN" != true ]; then echo "::error::RELEASE_TOKEN secret is not set; refusing to commit as a bot"; exit 1; fi
+          git config user.name "DarkPhilosophy"
+          git config user.email "19309990+DarkPhilosophy@users.noreply.github.com"
+          git commit -am "docs: regenerate README from forge.json"
+          git push origin HEAD:${{ github.ref_name }}
+
+  release:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [build, equivalence]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: version
+        run: |
+          version=$(python3 -c "import sys; sys.path.insert(0, 'scripts'); import importlib.util as u; s=u.spec_from_file_location('g','scripts/gen-docs.py'); m=u.module_from_spec(s); s.loader.exec_module(m); print(m.forge_version())")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=forge-v$version" >> "$GITHUB_OUTPUT"
+      - name: Already released?
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/download-artifact@v4
+        if: steps.exists.outputs.exists == 'false'
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release as the owner
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASE_TOKEN secret is not set; refusing to publish as a bot"; exit 1; fi
+          cd dist && sha256sum vencord-forge-* > SHA256SUMS
+          gh release create "${{ steps.version.outputs.tag }}" vencord-forge-* SHA256SUMS \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "Vencord Forge ${{ steps.version.outputs.version }}" \
+            --notes "Vencord Forge ${{ steps.version.outputs.version }}: the app and the vforge command line for Linux and Windows. Unpack and run vencord-forge (vencord-forge.exe on Windows); keep vforge next to it." \
+            --generate-notes

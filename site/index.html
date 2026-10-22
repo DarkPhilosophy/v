@@ -49,6 +49,8 @@ pre button:hover{color:var(--text)}
 .steps li{list-style:none;counter-increment:s;display:flex;gap:14px;align-items:flex-start;color:#c7c9d6}
 .steps li::before{content:counter(s);flex:none;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line2);display:grid;place-items:center;font-size:12px;color:var(--muted);margin-top:1px}
 .steps{padding:0;margin:0}
+.downloads{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.muted-small{color:var(--muted);font-size:13.5px;margin-top:10px}
 .notice{background:#140f00;border:1px solid #4a3a06;color:#f2dfa0;border-radius:14px;padding:16px 18px;font-size:14.5px}
 footer{border-top:1px solid var(--line);padding:36px 0 50px;color:var(--muted);font-size:14px}
 footer .wrap{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
@@ -81,18 +83,7 @@ footer a:hover{color:var(--text)}
 <section id="features"><div class="wrap">
   <h2>What you get</h2>
   <p class="sub">Everything from Vencord, plus these. Each plugin and optional patch can be turned off, and stays off across updates.</p>
-  <div class="grid" id="plugins">
-    <div class="card"><span class="tag">Plugin</span><h3>PooWangUploader</h3><p>Send attachments through poo.wang with retention-controlled links instead of storing them on Discord.</p></div>
-    <div class="card"><span class="tag">Plugin</span><h3>PrivacyPruner</h3><p>Deletes your expired messages per channel retention policy, keeping messages marked Keep.</p></div>
-    <div class="card"><span class="tag">Plugin</span><h3>PlatformSpoofer</h3><p>Appear as Desktop, Mobile, Web or Console. Switch from the status menu.</p></div>
-    <div class="card"><span class="tag">Plugin</span><h3>QuestCompleter</h3><p>Completes enrolled Discord quests without installing the advertised game.</p></div>
-    <div class="card"><span class="tag">Plugin</span><h3>SteamRichPresence</h3><p>Shows the Steam game you are playing, including Proton games.</p></div>
-    <div class="card"><span class="tag">Plugin</span><h3>PerfMonitor</h3><p>Warns when Discord stalls and shows whether plugins, themes or Discord caused it.</p></div>
-    <div class="card"><span class="tag">Patch</span><h3>Fast startup patching</h3><p>Vencord's module patcher skips modules no plugin touches and compiles each patched module once.</p></div>
-    <div class="card"><span class="tag">Patch</span><h3>HideMedia auto-hide</h3><p>Media is not loaded until you click it.</p></div>
-    <div class="card"><span class="tag">Built in</span><h3>User Plugin Manager</h3><p>Install and update custom plugins right from Discord settings.</p></div>
-    <div class="card"><span class="tag">Built in</span><h3>OpenAsar</h3><p>Faster, leaner startup code, with Linux GPU and Flatpak fixes. Your original is backed up.</p></div>
-  </div>
+  <div class="grid" id="plugins"><noscript>See the <a href="https://github.com/DarkPhilosophy/v#included-customizations">README</a>.</noscript></div>
 </div></section>
 
 <section id="install"><div class="wrap">
@@ -109,10 +100,8 @@ footer a:hover{color:var(--text)}
       <span class="tag">Linux · Windows</span>
       <h3>Vencord Forge</h3>
       <p>A desktop app: pick the Discord, plugins, patches and OpenAsar, then install. Needs nothing preinstalled; it fetches Node.js when missing.</p>
-      <pre><code>git clone https://github.com/DarkPhilosophy/v
-cd v/forge && cargo build --release
-./target/release/vencord-forge</code><button data-copy>Copy</button></pre>
-      <p style="margin-top:10px">Ready-made builds: <a href="https://github.com/DarkPhilosophy/v/actions/workflows/forge.yml">latest Linux and Windows builds</a> · <a href="https://github.com/DarkPhilosophy/v/releases">releases</a></p>
+      <div class="downloads" id="downloads"><a class="btn" href="https://github.com/DarkPhilosophy/v/releases">Releases</a></div>
+      <p class="muted-small" id="release-info">Unpack and run vencord-forge; keep vforge next to it.</p>
     </div>
   </div>
 </div></section>
@@ -141,6 +130,37 @@ cd v/forge && cargo build --release
 </div></footer>
 
 <script>
+// Content comes from the same sources as the installers: forge.json and patches/series (published
+// next to this page) and the latest GitHub release. Nothing here lists plugins by hand.
+const REPO = "DarkPhilosophy/v";
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const card = (tag, title, text) => `<div class="card"><span class="tag">${tag}</span><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+(async () => {
+  try {
+    const [manifest, series] = await Promise.all([
+      fetch("forge.json").then(r => r.json()),
+      fetch("series").then(r => r.text()),
+    ]);
+    const patches = series.split("\n").map(l => l.split("#")[0].trim()).filter(Boolean);
+    const plugins = Object.entries(manifest.plugins ?? {}).map(([id, p]) => card("Plugin", p.title || id, p.description || ""));
+    const optional = patches.filter(p => !manifest.patches?.[p]?.required).map(p => card("Patch", manifest.patches?.[p]?.title || p, manifest.patches?.[p]?.description || ""));
+    const builtIn = patches.filter(p => manifest.patches?.[p]?.required).map(p => card("Built in", manifest.patches[p].title || p, manifest.patches[p].description || ""));
+    if (manifest.openasar) builtIn.push(card("Built in", "OpenAsar", "Faster, leaner startup code with Linux GPU and Flatpak fixes. Your original is backed up."));
+    document.getElementById("plugins").innerHTML = [...plugins, ...optional, ...builtIn].join("");
+  } catch (error) {
+    document.getElementById("plugins").innerHTML = `<p class="muted-small">Could not load the plugin list (${esc(error.message)}). See the <a href="https://github.com/${REPO}">README</a>.</p>`;
+  }
+  try {
+    const releases = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=20`).then(r => r.json());
+    const release = releases.find(r => r.tag_name.startsWith("forge-v") && !r.draft && !r.prerelease);
+    if (!release) return;
+    const label = name => name.includes("windows") ? "Windows" : name.includes("linux") ? "Linux" : null;
+    const buttons = release.assets.filter(a => label(a.name)).map(a => `<a class="btn ${label(a.name) === (navigator.userAgent.includes("Windows") ? "Windows" : "Linux") ? "primary" : ""}" href="${a.browser_download_url}">Download for ${label(a.name)}</a>`);
+    document.getElementById("downloads").innerHTML = buttons.join("") + `<a class="btn" href="${release.html_url}">Release notes</a>`;
+    document.getElementById("release-info").textContent = `Version ${release.tag_name.replace("forge-v", "")}, published ${new Date(release.published_at).toLocaleDateString()}. Unpack and run vencord-forge; keep vforge next to it.`;
+  } catch { /* the Releases button stays */ }
+})();
+
 for (const button of document.querySelectorAll("[data-copy]")) {
   button.onclick = async () => {
     await navigator.clipboard.writeText(button.parentElement.querySelector("code").textContent);

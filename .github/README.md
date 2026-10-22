@@ -6,17 +6,36 @@ There is no Vencord fork, persistent upstream checkout or committed build output
 
 ## Included customizations
 
-- **PlatformSpoofer** — spoofs the Discord client platform (Desktop, Mobile, Web, or Console).
-- **PooWangUploader** — redirects chat attachments to `poo.wang` and inserts retention-controlled share links instead of storing the files on Discord.
-- **PrivacyPruner** — automatically deletes your expired messages according to per-channel retention policies while preserving messages explicitly marked Keep.
-- **QuestCompleter** — completes supported Discord quests without installing the advertised game.
-- **SteamRichPresence** — publishes the Steam game running on the Linux host as Discord Rich Presence.
+Custom plugins (each can be turned off in Forge or the profile):
+
+<!-- PLUGINS-START -->
+- **PerfMonitor** — Warns when Discord stalls and shows whether plugins, themes or Discord caused it.
+- **PlatformSpoofer** — Appear as Desktop, Mobile, Web or Console. Switch from the status menu.
+- **PooWangUploader** — Send attachments through poo.wang with retention-controlled links instead of storing them on Discord.
+- **PrivacyPruner** — Deletes your expired messages per channel retention policy, keeping messages marked Keep.
+- **QuestCompleter** — Completes enrolled Discord quests without installing the advertised game.
+- **SteamRichPresence** — Shows the Steam game you are playing, including Proton games.
+<!-- PLUGINS-END -->
+
+Built in:
+
 - **User Plugin Manager** — transactionally installs and updates custom user plugins from Discord settings.
-- **Translate** — custom translation integration.
-- **PerfMonitor** — warns when the main thread stalls and attributes the blocking time to plugins, themes, or Discord.
-- **Faster startup** — Vencord's module patcher skips modules no patch can match and compiles each patched module once, falling back to the upstream algorithm on any error.
-- **NoTrack hardening** — keeps Discord analytics and Sentry disabled while satisfying the preload's local Sentry IPC contract with inert handlers, avoiding failed `sentry-ipc://` requests without restoring telemetry.
+- **Translate** — custom translation integration (full overlay copy of the stock plugin).
 - **OpenAsar** — installed or updated by default as Discord's optimized bootstrap, with Linux-safe runtime patches and Vencord's loader preserved.
+
+Patches to Vencord, applied in this order:
+
+<!-- PATCHES-START -->
+| Patch | What it does | |
+|---|---|---|
+| **Custom updater** (`update.patch`) | In-app updater that rebuilds this distribution and keeps your selection. | required |
+| **User Plugin Manager** (`userplugin-manager.patch`) | Installs and updates custom plugins from Discord settings. | required |
+| **NoTrack hardening** (`runtime-noise.patch`) | Keeps analytics and Sentry off without failed sentry-ipc requests. | optional |
+| **Cloud sync fix** (`cloudsync.patch`) | Fixes Vencord cloud settings sync. | optional |
+| **HideMedia auto-hide** (`hide-media.patch`) | Media is not loaded until you click it. | optional |
+| **Performance attribution** (`perf-attribution.patch`) | Times plugin renders and event handlers for PerfMonitor. | optional |
+| **Fast startup patching** (`webpack-fast-patching.patch`) | Skips modules no plugin patches and compiles each patched module once. | optional |
+<!-- PATCHES-END -->
 
 ### PooWangUploader
 
@@ -64,7 +83,11 @@ cd forge && cargo build --release
 ./target/release/vforge install --source .. --disable-plugin steamRichPresence
 ```
 
-Prebuilt Linux and Windows builds are produced by the `Vencord Forge` workflow. [`forge/tests/equivalence.sh`](../forge/tests/equivalence.sh) proves the Rust engine produces byte-identical results to the shell installer's tools (patches, runtime ASAR, loader, embedded seeds, OpenAsar fixes).
+<!-- FORGE-START -->
+Latest app version: **0.1.0** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.0) · [all releases](https://github.com/DarkPhilosophy/v/releases)
+<!-- FORGE-END -->
+
+Every version bump of Forge is built for Linux and Windows and published as a release automatically. [`forge/tests/equivalence.sh`](../forge/tests/equivalence.sh) proves the Rust engine produces byte-identical results to the shell installer's tools (patches, runtime ASAR, loader, embedded seeds, OpenAsar fixes).
 
 Brand and icon studio: <https://darkphilosophy.github.io/v/brand/>.
 
@@ -166,15 +189,7 @@ v/
 │   ├── components/                   # Vencord settings integration
 │   └── shared/                       # shared manager contracts
 ├── patches/
-│   ├── (Translate lives in core/src/plugins/translate: full overlay copy, no patch to drift)
-│   ├── cloudsync.patch               # Vencord cloud settings sync fix
-│   ├── runtime-noise.patch           # NoTrack/Sentry preload noise suppression
-│   ├── hide-media.patch              # HideMedia: auto-hide all media, click to show
-│   ├── perf-attribution.patch        # wires PerfAttribution timing into flux and message accessories
-│   ├── webpack-fast-patching.patch   # prefiltered, compile-once module patching with upstream fallback
-│   ├── series                        # ordered patch list used by ./i and the in-app updater
-│   ├── update.patch                  # temporary clean-build updater
-│   └── userplugin-manager.patch      # Vencord/Electron manager wiring
+│   └── *.patch, series               # see the Patches table above (generated from forge.json)
 ├── forge/                          # Vencord Forge: Rust engine (core), CLI (vforge), app (gui)
 ├── forge.json                      # distribution manifest read by Forge and the updaters
 ├── site/brand/                     # icon and logo studio (GitHub Pages)
