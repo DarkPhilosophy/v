@@ -556,8 +556,9 @@ function transformControls(key, layer) {
 const LOGO_TABS = [["layout", "Logo: aranjare", LAYOUTS], ["font", "Logo: font", FONTS.map(x => x[0])], ["tstyle", "Logo: majuscule", TSTYLES]];
 const LOGO_TAB = Object.fromEntries(LOGO_TABS.map(t => [t[0], t]));
 /** Light-background variant: light text turns dark so the wordmark stays readable. */
+function greyish(c) { if (!/^#[0-9a-f]{6}$/i.test(c)) return false; const n = parseInt(c.slice(1), 16), ch = [n >> 16, n >> 8 & 255, n & 255]; return Math.max(...ch) - Math.min(...ch) < 48; }
 function nearWhite(c) { if (!/^#[0-9a-f]{6}$/i.test(c)) return false; const n = parseInt(c.slice(1), 16), ch = [n >> 16, n >> 8 & 255, n & 255]; return lum(c) > 170 && Math.max(...ch) - Math.min(...ch) < 48; }
-function onLight(s) { const dark = c => nearWhite(c) ? "#16171d" : c; return { ...s, _light: true, wordc: dark(s.wordc), wc2: dark(s.wc2), flc: dark(s.flc), tagc: lum(s.tagc) > 170 ? "#5d5f6e" : s.tagc }; }
+function onLight(s) { const dark = c => nearWhite(c) ? "#16171d" : c; return { ...s, _light: true, wordc: dark(s.wordc), wc2: dark(s.wc2), flc: dark(s.flc), tagc: lum(s.tagc) > 130 && greyish(s.tagc) ? "#5d5f6e" : s.tagc }; }
 const colorPatch = (k, c) => ({ box: { box: c }, left: { leftc: c }, right: { rightc: c }, accent: { accent: c }, accent2: { accent2: c } })[k];
 
 // ── Events ─────────────────────────────────────────────────────────────────────────────────
