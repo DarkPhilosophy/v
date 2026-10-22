@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 forge-core.workspace = true
+vforge = { path = "../cli" }
 anyhow.workspace = true
 eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "wayland", "x11", "accesskit"] }
 egui = "0.33"

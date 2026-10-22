@@ -21,6 +21,11 @@ on:
       - .github/workflows/forge.yml
   pull_request:
   workflow_dispatch:
+    inputs:
+      republish:
+        description: Rebuild and replace the assets of the current version's release (tag moves to this commit)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,19 +66,33 @@ jobs:
           ./target/release/vforge${{ matrix.exe }} --help
           ./target/release/vforge${{ matrix.exe }} detect
           ./target/release/vforge${{ matrix.exe }} list --source ..
-      - name: Package
+      - name: Package (plain executables)
         shell: bash
         run: |
-          mkdir -p ../dist/vencord-forge
-          # The app calls vforge (next to it) for privileged steps: ship both together.
-          cp target/release/vforge${{ matrix.exe }} target/release/vencord-forge${{ matrix.exe }} ../dist/vencord-forge/
-          cp ../LICENSE ../dist/vencord-forge/
-          cd ../dist
-          if [ "${{ runner.os }}" = Windows ]; then 7z a vencord-forge-${{ matrix.name }}.zip vencord-forge >/dev/null; else tar czf vencord-forge-${{ matrix.name }}.tar.gz vencord-forge; fi
+          mkdir -p ../dist
+          # The app is self-contained: run without arguments it opens the window, with arguments
+          # it is the command line (the privileged steps it runs through pkexec included).
+          cp target/release/vencord-forge${{ matrix.exe }} ../dist/vencord-forge-${{ matrix.name }}${{ matrix.exe }}
+          cp target/release/vforge${{ matrix.exe }} ../dist/vforge-${{ matrix.name }}${{ matrix.exe }}
+      - name: Package (AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          app=../dist/AppDir
+          mkdir -p "$app/usr/bin"
+          cp target/release/vencord-forge "$app/usr/bin/"
+          ln -s usr/bin/vencord-forge "$app/AppRun"
+          cp gui/assets/icon.svg "$app/vencord-forge.svg"
+          ln -s vencord-forge.svg "$app/.DirIcon"
+          printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Vencord Forge' 'Comment=Build and install Vencord with your plugins into Discord' 'Exec=vencord-forge' 'Icon=vencord-forge' 'Terminal=false' 'Categories=Utility;Network;' > "$app/vencord-forge.desktop"
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool --no-appstream "$app" ../dist/vencord-forge-x86_64.AppImage
+          rm -rf "$app"
+          ../dist/vencord-forge-x86_64.AppImage --appimage-extract-and-run --help >/dev/null || APPIMAGE_EXTRACT_AND_RUN=1 ../dist/vencord-forge-x86_64.AppImage --help
       - uses: actions/upload-artifact@v4
         with:
           name: vencord-forge-${{ matrix.name }}
-          path: dist/vencord-forge-${{ matrix.name }}.*
+          path: dist/*
 
   equivalence:
     runs-on: ubuntu-latest
@@ -131,21 +150,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+          if gh release view "${{ steps.version.outputs.tag }}" -R "${{ github.repository }}" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/download-artifact@v4
-        if: steps.exists.outputs.exists == 'false'
+        if: steps.exists.outputs.exists == 'false' || inputs.republish
         with:
           path: dist
           merge-multiple: true
       - name: Publish release as the owner
-        if: steps.exists.outputs.exists == 'false'
+        if: steps.exists.outputs.exists == 'false' || inputs.republish
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          EXISTS: ${{ steps.exists.outputs.exists }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASE_TOKEN secret is not set; refusing to publish as a bot"; exit 1; fi
-          cd dist && sha256sum vencord-forge-* > SHA256SUMS
-          gh release create "${{ steps.version.outputs.tag }}" vencord-forge-* SHA256SUMS \
-            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-            --title "Vencord Forge ${{ steps.version.outputs.version }}" \
-            --notes "Vencord Forge ${{ steps.version.outputs.version }}: the app and the vforge command line for Linux and Windows. Unpack and run vencord-forge (vencord-forge.exe on Windows); keep vforge next to it." \
-            --generate-notes
+          cd dist && chmod +x vencord-forge-* vforge-* && sha256sum vencord-forge-* vforge-* > SHA256SUMS
+          assets=$(ls vencord-forge-* vforge-* SHA256SUMS)
+          if [ "$EXISTS" = true ]; then
+            # Same version rebuilt: point the tag at this commit, replace every asset.
+            gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/$TAG" -f sha="${{ github.sha }}" -F force=true >/dev/null
+            for old in $(gh release view "$TAG" -R "${{ github.repository }}" --json assets --jq '.assets[].name'); do
+              echo "$assets" | grep -qx "$old" || gh release delete-asset "$TAG" "$old" -R "${{ github.repository }}" -y
+            done
+            gh release upload "$TAG" $assets -R "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" $assets -R "${{ github.repository }}" --target "${{ github.sha }}" \
+              --title "Vencord Forge $VERSION" --generate-notes \
+              --notes "Vencord Forge $VERSION for Linux and Windows. Download one file and run it: vencord-forge-*.AppImage or vencord-forge-linux-x86_64 on Linux (chmod +x first), vencord-forge-windows-x86_64.exe on Windows. vforge-* is the same engine as a command line."
+          fi

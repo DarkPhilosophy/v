@@ -920,7 +920,9 @@ fn register_launcher() {
     if !cfg!(target_os = "linux") {
         return;
     }
-    let (Ok(exe), Some(home)) = (std::env::current_exe(), std::env::var_os("HOME").map(PathBuf::from)) else { return };
+    // Inside an AppImage the running executable is on a temporary mount; launch the AppImage file.
+    let exe = std::env::var_os("APPIMAGE").map(PathBuf::from).or_else(|| std::env::current_exe().ok());
+    let (Some(exe), Some(home)) = (exe, std::env::var_os("HOME").map(PathBuf::from)) else { return };
     let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".local/share"));
     let icon_dir = data.join("icons/hicolor/scalable/apps");
     let entry = format!(
@@ -937,6 +939,12 @@ fn register_launcher() {
 }
 
 fn main() -> eframe::Result<()> {
+    // With arguments the app is the command line (`vencord-forge detect`, and the privileged
+    // steps it runs through pkexec), so a single file is enough to ship.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        std::process::exit(vforge::main_with(args));
+    }
     register_launcher();
     let mut viewport = egui::ViewportBuilder::default().with_title("Vencord Forge").with_app_id("vencord-forge").with_decorations(false).with_resizable(true);
     if let Some(icon) = icon() {

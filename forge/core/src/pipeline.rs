@@ -362,14 +362,27 @@ fn privileged_bootstrap(resources: &Path, loader: &Path, runtime: &Path, action:
     Resources::new(resources)?.verify_chain(runtime, None)
 }
 
-/// The `vforge` CLI next to the running executable (the GUI ships with it).
+/// Program that runs the privileged steps: `vforge` next to the app if present, else the app
+/// itself (it accepts the same commands). Executables inside an AppImage live on a FUSE mount
+/// root cannot read, so they are copied to the cache first.
 pub fn cli_path() -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
     let dir = exe.parent().unwrap();
-    let name = if cfg!(windows) { "vforge.exe" } else { "vforge" };
-    let cli = dir.join(name);
-    ensure!(cli.is_file(), "the vforge command-line helper is missing next to {}", exe.display());
-    Ok(cli)
+    let sibling = dir.join(if cfg!(windows) { "vforge.exe" } else { "vforge" });
+    let program = if sibling.is_file() { sibling } else { exe.clone() };
+    let in_appimage = std::env::var_os("APPIMAGE").is_some() || program.starts_with("/tmp/.mount_");
+    if !in_appimage {
+        return Ok(program);
+    }
+    let copy = paths::cache_dir().join("bin").join(program.file_name().unwrap());
+    fs::create_dir_all(copy.parent().unwrap())?;
+    fsutil::replace_from(&program, &copy)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&copy, fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(copy)
 }
 
 /// Restore stock Discord in one installation (the runtime stays for other installations).

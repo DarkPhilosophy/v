@@ -6,6 +6,14 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "vforge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vforge"
+path = "src/main.rs"
+
 [dependencies]
 forge-core.workspace = true
 anyhow.workspace = true

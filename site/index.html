@@ -117,7 +117,7 @@ footer a:hover{color:var(--text)}
       <h3>Vencord Forge</h3>
       <p>A desktop app: pick the Discord, plugins, patches and OpenAsar, then install. Needs nothing preinstalled; it fetches Node.js when missing.</p>
       <div class="downloads" id="downloads"><a class="btn" href="https://github.com/DarkPhilosophy/v/releases">Releases</a></div>
-      <p class="muted-small" id="release-info">Unpack and run vencord-forge; keep vforge next to it.</p>
+      <p class="muted-small" id="release-info">Download one file and run it.</p>
     </div>
   </div>
 </div></section>
@@ -170,10 +170,20 @@ const card = (tag, title, text) => `<div class="card"><span class="tag">${tag}</
     const releases = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=20`).then(r => r.json());
     const release = releases.find(r => r.tag_name.startsWith("forge-v") && !r.draft && !r.prerelease);
     if (!release) return;
-    const label = name => name.includes("windows") ? "Windows" : name.includes("linux") ? "Linux" : null;
-    const buttons = release.assets.filter(a => label(a.name)).map(a => `<a class="btn ${label(a.name) === (navigator.userAgent.includes("Windows") ? "Windows" : "Linux") ? "primary" : ""}" href="${a.browser_download_url}">Download for ${label(a.name)}</a>`);
+    const kinds = [
+      [/\.AppImage$/, "Linux · AppImage", "Linux"],
+      [/^vencord-forge-linux-x86_64$/, "Linux · binary", "Linux"],
+      [/^vencord-forge-windows-x86_64\.exe$/, "Windows · .exe", "Windows"],
+    ];
+    const mine = navigator.userAgent.includes("Windows") ? "Windows" : "Linux";
+    let primaryGiven = false;
+    const buttons = kinds.flatMap(([re, text, os]) => release.assets.filter(a => re.test(a.name)).map(a => {
+      const primary = os === mine && !primaryGiven;
+      if (primary) primaryGiven = true;
+      return `<a class="btn ${primary ? "primary" : ""}" href="${a.browser_download_url}">${text}</a>`;
+    }));
     document.getElementById("downloads").innerHTML = buttons.join("") + `<a class="btn" href="${release.html_url}">Release notes</a>`;
-    document.getElementById("release-info").textContent = `Version ${release.tag_name.replace("forge-v", "")}, published ${new Date(release.published_at).toLocaleDateString()}. Unpack and run vencord-forge; keep vforge next to it.`;
+    document.getElementById("release-info").textContent = `Version ${release.tag_name.replace("forge-v", "")}, published ${new Date(release.published_at).toLocaleDateString()}. Download one file and run it (on Linux, make it executable first).`;
   } catch { /* the Releases button stays */ }
 })();
 
