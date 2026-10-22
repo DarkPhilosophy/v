@@ -85,12 +85,6 @@ struct App {
     shots: Option<(PathBuf, usize, u32)>,
 }
 
-/// Running from a checkout (`forge/target/...`)? Then build from that checkout by default.
-fn local_checkout() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    exe.ancestors().find(|dir| dir.join("forge.json").is_file() && dir.join("patches/series").is_file()).map(PathBuf::from)
-}
-
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         style(&cc.egui_ctx);
@@ -101,7 +95,9 @@ impl App {
             Some(BootstrapKind::Openasar) => OpenAsarAction::Keep,
             _ => OpenAsarAction::Install,
         };
-        let source_text = local_checkout().map(|p| p.display().to_string()).unwrap_or_else(|| forge_core::manifest::DEFAULT_SOURCE.to_owned());
+        // Users get the published distribution. Developers can point at a checkout with
+        // FORGE_SOURCE or from Install › Advanced.
+        let source_text = std::env::var("FORGE_SOURCE").unwrap_or_else(|_| forge_core::manifest::DEFAULT_SOURCE.to_owned());
         let mut app = Self {
             page: Page::Discord,
             installs,
@@ -505,6 +501,20 @@ impl App {
         }
         ui.add_space(6.0);
         ui.checkbox(&mut self.show_log, "Show details");
+        egui::CollapsingHeader::new(RichText::new("Advanced").color(MUTED)).show(ui, |ui| {
+            wrapped(ui, RichText::new("Build from another GitHub repository or a local folder that contains a forge.json. Leave the default to get the published distribution.").color(MUTED).small());
+            ui.horizontal(|ui| {
+                let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(ui.available_width() - 90.0));
+                let reset = ui.button("Default").clicked();
+                if reset {
+                    self.source_text = forge_core::manifest::DEFAULT_SOURCE.to_owned();
+                }
+                if (edit.lost_focus() || reset) && self.job == Job::Idle {
+                    self.dist = None;
+                    self.load_distribution(ctx);
+                }
+            });
+        });
         if self.show_log {
             egui::Frame::new().fill(Color32::from_rgb(0x0b, 0x0c, 0x10)).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
                 egui::ScrollArea::vertical().stick_to_bottom(true).max_height(260.0).auto_shrink([false, false]).show(ui, |ui| {
@@ -698,12 +708,6 @@ impl eframe::App for App {
                 if nav_item(ui, "About", None, self.page == Page::About).clicked() {
                     self.page = Page::About;
                 }
-                ui.add_space(6.0);
-                let edit = ui.add(egui::TextEdit::singleline(&mut self.source_text).desired_width(204.0).font(egui::TextStyle::Small));
-                if edit.lost_focus() && self.job == Job::Idle {
-                    self.load_distribution(ctx);
-                }
-                ui.label(RichText::new("SOURCE").small().color(MUTED).strong());
             });
         });
         egui::CentralPanel::default().frame(egui::Frame::new().fill(BG)).show(ctx, |ui| {
