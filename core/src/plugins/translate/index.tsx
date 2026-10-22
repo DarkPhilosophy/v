@@ -28,7 +28,7 @@ import { Message } from "@vencord/discord-types";
 import { Menu, UserStore } from "@webpack/common";
 
 import { settings } from "./settings";
-import { setShouldShowTranslateEnabledTooltip, TranslateChatBarIcon, TranslateIcon } from "./TranslateIcon";
+import { flashTranslateEnabledTooltip, TranslateChatBarIcon, TranslateIcon } from "./TranslateIcon";
 import { handleTranslate, TranslationAccessory, TranslationToggle } from "./TranslationAccessory";
 import { getMessageContent, getTargetLanguageName, pendingSent, QUEUE_TTL_MS, sentOriginals, translate } from "./utils";
 const logger = new Logger("Translate");
@@ -54,7 +54,6 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
     ));
 };
 
-let tooltipTimeout: ReturnType<typeof setTimeout>;
 
 
 export default definePlugin({
@@ -139,9 +138,7 @@ export default definePlugin({
         if (!settings.store.autoTranslate) return;
         if (!message.content) return;
 
-        setShouldShowTranslateEnabledTooltip?.(true);
-        clearTimeout(tooltipTimeout);
-        tooltipTimeout = setTimeout(() => setShouldShowTranslateEnabledTooltip?.(false), 2000);
+        flashTranslateEnabledTooltip();
 
         const original = message.content;
         // A failed translation (offline, provider error) must never block or break sending:

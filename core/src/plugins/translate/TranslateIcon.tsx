@@ -40,7 +40,24 @@ export const TranslateIcon: IconComponent = ({ height = 20, width = 20, classNam
     );
 };
 
-export let setShouldShowTranslateEnabledTooltip: undefined | ((show: boolean) => void);
+// Every mounted chat bar button subscribes. A single module-level setter was overwritten by the
+// last button to mount (several chat bars exist: main chat, threads, forwarding...), so the
+// "hide" call after 2 s reached a different button than the "show" call and the tooltip of the
+// first stayed open forever.
+const tooltipListeners = new Set<(show: boolean) => void>();
+let tooltipVisible = false;
+let tooltipTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Briefly show "Auto Translate Enabled" on the chat bar button. */
+export function flashTranslateEnabledTooltip() {
+    tooltipVisible = true;
+    tooltipListeners.forEach(listener => listener(true));
+    clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(() => {
+        tooltipVisible = false;
+        tooltipListeners.forEach(listener => listener(false));
+    }, 2000);
+}
 
 function AutoTranslateConfirmModal(props: RenderModalProps) {
     const s = settings.use(["dismissedAutoTranslateAlert"]);
@@ -65,10 +82,11 @@ function AutoTranslateConfirmModal(props: RenderModalProps) {
 export const TranslateChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => {
     const { autoTranslate } = settings.use(["autoTranslate"]);
 
-    const [shouldShowTranslateEnabledTooltip, setter] = useState(false);
+    const [shouldShowTranslateEnabledTooltip, setter] = useState(tooltipVisible);
     useEffect(() => {
-        setShouldShowTranslateEnabledTooltip = setter;
-        return () => setShouldShowTranslateEnabledTooltip = undefined;
+        tooltipListeners.add(setter);
+        setter(tooltipVisible);
+        return () => void tooltipListeners.delete(setter);
     }, []);
 
     if (!isMainChat) return null;
