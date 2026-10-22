@@ -917,7 +917,9 @@ fn icon() -> Option<egui::IconData> {
 /// Linux: register a launcher (app menu entry + icon) pointing at this executable, so Forge opens
 /// like any other app instead of from a terminal. Rewritten when the executable moves.
 fn register_launcher() {
-    if !cfg!(target_os = "linux") {
+    // Inside Flatpak the package provides the launcher; a plain copy must not add a second one
+    // next to an installed Flatpak.
+    if !cfg!(target_os = "linux") || forge_core::paths::in_flatpak() || flatpak_installed() {
         return;
     }
     // Inside an AppImage the running executable is on a temporary mount; launch the AppImage file.
@@ -938,6 +940,13 @@ fn register_launcher() {
         let _ = std::fs::create_dir_all(path.parent().unwrap());
         let _ = std::fs::write(&path, entry);
     }
+}
+
+fn flatpak_installed() -> bool {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    [home.join(".local/share/flatpak/exports/share/applications"), PathBuf::from("/var/lib/flatpak/exports/share/applications")]
+        .iter()
+        .any(|dir| dir.join("io.github.DarkPhilosophy.VencordForge.desktop").exists())
 }
 
 fn main() -> eframe::Result<()> {

@@ -228,7 +228,7 @@ jobs:
           cd pub
           git config user.name "DarkPhilosophy"
           git config user.email "19309990+DarkPhilosophy@users.noreply.github.com"
-          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then git init -q -b flatpak-repo .; git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}"; fi
+          if [ ! -e .git ]; then git init -q -b flatpak-repo .; git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}"; fi
           git add -A repo
           git commit -qm "flatpak: Vencord Forge $version" || exit 0
           git push origin HEAD:flatpak-repo
