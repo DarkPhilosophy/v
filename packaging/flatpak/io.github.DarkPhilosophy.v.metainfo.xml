@@ -5,7 +5,7 @@
   <summary>Install Vencord into Discord with the plugins you pick</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <developer id="io.github.DarkPhilosophy">
+  <developer id="io.github.darkphilosophy">
     <name>DarkPhilosophy</name>
   </developer>
   <url type="homepage">https://darkphilosophy.github.io/v/</url>
@@ -38,6 +38,10 @@
     <screenshot>
       <caption>About and credits</caption>
       <image>https://darkphilosophy.github.io/v/screenshots/about.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Application full guide</caption>
+      <video container="webm" codec="vp9" width="1600" height="1088">https://darkphilosophy.github.io/v/screenshots/demo.webm</video>
     </screenshot>
   </screenshots>
   <branding>
