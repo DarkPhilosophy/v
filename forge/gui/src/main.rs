@@ -80,6 +80,7 @@ struct App {
     result: Option<Result<String, String>>,
     show_log: bool,
     logo: Option<egui::TextureHandle>,
+    last_step: Page,
     /// FORGE_SCREENSHOT_DIR: render every page, save PNGs, exit (visual checks without screen capture).
     shots: Option<(PathBuf, usize, u32)>,
 }
@@ -120,6 +121,7 @@ impl App {
             log: Vec::new(),
             result: None,
             show_log: false,
+            last_step: Page::Discord,
             logo: icon().map(|i| cc.egui_ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied([i.width as usize, i.height as usize], &i.rgba), egui::TextureOptions::LINEAR)),
             shots: std::env::var_os("FORGE_SCREENSHOT_DIR").map(|d| (PathBuf::from(d), 0, 0)),
         };
@@ -272,10 +274,10 @@ fn wrapped(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) {
     ui.add(egui::Label::new(text).wrap());
 }
 
-fn heading(ui: &mut egui::Ui, title: &str, subtitle: &str) {
-    ui.add_space(6.0);
-    ui.heading(RichText::new(title).strong());
-    ui.label(RichText::new(subtitle).color(MUTED));
+/// Page intro. The title itself is shown in the app header, so only the explanation is here.
+fn heading(ui: &mut egui::Ui, _title: &str, subtitle: &str) {
+    ui.add_space(2.0);
+    wrapped(ui, RichText::new(subtitle).color(MUTED));
     ui.add_space(8.0);
 }
 
@@ -547,12 +549,21 @@ fn window_button(ui: &mut egui::Ui, color: Color32, symbol: u8) -> egui::Respons
 }
 
 impl App {
-    /// Our own title bar (the window has no system decorations): drag to move, double-click to
-    /// maximize, theme-coloured minimize / maximize / close.
-    fn title_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("titlebar").exact_height(40.0).frame(egui::Frame::new().fill(BG).stroke(Stroke::new(1.0_f32, LINE)).inner_margin(egui::Margin::symmetric(14, 0))).show(ctx, |ui| {
-            let bar = ui.max_rect();
-            let drag = ui.interact(bar, egui::Id::new("titlebar-drag"), egui::Sense::click_and_drag());
+    /// Where "back" goes: the previous setup step, or from About to the step you came from.
+    fn back_target(&self) -> Option<Page> {
+        match Page::ALL.iter().position(|p| *p == self.page) {
+            Some(0) => None,
+            Some(i) => Some(Page::ALL[i - 1]),
+            None => Some(self.last_step),
+        }
+    }
+
+    /// App header (the window has no system decorations): back, page title, window buttons.
+    /// Empty space drags the window; double-click maximizes.
+    fn header(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        egui::TopBottomPanel::top("header").exact_height(58.0).frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin { left: 18, right: 16, top: 0, bottom: 0 })).show_inside(ui, |ui| {
+            let drag = ui.interact(ui.max_rect(), egui::Id::new("header-drag"), egui::Sense::click_and_drag());
             if drag.double_clicked() {
                 let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
@@ -560,7 +571,24 @@ impl App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
             ui.horizontal_centered(|ui| {
-                ui.label(RichText::new("Vencord Forge").strong().color(MUTED));
+                let back = self.back_target();
+                let (rect, response) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), if back.is_some() { egui::Sense::click() } else { egui::Sense::hover() });
+                if back.is_some() {
+                    let hover = ctx.animate_bool_responsive(response.id, response.hovered());
+                    ui.painter().rect_filled(rect, CornerRadius::same(9), Color32::from_white_alpha((14.0 * hover) as u8));
+                    let c = rect.center();
+                    let ink = Stroke::new(2.0_f32, Color32::WHITE.gamma_multiply(0.75 + 0.25 * hover));
+                    ui.painter().line_segment([c + egui::vec2(3.0, -6.0), c + egui::vec2(-3.0, 0.0)], ink);
+                    ui.painter().line_segment([c + egui::vec2(-3.0, 0.0), c + egui::vec2(3.0, 6.0)], ink);
+                    if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        self.page = back.unwrap();
+                    }
+                }
+                ui.add_space(6.0);
+                ui.label(RichText::new(self.page.title()).size(22.0).strong().color(Color32::WHITE));
+                if let Some(i) = Page::ALL.iter().position(|p| *p == self.page) {
+                    ui.label(RichText::new(format!("Step {} of {}", i + 1, Page::ALL.len())).color(MUTED).small());
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     if window_button(ui, BTN_CLOSE, 2).on_hover_text("Close").clicked() {
@@ -572,6 +600,26 @@ impl App {
                     }
                     if window_button(ui, BTN_MIN, 0).on_hover_text("Minimize").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
+                });
+            });
+        });
+    }
+
+    /// Persistent step navigation at the bottom of the window, independent of page content.
+    fn footer(&mut self, ui: &mut egui::Ui) {
+        let Some(index) = Page::ALL.iter().position(|p| *p == self.page) else { return };
+        egui::TopBottomPanel::bottom("footer").exact_height(64.0).frame(egui::Frame::new().fill(BG).stroke(Stroke::new(1.0_f32, LINE)).inner_margin(egui::Margin::symmetric(24, 0))).show_inside(ui, |ui| {
+            ui.horizontal_centered(|ui| {
+                if index > 0 && ui.add(egui::Button::new("Back").min_size(egui::vec2(96.0, 38.0))).clicked() {
+                    self.page = Page::ALL[index - 1];
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if index + 1 < Page::ALL.len() {
+                        let next = egui::Button::new(RichText::new(format!("Next: {}", Page::ALL[index + 1].title())).strong().color(Color32::BLACK)).fill(ACCENT).min_size(egui::vec2(150.0, 38.0));
+                        if ui.add(next).clicked() {
+                            self.page = Page::ALL[index + 1];
+                        }
                     }
                 });
             });
@@ -616,9 +664,17 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
         self.screenshots(ctx);
-        self.title_bar(ctx);
         self.resize_edges(ctx);
+        if Page::ALL.contains(&self.page) {
+            self.last_step = self.page;
+        }
         egui::SidePanel::left("nav").exact_width(236.0).resizable(false).frame(egui::Frame::new().fill(PANEL).stroke(Stroke::new(1.0_f32, LINE)).inner_margin(egui::Margin::same(16))).show(ctx, |ui| {
+            // The brand area is part of the window chrome: it drags the window too.
+            let brand = egui::Rect::from_min_size(ui.max_rect().min - egui::vec2(16.0, 16.0), egui::vec2(236.0, 74.0));
+            if ui.interact(brand, egui::Id::new("brand-drag"), egui::Sense::drag()).drag_started_by(egui::PointerButton::Primary) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            ui.add_space(2.0);
             ui.horizontal(|ui| {
                 if let Some(logo) = &self.logo {
                     ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(40.0, 40.0)));
@@ -650,7 +706,10 @@ impl eframe::App for App {
                 ui.label(RichText::new("SOURCE").small().color(MUTED).strong());
             });
         });
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::symmetric(28, 18))).show(ctx, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(BG)).show(ctx, |ui| {
+            self.header(ui);
+            self.footer(ui);
+            egui::CentralPanel::default().frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin { left: 28, right: 28, top: 4, bottom: 12 })).show_inside(ui, |ui| {
             if self.job == Job::Loading {
                 ui.horizontal(|ui| {
                     ui.spinner();
@@ -675,15 +734,7 @@ impl eframe::App for App {
                     Page::About => self.page_about(ui),
                 }
                 ui.add_space(12.0);
-                let Some(index) = Page::ALL.iter().position(|p| *p == self.page) else { return };
-                ui.horizontal(|ui| {
-                    if index > 0 && ui.button("Back").clicked() {
-                        self.page = Page::ALL[index - 1];
-                    }
-                    if index + 1 < Page::ALL.len() && ui.add(egui::Button::new(RichText::new("Next").strong())).clicked() {
-                        self.page = Page::ALL[index + 1];
-                    }
-                });
+            });
             });
         });
     }
