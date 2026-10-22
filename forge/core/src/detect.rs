@@ -2,7 +2,7 @@
 //! (native packages and Flatpak), Windows and macOS. Port of `scripts/detect-discord.py`, extended
 //! to Windows and macOS.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::asar;
 use crate::bootstrap::{BootstrapKind, Resources};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Channel {
     Stable,
     Ptb,
@@ -59,7 +59,7 @@ impl Channel {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InstallKind {
     Native,
     Flatpak,
@@ -67,7 +67,7 @@ pub enum InstallKind {
     MacOs,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Install {
     pub channel: Channel,
     pub kind: InstallKind,
@@ -148,6 +148,17 @@ fn package_version(resources: &Path) -> Option<String> {
         .iter()
         .find_map(|n| asar::discord_package(&resources.join(n)))
         .and_then(|p| p.get("version").and_then(|v| v.as_str()).map(str::to_owned))
+}
+
+/// Installations as found on the host. Inside Forge's Flatpak the sandbox cannot see Discord's
+/// files, so the host copy of Forge does the scan (`detect --json`).
+pub fn discover_host() -> Vec<Install> {
+    if !crate::paths::in_flatpak() {
+        return discover(&Roots::from_env());
+    }
+    let Ok(cli) = crate::pipeline::cli_path() else { return Vec::new() };
+    let output = crate::process::host_cli(&cli).args(["detect", "--json", "--local"]).output();
+    output.ok().filter(|o| o.status.success()).and_then(|o| serde_json::from_slice(&o.stdout).ok()).unwrap_or_default()
 }
 
 pub fn discover(roots: &Roots) -> Vec<Install> {

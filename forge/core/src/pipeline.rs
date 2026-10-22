@@ -306,10 +306,16 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
 
     // Rebuilds reuse the same runtime path, so the loader in Discord's folder is usually already
     // right: then only the runtime changes and system-owned installs need no password.
-    let loader_current = fs::read(target.resources.join("app.asar")).ok() == fs::read(&loader).ok();
+    // Sandboxed, Discord's files are not readable here: let the host check whether the chain is
+    // already right (then no password is needed); otherwise change it on the host.
+    let loader_current = if paths::in_flatpak() {
+        action == OpenAsarAction::Keep && verify_chain_anywhere(&target.resources, &runtime).is_ok()
+    } else {
+        fs::read(target.resources.join("app.asar")).ok() == fs::read(&loader).ok()
+    };
     let result = if loader_current && action == OpenAsarAction::Keep {
-        Resources::new(&target.resources).and_then(|r| r.verify_chain(&runtime, None))
-    } else if target.writable {
+        verify_chain_anywhere(&target.resources, &runtime)
+    } else if target.writable && !paths::in_flatpak() {
         apply_bootstrap(&target.resources, &loader, &runtime, action, candidate.as_deref())
     } else {
         privileged_bootstrap(&target.resources, &loader, &runtime, action, candidate.as_deref(), sink)
@@ -350,16 +356,41 @@ fn privileged_bootstrap(resources: &Path, loader: &Path, runtime: &Path, action:
     if !cfg!(target_os = "linux") {
         bail!("Discord's files at {} are not writable; run Forge as administrator", resources.display());
     }
-    sink(Event::Log("Discord's files are system-owned; asking for permission".into()));
     let cli = cli_path()?;
-    let mut command = crate::process::host_command("pkexec");
-    command.arg(&cli).arg("privileged-bootstrap").arg(resources).arg(loader).arg(runtime).arg(action.as_str());
+    let mut command = host_writer(resources, &cli, sink);
+    command.arg("privileged-bootstrap").arg(resources).arg(loader).arg(runtime).arg(action.as_str());
     if let Some(candidate) = candidate {
         command.arg(candidate);
     }
-    let status = command.status().context("pkexec is required to modify a system-wide Discord")?;
-    ensure!(status.success(), "privileged bootstrap update failed or was refused");
-    Resources::new(resources)?.verify_chain(runtime, None)
+    let output = command.output().context("cannot run the host helper")?;
+    ensure!(output.status.success(), "changing Discord's files failed or was refused: {}", String::from_utf8_lossy(&output.stderr).trim());
+    // The helper verifies the chain itself and prints the bootstrap it found.
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(if text.contains("openasar") { BootstrapKind::Openasar } else { BootstrapKind::Original })
+}
+
+/// The command that changes Discord's files: pkexec when they are system-owned, the host copy
+/// directly when they are the user's but Forge runs sandboxed.
+fn host_writer(resources: &Path, cli: &Path, sink: Sink) -> std::process::Command {
+    let user_owned = resources.starts_with(paths::home()) && !resources.starts_with(paths::home().join(".local/share/flatpak"));
+    if user_owned && paths::in_flatpak() {
+        return crate::process::host_cli(cli);
+    }
+    sink(Event::Log("Discord's files are system-owned; asking for permission".into()));
+    let mut command = crate::process::host_command("pkexec");
+    command.args(crate::process::host_cli_args(cli));
+    command
+}
+
+/// Verify Discord's bootstrap chain, on the host when Forge runs sandboxed (it cannot read
+/// Discord's files from inside the Flatpak).
+pub fn verify_chain_anywhere(resources: &Path, runtime: &Path) -> Result<BootstrapKind> {
+    if !paths::in_flatpak() {
+        return Resources::new(resources)?.verify_chain(runtime, None);
+    }
+    let output = crate::process::host_cli(&cli_path()?).arg("verify-chain").arg(resources).arg(runtime).output()?;
+    ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr).trim().trim_start_matches("vforge: "));
+    Ok(if String::from_utf8_lossy(&output.stdout).contains("openasar") { BootstrapKind::Openasar } else { BootstrapKind::Original })
 }
 
 /// Program that runs the privileged steps: `vforge` next to the app if present, else the app
@@ -390,11 +421,11 @@ pub fn cli_path() -> Result<PathBuf> {
 /// Restore stock Discord in one installation (the runtime stays for other installations).
 pub fn uninstall(target: &Install, sink: Sink) -> Result<()> {
     sink(Event::Step(format!("Restoring stock {}", target.title())));
-    if target.writable {
+    if target.writable && !paths::in_flatpak() {
         return Resources::new(&target.resources)?.uninstall();
     }
     ensure!(cfg!(target_os = "linux"), "run Forge as administrator to modify {}", target.resources.display());
-    let status = crate::process::host_command("pkexec").arg(cli_path()?).arg("privileged-uninstall").arg(&target.resources).status()?;
+    let status = host_writer(&target.resources, &cli_path()?, sink).arg("privileged-uninstall").arg(&target.resources).status()?;
     ensure!(status.success(), "privileged uninstall failed or was refused");
     Ok(())
 }

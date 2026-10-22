@@ -84,7 +84,7 @@ cd forge && cargo build --release
 ```
 
 <!-- FORGE-START -->
-Latest app version: **0.1.0** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.0) · [all releases](https://github.com/DarkPhilosophy/v/releases)
+Latest app version: **0.1.1** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.1) · [all releases](https://github.com/DarkPhilosophy/v/releases)
 <!-- FORGE-END -->
 
 Every version bump of Forge is built for Linux and Windows and published as a release automatically. [`forge/tests/equivalence.sh`](../forge/tests/equivalence.sh) proves the Rust engine produces byte-identical results to the shell installer's tools (patches, runtime ASAR, loader, embedded seeds, OpenAsar fixes).

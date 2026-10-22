@@ -89,7 +89,7 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         style(&cc.egui_ctx);
         let (tx, rx) = channel();
-        let installs = detect::discover(&Roots::from_env());
+        let installs = detect::discover_host();
         let target = (!installs.is_empty()).then_some(0);
         let openasar = match installs.first().and_then(|i| i.modded) {
             Some(BootstrapKind::Openasar) => OpenAsarAction::Keep,
@@ -142,7 +142,7 @@ impl App {
     }
 
     fn refresh_installs(&mut self) {
-        self.installs = detect::discover(&Roots::from_env());
+        self.installs = detect::discover_host();
         if self.target.is_some_and(|t| t >= self.installs.len()) {
             self.target = (!self.installs.is_empty()).then_some(0);
         }
@@ -946,7 +946,7 @@ fn flatpak_installed() -> bool {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
     [home.join(".local/share/flatpak/exports/share/applications"), PathBuf::from("/var/lib/flatpak/exports/share/applications")]
         .iter()
-        .any(|dir| dir.join("io.github.DarkPhilosophy.VencordForge.desktop").exists())
+        .any(|dir| dir.join("io.github.DarkPhilosophy.v.desktop").exists())
 }
 
 fn main() -> eframe::Result<()> {

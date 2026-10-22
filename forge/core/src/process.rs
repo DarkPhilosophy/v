@@ -29,6 +29,33 @@ pub fn host_command(program: &str) -> Command {
     }
 }
 
+/// Arguments that run Forge's own executable on the host. Inside Flatpak the binary is built
+/// against the runtime's glibc, which can be newer than the host's, so it is started with the
+/// runtime's dynamic loader and libraries (the runtime's host path is in /.flatpak-info).
+pub fn host_cli_args(cli: &std::path::Path) -> Vec<std::ffi::OsString> {
+    let mut args = Vec::new();
+    if crate::paths::in_flatpak()
+        && let Some(runtime) = std::fs::read_to_string("/.flatpak-info").ok().and_then(|info| {
+            info.lines().find_map(|l| l.strip_prefix("runtime-path=").map(|p| std::path::PathBuf::from(p.trim())))
+        })
+    {
+        let libs = runtime.join("lib/x86_64-linux-gnu");
+        args.push(libs.join("ld-linux-x86-64.so.2").into_os_string());
+        args.push("--library-path".into());
+        args.push(libs.into_os_string());
+    }
+    args.push(cli.as_os_str().to_owned());
+    args
+}
+
+/// Forge's own executable on the host (directly, or via flatpak-spawn inside Flatpak).
+pub fn host_cli(cli: &std::path::Path) -> Command {
+    let args = host_cli_args(cli);
+    let mut command = host_command(&args[0].to_string_lossy());
+    command.args(&args[1..]);
+    command
+}
+
 #[derive(Clone, Default)]
 pub struct Cancel(Arc<AtomicBool>);
 

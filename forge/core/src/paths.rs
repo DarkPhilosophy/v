@@ -14,7 +14,9 @@ pub fn in_flatpak() -> bool {
 /// XDG directories as the host sees them. Inside Flatpak, $XDG_* point into the sandbox
 /// (~/.var/app/<id>/...), but Discord, the runtime and the updaters live in the host's ones.
 fn env_dir(name: &str) -> Option<PathBuf> {
-    if in_flatpak() && name.starts_with("XDG_") {
+    // Only the config dir is shared with the host (the Vencord runtime lives there); data and
+    // cache stay in the sandbox, whose real paths (~/.var/app/<id>/...) the host can also reach.
+    if in_flatpak() && name == "XDG_CONFIG_HOME" {
         return std::env::var_os(format!("HOST_{name}")).filter(|v| !v.is_empty()).map(PathBuf::from);
     }
     std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from)

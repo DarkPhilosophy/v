@@ -90,7 +90,7 @@ fn source(args: &mut Args) -> Result<Source> {
 }
 
 fn pick_target(spec: Option<String>) -> Result<Install> {
-    let installs = detect::discover(&Roots::from_env());
+    let installs = detect::discover_host();
     match spec {
         Some(s) if s.chars().all(|c| c.is_ascii_digit()) => installs.get(s.parse::<usize>()?).cloned().context("no installation with that index (see `vforge detect`)"),
         Some(s) => {
@@ -129,8 +129,9 @@ fn run(argv: Vec<String>) -> Result<()> {
     match command.as_str() {
         "detect" => {
             let json = args.flag("--json");
+            let local = args.flag("--local");
             args.done()?;
-            let installs = detect::discover(&Roots::from_env());
+            let installs = if local { detect::discover(&Roots::from_env()) } else { detect::discover_host() };
             if json {
                 println!("{}", serde_json::to_string_pretty(&installs)?);
             } else if installs.is_empty() {
@@ -216,8 +217,8 @@ fn run(argv: Vec<String>) -> Result<()> {
             println!("runtime: {} ({})", runtime.display(), if runtime.is_file() { "present" } else { "absent" });
             let profile = Profile::load(&paths::runtime_dir());
             println!("disabled plugins: {:?}\ndisabled patches: {:?}", profile.exclude_plugins, profile.exclude_patches);
-            for t in detect::discover(&Roots::from_env()) {
-                let chain = bootstrap::Resources::new(&t.resources).and_then(|r| r.verify_chain(&runtime, None));
+            for t in detect::discover_host() {
+                let chain = pipeline::verify_chain_anywhere(&t.resources, &runtime);
                 println!("{}: {}", t.title(), match chain {
                     Ok(kind) => format!("Vencord active ({})", kind.label()),
                     Err(_) if t.modded.is_none() => "stock".into(),

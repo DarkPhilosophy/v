@@ -214,10 +214,10 @@ jobs:
           mkdir -p pub/repo
           [ -f pub/repo/config ] || ostree init --mode=archive-z2 --repo=pub/repo
           flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean \
-            --repo=pub/repo --gpg-sign="$KEY" --default-branch=stable build packaging/flatpak/io.github.DarkPhilosophy.VencordForge.yml
+            --repo=pub/repo --gpg-sign="$KEY" --default-branch=stable build packaging/flatpak/io.github.DarkPhilosophy.v.yml
           flatpak build-update-repo --gpg-sign="$KEY" --generate-static-deltas --prune --prune-depth=3 pub/repo
           flatpak build-bundle --gpg-sign="$KEY" --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
-            pub/repo dist/vencord-forge.flatpak io.github.DarkPhilosophy.VencordForge stable
+            pub/repo dist/vencord-forge.flatpak io.github.DarkPhilosophy.v stable
           echo "KEY=$KEY" >> "$GITHUB_ENV"
       - name: Publish bundle and repository as the owner
         env:

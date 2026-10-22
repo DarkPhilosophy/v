@@ -22,7 +22,7 @@ Icon=https://darkphilosophy.github.io/v/brand/v-icon.svg
 GPGKey={key}
 """)
 (out / "vencord-forge.flatpakref").write_text(f"""[Flatpak Ref]
-Name=io.github.DarkPhilosophy.VencordForge
+Name=io.github.DarkPhilosophy.v
 Branch=stable
 Title=Vencord Forge
 Url={url}

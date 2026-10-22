@@ -1130,7 +1130,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forge-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3250,7 +3250,7 @@ dependencies = [
 
 [[package]]
 name = "vencord-forge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "eframe",
@@ -3271,7 +3271,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vforge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "forge-core",

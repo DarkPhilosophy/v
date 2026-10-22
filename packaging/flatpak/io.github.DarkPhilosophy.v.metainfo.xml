@@ -1,21 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.DarkPhilosophy.VencordForge</id>
+  <id>io.github.DarkPhilosophy.v</id>
   <name>Vencord Forge</name>
-  <summary>Build and install Vencord with your plugins into Discord</summary>
+  <summary>Install Vencord into Discord with the plugins you pick</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <developer id="io.github.DarkPhilosophy"><name>DarkPhilosophy</name></developer>
+  <developer id="io.github.DarkPhilosophy">
+    <name>DarkPhilosophy</name>
+  </developer>
   <url type="homepage">https://darkphilosophy.github.io/v/</url>
   <url type="bugtracker">https://github.com/DarkPhilosophy/v/issues</url>
   <url type="vcs-browser">https://github.com/DarkPhilosophy/v</url>
   <description>
-    <p>Pick a Discord installation, the custom plugins and patches you want and whether to use OpenAsar; Forge builds Vencord with exactly that and installs it, verifying every step and rolling back on failure.</p>
-    <p>Not affiliated with Discord, Vencord or OpenAsar.</p>
+    <p>Vencord Forge builds the Vencord client mod for Discord with exactly the custom plugins and patches you choose, and installs it into the Discord you pick.</p>
+    <ul>
+      <li>Finds Discord Stable, PTB, Canary and Development, native or Flatpak</li>
+      <li>Turn custom plugins and optional patches on or off; the choice is kept across updates</li>
+      <li>Optionally installs OpenAsar, a faster replacement for Discord's startup code</li>
+      <li>Every change is verified and rolled back on failure, and one click restores stock Discord</li>
+    </ul>
+    <p>Not affiliated with Discord, Vencord or OpenAsar. Client modifications are against Discord's Terms of Service.</p>
   </description>
-  <launchable type="desktop-id">io.github.DarkPhilosophy.VencordForge.desktop</launchable>
+  <launchable type="desktop-id">io.github.DarkPhilosophy.v.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Choose the Discord installation</caption>
+      <image>https://darkphilosophy.github.io/v/screenshots/discord.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Turn custom plugins on or off</caption>
+      <image>https://darkphilosophy.github.io/v/screenshots/plugins.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Install, keep or remove OpenAsar</caption>
+      <image>https://darkphilosophy.github.io/v/screenshots/openasar.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>About and credits</caption>
+      <image>https://darkphilosophy.github.io/v/screenshots/about.png</image>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#f5c211</color>
+    <color type="primary" scheme_preference="dark">#3d1420</color>
+  </branding>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>Discord</keyword>
+    <keyword>Vencord</keyword>
+    <keyword>OpenAsar</keyword>
+    <keyword>plugins</keyword>
+  </keywords>
+  <requires>
+    <display_length compare="ge">760</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.1" date="2026-10-22">
+      <description>
+        <p>First Flathub release: runs in the Flatpak sandbox, changing Discord's files through a helper on the host.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-22"/>
   </releases>
 </component>
