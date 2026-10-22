@@ -43,6 +43,8 @@ nav.top .links a:hover{color:var(--text)}
 .hero h1 b{font-weight:800}
 .hero h1 span{font-weight:300;color:var(--gold)}
 .hero p.lead{color:var(--muted);font-size:clamp(17px,2.2vw,20px);max-width:640px;margin:0 auto 34px;position:relative}
+.hero-note{position:relative;color:var(--muted);font-size:13.5px;margin-top:22px}
+.hero-note a{color:var(--gold)}
 .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;position:relative}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 20px;border-radius:12px;border:1px solid var(--line2);text-decoration:none;font-weight:600;font-size:15px;transition:border-color .15s,background .15s,filter .15s}
 .btn:hover{border-color:#3a3a48;filter:brightness(1.08)}
@@ -67,6 +69,7 @@ pre button:hover{color:var(--text)}
 .steps{padding:0;margin:0}
 .downloads{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 .muted-small{color:var(--muted);font-size:13.5px;margin-top:10px}
+.disclaimer{margin:0;padding-left:20px;display:grid;gap:8px}
 .notice{background:#140f00;border:1px solid #4a3a06;color:#f2dfa0;border-radius:14px;padding:16px 18px;font-size:14.5px}
 footer{border-top:1px solid var(--line);padding:36px 0 50px;color:var(--muted);font-size:14px}
 footer .wrap{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
@@ -81,7 +84,7 @@ footer a:hover{color:var(--text)}
 <nav class="top"><div class="wrap">
   <a href="#"><img src="brand/v-logo.svg" alt="vencord custom"></a>
   <div class="links">
-    <a href="#features">Features</a><a href="#install">Install</a><a href="#forge">Forge</a><a href="brand/">Brand</a><a href="https://github.com/DarkPhilosophy/v">GitHub</a>
+    <a href="#features">Features</a><a href="#install">Install</a><a href="#forge">Forge</a><a href="#disclaimer">Disclaimer</a><a href="brand/">Brand</a><a href="https://github.com/DarkPhilosophy/v">GitHub</a>
   </div>
 </div></nav>
 
@@ -94,6 +97,7 @@ footer a:hover{color:var(--text)}
     <a class="btn" href="#forge">Get the app</a>
     <a class="btn" href="https://github.com/DarkPhilosophy/v">Source</a>
   </div>
+  <p class="hero-note">Unofficial. Client mods are against Discord's Terms of Service; use at your own risk. <a href="#disclaimer">Disclaimer</a></p>
 </div></header>
 
 <section id="features"><div class="wrap">
@@ -137,8 +141,16 @@ flatpak install --user vencord-forge io.github.DarkPhilosophy.v</code><button da
   </ol>
 </div></section>
 
-<section><div class="wrap">
-  <div class="notice">Not affiliated with Discord, Vencord or OpenAsar. Client modifications are against Discord's Terms of Service; use them at your own risk. Everything changed is backed up, and "Restore stock Discord" in Forge undoes it.</div>
+<section id="disclaimer"><div class="wrap">
+  <h2>Disclaimer</h2>
+  <div class="notice">
+    <ul class="disclaimer">
+      <li><strong>Not affiliated</strong> with Discord, Vencord or OpenAsar, and not endorsed by them.</li>
+      <li><strong>Client modifications are against Discord's Terms of Service.</strong> That includes Vencord itself. Using them can get your Discord account limited or banned; you use them at your own risk.</li>
+      <li><strong>This is not a replacement for Vencord.</strong> Vencord Forge and the installer only download the official Vencord and OpenAsar, apply this project's patches and plugins, and install the result. Problems with Discord or Vencord themselves belong to those projects.</li>
+      <li><strong>No warranty, no liability.</strong> This software is provided as is, without warranty of any kind (GPL-3.0, sections 15 and 16). The authors take no responsibility for any damage, data loss, account action or other consequence of using it.</li>
+    </ul>
+  </div>
 </div></section>
 
 <footer><div class="wrap">

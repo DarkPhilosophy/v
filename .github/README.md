@@ -2,6 +2,14 @@
 
 A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds against a fresh upstream checkout and installs one persistent compiled runtime: `~/.config/Vencord/app.asar`.
 
+> [!WARNING]
+> **Disclaimer**
+>
+> - **Not affiliated** with Discord, Vencord or OpenAsar, and not endorsed by them.
+> - **Client modifications are against Discord's Terms of Service.** That includes Vencord itself. Using them can get your Discord account limited or banned; you use them at your own risk.
+> - **This is not a replacement for Vencord.** Vencord Forge and the installer only download the official Vencord and OpenAsar, apply this project's patches and plugins, and install the result. Problems with Discord or Vencord themselves belong to those projects.
+> - **No warranty, no liability.** This software is provided as is, without warranty of any kind (GPL-3.0, sections 15 and 16). The authors take no responsibility for any damage, data loss, account action or other consequence of using it.
+
 There is no Vencord fork, persistent upstream checkout or committed build output. Vencord Forge (below) is the optional app that does the same as the installer with a window.
 
 ## Included customizations
@@ -61,6 +69,8 @@ Patches to Vencord, applied in this order:
 
 ## Vencord Forge (app)
 
+Changelog: [CHANGELOG.md](CHANGELOG.md).
+
 A desktop app (Linux and Windows) that does what the installer does (started with arguments, `vencord-forge` is also its command line) and let you choose what goes in:
 
 - **Discord:** detects Stable, PTB, Canary and Development (native, Flatpak, Windows `%LOCALAPPDATA%`; macOS paths are included but untested); any other folder can be added by hand.
@@ -82,6 +92,26 @@ cd forge && cargo build --release
 ./target/release/vencord-forge list --source ..  # plugins and patches
 ./target/release/vencord-forge install --source .. --disable-plugin steamRichPresence
 ```
+
+<!-- DEMO-START -->
+[![Vencord Forge installing Vencord, click to play the demo](https://darkphilosophy.github.io/v/screenshots/install.png)](https://darkphilosophy.github.io/v/screenshots/demo.webm)
+
+<img src="https://darkphilosophy.github.io/v/screenshots/discord.png" width="24%" alt="discord"> <img src="https://darkphilosophy.github.io/v/screenshots/plugins.png" width="24%" alt="plugins"> <img src="https://darkphilosophy.github.io/v/screenshots/themes.png" width="24%" alt="themes"> <img src="https://darkphilosophy.github.io/v/screenshots/about.png" width="24%" alt="about">
+<!-- DEMO-END -->
+
+<!-- LATEST-START -->
+<details open>
+<summary><strong>Latest update (0.1.1 · Themes & install page, 2026-10-22)</strong></summary>
+
+- Add a Themes step with the repatched CreArts v3 (MIT); themes already loaded from QuickCSS are not added twice.
+- Redesign the install page: overview cards in rows, hold-to-install in the footer, a build log that fills the window and keeps the progress bar in view.
+- Report an internal error instead of hanging when the install thread fails.
+- Check whether Discord runs at most every 3 seconds instead of on every frame.
+- Build with full LTO: 20% smaller binaries.
+- New screenshots and demo video.
+
+</details>
+<!-- LATEST-END -->
 
 <!-- FORGE-START -->
 Latest app version: **0.1.1** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.1) · [all releases](https://github.com/DarkPhilosophy/v/releases)
@@ -248,8 +278,15 @@ The complete install/build path is exercised by running `./i` from the repositor
 
 ## License
 
-This project and its custom plugins are licensed under GPL-3.0-or-later. Vencord is copyright Vendicated and contributors and is also GPL-3.0-or-later.
+This project is licensed under GPL-3.0-or-later; see [`LICENSE`](../LICENSE). It builds on and ships with the components below; [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) has the details and every Rust crate with its license.
 
-OpenAsar is an independent AGPL-3.0 project downloaded from [GooseMod/OpenAsar](https://github.com/GooseMod/OpenAsar); it is not vendored in this repository.
-
-See [`LICENSE`](../LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+<!-- LICENSES-START -->
+| Component | How it is used | License |
+|---|---|---|
+| This project (overlay, custom plugins, patches, installer, Forge) | source in this repository | GPL-3.0-or-later |
+| [Vencord](https://github.com/Vendicated/Vencord) | downloaded and built at install time | GPL-3.0-or-later |
+| [OpenAsar](https://github.com/GooseMod/OpenAsar) | downloaded at install time (optional) | AGPL-3.0 |
+| [CreArts v3 (repatched)](https://github.com/CreArts-Community/CreArts-Discord) by Daniel Klingel / CreArts-Community; fixes by DarkPhilosophy | bundled in `themes/` | MIT |
+| [Node.js](https://nodejs.org) and [pnpm](https://pnpm.io) | downloaded by Forge to build Vencord when missing | MIT |
+| 420 Rust crates, including the Ubuntu font egui embeds | compiled into the Vencord Forge binaries | permissive (MIT, Apache-2.0, BSD, Zlib, ISC, Unicode, OFL/UFL, …); full list in THIRD_PARTY_NOTICES |
+<!-- LICENSES-END -->

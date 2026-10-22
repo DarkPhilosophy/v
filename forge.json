@@ -7,7 +7,9 @@
         "git": "https://github.com/Vendicated/Vencord.git",
         "tarball": "https://codeload.github.com/Vendicated/Vencord/tar.gz/{rev}",
         "ref": "HEAD",
-        "lock": "upstream.lock"
+        "lock": "upstream.lock",
+        "license": "GPL-3.0-or-later",
+        "homepage": "https://github.com/Vendicated/Vencord"
     },
     "overlay": {
         "git": "https://github.com/DarkPhilosophy/v.git",
@@ -100,7 +102,9 @@
                 "from": "--enable-features=EnableDrDc,CanvasOopRasterization",
                 "to": "--enable-features=${process.platform===\"linux\"?\"\":\"EnableDrDc,\"}CanvasOopRasterization"
             }
-        ]
+        ],
+        "license": "AGPL-3.0",
+        "homepage": "https://github.com/GooseMod/OpenAsar"
     },
     "themes": {
         "crearts": {

@@ -72,12 +72,23 @@
   <releases>
     <release version="0.1.1" date="2026-10-22">
       <description>
-        <p>Themes step with the repatched CreArts v3, a clearer install page with hold-to-install and a full-height build log, and smaller, faster binaries.</p>
+        <ul>
+          <li>Add a Themes step with the repatched CreArts v3 (MIT); themes already loaded from QuickCSS are not added twice.</li>
+          <li>Redesign the install page: overview cards in rows, hold-to-install in the footer, a build log that fills the window and keeps the progress bar in view.</li>
+          <li>Report an internal error instead of hanging when the install thread fails.</li>
+          <li>Check whether Discord runs at most every 3 seconds instead of on every frame.</li>
+          <li>Build with full LTO: 20% smaller binaries.</li>
+          <li>New screenshots and demo video.</li>
+        </ul>
       </description>
     </release>
     <release version="0.1.0" date="2026-10-22">
       <description>
-        <p>First release.</p>
+        <ul>
+          <li>First release of Vencord Forge for Linux (AppImage, binary, Flatpak) and Windows (.exe).</li>
+          <li>Pick the Discord installation, custom plugins, patches and OpenAsar; build and install with verification and rollback.</li>
+          <li>Runs inside Flatpak, changing Discord's files through a helper on the host.</li>
+        </ul>
       </description>
     </release>
   </releases>

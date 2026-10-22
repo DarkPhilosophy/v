@@ -18,6 +18,8 @@ on:
       - core/src/**
       - scripts/**
       - .github/README.md
+      - .github/CHANGELOG.md
+      - packaging/flatpak/**
       - .github/workflows/forge.yml
   pull_request:
   workflow_dispatch:
@@ -166,8 +168,8 @@ jobs:
           EXISTS: ${{ steps.exists.outputs.exists }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASE_TOKEN secret is not set; refusing to publish as a bot"; exit 1; fi
-          cd dist && chmod +x vencord-forge-* && sha256sum vencord-forge-* > SHA256SUMS
-          assets=$(ls vencord-forge-* SHA256SUMS)
+          cp ../LICENSE ../.github/THIRD_PARTY_NOTICES.md dist/ && cd dist && chmod +x vencord-forge-* && sha256sum vencord-forge-* > SHA256SUMS
+          assets=$(ls vencord-forge-* SHA256SUMS LICENSE THIRD_PARTY_NOTICES.md)
           if [ "$EXISTS" = true ]; then
             # Same version rebuilt: point the tag at this commit, replace every asset.
             gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/$TAG" -f sha="${{ github.sha }}" -F force=true >/dev/null
@@ -175,10 +177,12 @@ jobs:
               echo "$assets" | grep -qx "$old" || gh release delete-asset "$TAG" "$old" -R "${{ github.repository }}" -y
             done
             gh release upload "$TAG" $assets -R "${{ github.repository }}" --clobber
+            python3 ../scripts/gen-docs.py --release-notes > notes.md
+            gh release edit "$TAG" -R "${{ github.repository }}" --notes-file notes.md
           else
+            python3 ../scripts/gen-docs.py --release-notes > notes.md
             gh release create "$TAG" $assets -R "${{ github.repository }}" --target "${{ github.sha }}" \
-              --title "Vencord Forge $VERSION" --generate-notes \
-              --notes "Vencord Forge $VERSION for Linux and Windows. Download one file and run it: vencord-forge-*.AppImage or vencord-forge-linux-x86_64 on Linux (chmod +x first), vencord-forge-windows-x86_64.exe on Windows. Run it with arguments (vencord-forge --help) to use it from a terminal."
+              --title "Vencord Forge $VERSION" --notes-file notes.md
           fi
 
   flatpak:
