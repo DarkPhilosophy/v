@@ -37,6 +37,9 @@ jobs:
           cp i _site/i
           cp forge.json _site/forge.json
           cp patches/series _site/series
+          # Link previews (Discord, Telegram, X) need a raster image; render it from the SVG card.
+          sudo apt-get install -y -qq librsvg2-bin fonts-dejavu-core >/dev/null
+          rsvg-convert -w 1200 -h 630 site/brand/og-card.svg -o _site/og.png
       - uses: actions/upload-pages-artifact@v3
       - name: Deploy
         id: deployment
