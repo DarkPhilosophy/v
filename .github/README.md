@@ -109,20 +109,17 @@ cd forge && cargo build --release
 
 <!-- LATEST-START -->
 <details open>
-<summary><strong>Latest update (0.1.1 · Themes & install page, 2026-10-22)</strong></summary>
+<summary><strong>Latest update (0.1.2 · Fewer sandbox permissions, 2026-10-22)</strong></summary>
 
-- Add a Themes step with the repatched CreArts v3 (MIT); themes already loaded from QuickCSS are not added twice.
-- Redesign the install page: overview cards in rows, hold-to-install in the footer, a build log that fills the window and keeps the progress bar in view.
-- Report an internal error instead of hanging when the install thread fails.
-- Check whether Discord runs at most every 3 seconds instead of on every frame.
-- Build with full LTO: 20% smaller binaries.
-- New screenshots and demo video.
+- The Flatpak no longer needs access to `~/.config/Vencord`: the runtime and the saved selection are written by Forge's helper on the host.
+- A failed install restores the previous runtime in every packaging, including Flatpak.
+- The host helper also starts on ARM (aarch64) systems.
 
 </details>
 <!-- LATEST-END -->
 
 <!-- FORGE-START -->
-Latest app version: **0.1.1** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.1) · [all releases](https://github.com/DarkPhilosophy/v/releases)
+Latest app version: **0.1.2** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.2) · [all releases](https://github.com/DarkPhilosophy/v/releases)
 <!-- FORGE-END -->
 
 Every version bump of Forge is built for Linux and Windows and published as a release automatically. [`forge/tests/equivalence.sh`](../forge/tests/equivalence.sh) proves the Rust engine produces byte-identical results to the shell installer's tools (patches, runtime ASAR, loader, embedded seeds, OpenAsar fixes).

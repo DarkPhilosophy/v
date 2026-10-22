@@ -39,8 +39,9 @@ pub fn host_cli_args(cli: &std::path::Path) -> Vec<std::ffi::OsString> {
             info.lines().find_map(|l| l.strip_prefix("runtime-path=").map(|p| std::path::PathBuf::from(p.trim())))
         })
     {
-        let libs = runtime.join("lib/x86_64-linux-gnu");
-        args.push(libs.join("ld-linux-x86-64.so.2").into_os_string());
+        let (triple, loader) = if cfg!(target_arch = "aarch64") { ("aarch64-linux-gnu", "ld-linux-aarch64.so.1") } else { ("x86_64-linux-gnu", "ld-linux-x86-64.so.2") };
+        let libs = runtime.join("lib").join(triple);
+        args.push(libs.join(loader).into_os_string());
         args.push("--library-path".into());
         args.push(libs.into_os_string());
     }

@@ -116,7 +116,7 @@ impl App {
             source_text,
             dist: None,
             dist_error: None,
-            profile: Profile::load(&paths::runtime_dir()),
+            profile: forge_core::runtime_store::load_profile(&paths::runtime_dir()),
             openasar,
             job: Job::Idle,
             cancel: Cancel::default(),

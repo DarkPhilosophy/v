@@ -320,15 +320,16 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
     sink(Event::Step(format!("Installing into {}", target.title())));
     sink(Event::Progress(0.9));
     let runtime_dir = paths::runtime_dir();
-    fs::create_dir_all(&runtime_dir)?;
     let runtime = runtime_dir.join("app.asar");
     let candidate = if action == OpenAsarAction::Install { Some(download_openasar(&dist.manifest, sink)?) } else { None };
 
-    // The runtime is replaced first (keeping a rollback copy); the loader only after that.
-    let rollback = runtime.is_file().then(|| fsutil::staged_copy(&runtime, &runtime)).transpose()?;
-    fsutil::replace_from(&built.runtime, &runtime)?;
+    // The runtime is replaced first (the previous one is kept); the loader only after that.
+    crate::runtime_store::place(&built.runtime, &runtime)?;
     let loader = built.work.join("loader.asar");
-    bootstrap::build_loader(&runtime, &loader)?;
+    if let Err(error) = crate::runtime_store::build_loader(&runtime, &loader) {
+        crate::runtime_store::rollback(&runtime)?;
+        return Err(error);
+    }
 
     // Rebuilds reuse the same runtime path, so the loader in Discord's folder is usually already
     // right: then only the runtime changes and system-owned installs need no password.
@@ -346,22 +347,16 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
     } else {
         privileged_bootstrap(&target.resources, &loader, &runtime, action, candidate.as_deref(), sink)
     };
-    match (&result, rollback) {
-        (Err(_), Some(rollback)) => fsutil::rename(&rollback, &runtime)?,
-        (Err(_), None) => {
-            let _ = fs::remove_file(&runtime);
-        }
-        (Ok(_), Some(rollback)) => {
-            let _ = fs::remove_file(rollback);
-        }
-        (Ok(_), None) => {}
+    match &result {
+        Err(_) => crate::runtime_store::rollback(&runtime)?,
+        Ok(_) => crate::runtime_store::commit(&runtime)?,
     }
     let kind = result?;
 
     let mut profile = profile.clone();
     profile.distribution = dist.manifest.id.clone();
     profile.sanitize(&dist.manifest);
-    profile.save(&runtime_dir)?;
+    crate::runtime_store::save_profile(&runtime_dir, &profile, &built.work)?;
     let state = paths::state_dir(&dist.manifest.id);
     fs::create_dir_all(&state)?;
     fsutil::write_atomic(&state.join("upstream.good"), format!("{}\n", built.upstream).as_bytes(), None)?;

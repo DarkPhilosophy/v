@@ -70,6 +70,15 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.2" date="2026-10-22">
+      <description>
+        <ul>
+          <li>The Flatpak no longer needs access to ~/.config/Vencord: the runtime and the saved selection are written by Forge's helper on the host.</li>
+          <li>A failed install restores the previous runtime in every packaging, including Flatpak.</li>
+          <li>The host helper also starts on ARM (aarch64) systems.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-22">
       <description>
         <ul>

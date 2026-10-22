@@ -153,7 +153,7 @@ fn run(argv: Vec<String>) -> Result<()> {
             let json = args.flag("--json");
             args.done()?;
             let dist = pipeline::fetch_distribution(&src, &mut sink())?;
-            let profile = Profile::load(&paths::runtime_dir());
+            let profile = forge_core::runtime_store::load_profile(&paths::runtime_dir());
             if json {
                 println!("{}", serde_json::to_string_pretty(&serde_json::json!({"plugins": dist.plugins, "patches": dist.patches, "themes": dist.manifest.themes}))?);
             } else {
@@ -186,7 +186,7 @@ fn run(argv: Vec<String>) -> Result<()> {
             let target = pick_target(target)?;
             let mut out = sink();
             let dist = pipeline::fetch_distribution(&src, &mut out)?;
-            let mut profile = if enable_all { Profile::default() } else { Profile::load(&paths::runtime_dir()) };
+            let mut profile = if enable_all { Profile::default() } else { forge_core::runtime_store::load_profile(&paths::runtime_dir()) };
             profile.exclude_plugins.extend(disable_plugins);
             profile.exclude_patches.extend(disable_patches);
             profile.themes.extend(themes);
@@ -229,8 +229,8 @@ fn run(argv: Vec<String>) -> Result<()> {
         "status" => {
             args.done()?;
             let runtime = paths::runtime_dir().join("app.asar");
-            println!("runtime: {} ({})", runtime.display(), if runtime.is_file() { "present" } else { "absent" });
-            let profile = Profile::load(&paths::runtime_dir());
+            println!("runtime: {}", runtime.display());
+            let profile = forge_core::runtime_store::load_profile(&paths::runtime_dir());
             println!("disabled plugins: {:?}\ndisabled patches: {:?}", profile.exclude_plugins, profile.exclude_patches);
             for t in detect::discover_host() {
                 let chain = pipeline::verify_chain_anywhere(&t.resources, &runtime);
@@ -274,6 +274,28 @@ fn run(argv: Vec<String>) -> Result<()> {
             }
             let plan: forge_core::themes::Plan = serde_json::from_slice(&std::fs::read(&a[1])?)?;
             forge_core::themes::apply(Path::new(&a[0]), &plan, a[2] == "enable")?;
+        }
+        // Host helpers for the Flatpak, which cannot open ~/.config/Vencord itself.
+        "runtime-place" => {
+            let [source, runtime] = two(&args.0)?;
+            forge_core::runtime_store::place_local(Path::new(source), Path::new(runtime))?;
+        }
+        "runtime-rollback" => {
+            let runtime = args.0.first().context("missing runtime path")?;
+            forge_core::runtime_store::rollback_local(Path::new(runtime))?;
+        }
+        "runtime-commit" => {
+            let runtime = args.0.first().context("missing runtime path")?;
+            forge_core::runtime_store::commit_local(Path::new(runtime));
+        }
+        "profile-read" => {
+            let dir = args.0.first().context("missing directory")?;
+            println!("{}", serde_json::to_string(&Profile::load(Path::new(dir)))?);
+        }
+        "profile-write" => {
+            let [dir, file] = two(&args.0)?;
+            let profile: Profile = serde_json::from_slice(&std::fs::read(file)?)?;
+            profile.save(Path::new(dir))?;
         }
         "verify-chain" => {
             let [resources, runtime] = two(&args.0)?;

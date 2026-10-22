@@ -3,6 +3,12 @@
 Vencord Forge releases. `scripts/gen-docs.py` copies the section of the current version
 (`forge/Cargo.toml`) into the README, the app's metainfo and the GitHub release notes.
 
+## 0.1.2 (2026-10-22) - FEWER SANDBOX PERMISSIONS
+
+- The Flatpak no longer needs access to `~/.config/Vencord`: the runtime and the saved selection are written by Forge's helper on the host.
+- A failed install restores the previous runtime in every packaging, including Flatpak.
+- The host helper also starts on ARM (aarch64) systems.
+
 ## 0.1.1 (2026-10-22) - THEMES & INSTALL PAGE
 
 - Add a Themes step with the repatched CreArts v3 (MIT); themes already loaded from QuickCSS are not added twice.
