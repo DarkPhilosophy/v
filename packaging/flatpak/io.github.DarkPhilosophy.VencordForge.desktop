@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Vencord Forge
-Comment=Build and install Vencord with your plugins into Discord
-Exec=vencord-forge
-Icon=io.github.DarkPhilosophy.VencordForge
-Terminal=false
-Categories=Utility;Network;
-StartupWMClass=vencord-forge

@@ -1,9 +1,0 @@
-# Overlay patches, applied in this order by ./i and by the in-app updater.
-# One name per line; order matters (runtime-noise and cloudsync both edit noTrack.ts).
-update.patch
-userplugin-manager.patch
-runtime-noise.patch
-cloudsync.patch
-hide-media.patch
-perf-attribution.patch
-webpack-fast-patching.patch
