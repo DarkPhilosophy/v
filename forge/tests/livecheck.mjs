@@ -38,7 +38,6 @@ const probe = `(() => {
     url: location.href.split("?")[0],
     vencord: true,
     customPlugins: custom.filter(n => V.Plugins.plugins[n]),
-    openAsar: typeof globalThis.openasar !== "undefined" || document.documentElement.innerHTML.includes("OpenAsar"),
   });
 })()`;
 while (Date.now() < deadline) {

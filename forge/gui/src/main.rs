@@ -297,7 +297,11 @@ impl App {
     fn page_discord(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Discord installation", "Forge found these installations. Stable, PTB, Canary and Development are all supported.");
         if self.installs.is_empty() {
-            ui.colored_label(BAD, "No Discord installation found. Start Discord once, or point Forge to its folder below.");
+            if detect::bootstrap_only(&Roots::from_env()).is_empty() {
+                ui.colored_label(BAD, "No Discord installation found. Install Discord, or point Forge to its folder below.");
+            } else {
+                wrapped(ui, RichText::new(detect::BOOTSTRAP_HINT).color(Color32::from_rgb(0xf5, 0xe1, 0xa0)));
+            }
         }
         let mut pick = None;
         for (i, install) in self.installs.iter().enumerate() {

@@ -102,7 +102,10 @@ fn pick_target(spec: Option<String>) -> Result<Install> {
             }))
         }
         None => match installs.len() {
-            0 => bail!("no Discord installation found; pass --target <path>"),
+            0 => match detect::bootstrap_only(&Roots::from_env()).first() {
+                Some(base) => bail!("{} ({})", detect::BOOTSTRAP_HINT, base.display()),
+                None => bail!("no Discord installation found; pass --target <path>"),
+            },
             1 => Ok(installs.into_iter().next().unwrap()),
             _ => {
                 let list: Vec<String> = installs.iter().enumerate().map(|(i, t)| format!("  {i}: {} — {}", t.title(), t.resources.display())).collect();
@@ -127,6 +130,9 @@ fn run(argv: Vec<String>) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&installs)?);
             } else if installs.is_empty() {
                 println!("No Discord installation found.");
+                for base in detect::bootstrap_only(&Roots::from_env()) {
+                    println!("Found {} — {}", base.display(), detect::BOOTSTRAP_HINT);
+                }
             } else {
                 for (i, t) in installs.iter().enumerate() {
                     let state = t.modded.map(|k| k.label()).unwrap_or("stock");

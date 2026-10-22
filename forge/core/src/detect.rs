@@ -218,6 +218,30 @@ pub fn discover(roots: &Roots) -> Vec<Install> {
     list
 }
 
+/// Discord installs that are only the updater bootstrap (e.g. the official Linux tarball before
+/// its first start): Discord downloads the real app into `~/.config/<channel>/app-*` on first
+/// launch, so there is nothing to patch yet. Reported so the user can be told to start it once.
+pub fn bootstrap_only(roots: &Roots) -> Vec<PathBuf> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    let data_home = roots.data_home.clone().unwrap_or_else(|| roots.home.join(".local/share"));
+    let mut out = Vec::new();
+    for dir in [roots.root.join("opt"), roots.root.join("usr/share"), roots.root.join("usr/lib"), data_home, roots.home.join("Applications")] {
+        for channel in Channel::ALL {
+            for name in channel.dir_names() {
+                let base = dir.join(name);
+                if base.join("updater_bootstrap").exists() && resources_in_base(&base).is_none() && !out.contains(&base) {
+                    out.push(base);
+                }
+            }
+        }
+    }
+    out
+}
+
+pub const BOOTSTRAP_HINT: &str = "Discord is installed but has not finished its first start. Open Discord once, wait until it shows the login or chat screen, close it, then look again.";
+
 /// Accept a Discord install dir, its `resources/` dir, or its `app.asar`.
 pub fn from_path(path: &Path) -> anyhow::Result<PathBuf> {
     let path = if path.file_name().is_some_and(|n| n == "app.asar") && path.is_file() { path.parent().unwrap() } else { path };
@@ -294,6 +318,19 @@ mod tests {
         assert_eq!(windows.len(), 2, "{found:#?}");
         assert_eq!(windows[1].channel, Channel::Canary);
         assert_eq!(windows[1].version.as_deref(), Some("1.0.701"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn reports_bootstrap_only_tarball() {
+        let root = scratch("bootstrap");
+        let sys = root.join("sys");
+        fs::create_dir_all(sys.join("opt/Discord")).unwrap();
+        fs::write(sys.join("opt/Discord/updater_bootstrap"), b"").unwrap();
+        let roots = Roots { home: root.join("home"), root: sys.clone(), ..Default::default() };
+        assert!(discover(&roots).is_empty());
+        assert_eq!(bootstrap_only(&roots), vec![sys.join("opt/Discord")]);
         let _ = fs::remove_dir_all(root);
     }
 }
