@@ -213,6 +213,8 @@ jobs:
           git fetch origin flatpak-repo && git worktree add pub origin/flatpak-repo || { mkdir -p pub; }
           mkdir -p pub/repo
           [ -f pub/repo/config ] || ostree init --mode=archive-z2 --repo=pub/repo
+          # git keeps no empty directories; OSTree needs these to exist.
+          mkdir -p pub/repo/refs/heads pub/repo/refs/remotes pub/repo/refs/mirrors pub/repo/tmp pub/repo/state pub/repo/extensions
           flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean \
             --repo=pub/repo --gpg-sign="$KEY" --default-branch=stable build packaging/flatpak/io.github.DarkPhilosophy.v.yml
           flatpak build-update-repo --gpg-sign="$KEY" --generate-static-deltas --prune --prune-depth=3 pub/repo
