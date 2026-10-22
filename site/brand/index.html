@@ -3,102 +3,140 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>V — icon studio</title>
+<title>V · Studio</title>
 <style>
 *{box-sizing:border-box}
-:root{--bg:#0e0f14;--panel:#16171e;--panel2:#1d1e27;--line:#2a2c38;--text:#ecedf3;--muted:#9a9cad;--hl:#eb6f92;color-scheme:dark}
-body{margin:0;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-header{position:sticky;top:0;z-index:3;display:grid;grid-template-columns:auto auto 1fr;gap:22px;align-items:start;padding:16px 22px;background:#0a0b0f;border-bottom:1px solid var(--line)}
-.big{display:grid;gap:6px;justify-items:center}
-.big h4{margin:0;font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.08em}
-.big .stage{width:220px;height:220px;border-radius:18px;display:grid;place-items:center;border:1px solid var(--line);background:repeating-conic-gradient(#14151b 0 25%,#101116 0 50%) 0 0/20px 20px}
-.big .stage svg{width:200px;height:200px}
-.bar{display:flex;flex-wrap:wrap;gap:6px}
-button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;transition:border-color .12s,background .12s,transform .12s}
-button:hover{border-color:#40435a}
+:root{--bg:#0a0b0f;--bg2:#0f1016;--panel:rgba(255,255,255,.035);--panel-solid:#14151c;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);--text:#eceef5;--muted:#8d90a3;--hl:#eb6f92;--hl2:#f5c211;--r:16px;color-scheme:dark}
+html,body{height:100%}
+body{margin:0;font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);
+  background:radial-gradient(1200px 600px at 70% -10%,rgba(235,111,146,.12),transparent 60%),radial-gradient(900px 500px at -10% 110%,rgba(245,194,17,.07),transparent 60%),var(--bg)}
+button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}
+button:hover{background:rgba(255,255,255,.07);border-color:var(--line2)}
 button:active{transform:translateY(1px)}
-button.on{border-color:var(--hl);background:#2a1d25}
-.side{display:grid;gap:10px;align-content:start}
-.sizes{display:flex;gap:14px;align-items:end;padding:8px 0}
+button.on{border-color:var(--hl);background:rgba(235,111,146,.14)}
+button.primary{background:linear-gradient(135deg,#eb6f92,#c9567a);border:0;color:#fff;font-weight:600}
+/* top bar */
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;padding:12px 20px;background:rgba(10,11,15,.72);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;font-size:16px;margin-right:auto}
+.brand .dot{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:var(--panel-solid);border:1px solid var(--line)}
+.brand .dot svg{width:22px;height:22px}
+.brand small{color:var(--muted);font-weight:500}
+.top .bar{display:flex;gap:6px;flex-wrap:wrap}
+/* app grid */
+.app{display:grid;grid-template-columns:220px minmax(420px,1fr) 400px;gap:18px;padding:18px 20px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);backdrop-filter:blur(8px)}
+.nav{position:sticky;top:76px;padding:10px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 96px);overflow:auto}
+.nav .group{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);padding:12px 10px 6px}
+.nav button{text-align:left;border-color:transparent;background:transparent;border-radius:10px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
+.nav button:hover{background:rgba(255,255,255,.05)}
+.nav button.on{background:rgba(235,111,146,.13);border-color:rgba(235,111,146,.45)}
+.nav button em{font-style:normal;font-size:11px;color:var(--muted)}
+/* canvas */
+.canvas{display:grid;gap:14px}
+.stage-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.stage{position:relative;aspect-ratio:1;border-radius:var(--r);display:grid;place-items:center;border:1px solid var(--line);overflow:hidden}
+.stage.dark{background:repeating-conic-gradient(#12131a 0 25%,#0e0f15 0 50%) 0 0/22px 22px}
+.stage.light{background:#f3f3f7}
+.stage svg{width:78%;height:78%;filter:drop-shadow(0 18px 40px rgba(0,0,0,.35))}
+.stage.light svg{filter:drop-shadow(0 18px 30px rgba(0,0,0,.12))}
+.stage .tag{position:absolute;left:12px;top:10px;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.stage.light .tag{color:#7a7c8c}
+.lk-row{display:grid;grid-template-columns:1fr;gap:14px}
+.lk{border-radius:var(--r);display:grid;place-items:center;min-height:150px;padding:22px;border:1px solid var(--line);overflow:hidden}
+.lk.dark{background:#0d0e13}
+.lk.light{background:#f3f3f7}
+.lk svg{max-width:100%;height:auto;max-height:110px}
+.sizes{display:flex;gap:18px;align-items:end;padding:14px 18px}
 .sizes figure{margin:0;text-align:center;font-size:10px;color:var(--muted)}
-.saved{display:grid;grid-template-columns:repeat(5,64px);gap:8px}
-.slot{position:relative;width:64px;height:64px;border-radius:12px;border:1px dashed var(--line);display:grid;place-items:center;cursor:pointer;background:var(--panel)}
-.slot svg{width:56px;height:56px}
-.slot .x{position:absolute;top:-6px;right:-6px;width:18px;height:18px;padding:0;font-size:10px;line-height:16px;border-radius:50%;display:none}
+/* inspector */
+.inspector{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow:auto;padding:16px}
+.inspector h2{margin:0 0 4px;font-size:16px}
+.hint{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+.custom{display:flex;flex-direction:column;gap:2px}
+.custom:empty{display:none}
+.custom b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600;margin:12px 0 4px}
+.custom br{display:none}
+.custom label{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0;color:#c9cbd8;font-size:13px}
+.custom input[type=range]{width:170px;accent-color:var(--hl)}
+.custom input[type=text],.custom select{width:190px;background:var(--panel-solid);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px 9px}
+.custom input[type=color]{width:38px;height:28px;border-radius:8px;border:1px solid var(--line2);padding:0;background:none;cursor:pointer}
+.custom input[type=checkbox]{accent-color:var(--hl);width:16px;height:16px}
+.custom > button{align-self:flex-start;margin-top:6px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.grid.wide{grid-template-columns:1fr}
+.opt{background:var(--panel-solid);border:1px solid var(--line);border-radius:12px;padding:8px;display:grid;gap:4px;justify-items:center;cursor:pointer;transition:border-color .15s,transform .15s,background .15s}
+.opt:hover{transform:translateY(-2px);border-color:var(--line2)}
+.opt.on{border-color:var(--hl);background:rgba(235,111,146,.08);box-shadow:0 0 0 1px var(--hl) inset}
+.opt svg{width:84px;height:84px}
+.opt small{color:var(--muted);font-size:10.5px;text-align:center;line-height:1.2}
+.swatch{width:100%;height:84px;border-radius:9px;display:grid;place-items:center}
+.swatch svg{width:70px;height:70px}
+.opt .lkc{width:100%;display:grid;place-items:center;min-height:90px;background:#0b0c10;border-radius:9px;padding:8px}
+.opt .lkc svg{max-width:100%;height:auto;max-height:70px}
+/* saved + compare */
+.saved{display:flex;gap:8px}
+.slot{position:relative;width:40px;height:40px;border-radius:10px;border:1px dashed var(--line2);display:grid;place-items:center;cursor:pointer;background:var(--panel)}
+.slot svg{width:34px;height:34px}
+.slot .x{position:absolute;top:-6px;right:-6px;width:16px;height:16px;padding:0;font-size:9px;line-height:14px;border-radius:50%;display:none}
 .slot:hover .x{display:block}
-.slot span{color:var(--muted);font-size:11px}
-nav{display:flex;flex-wrap:wrap;gap:6px;padding:14px 22px 0}
-nav button{border-radius:999px;padding:6px 14px}
-.hint{color:var(--muted);font-size:12px;padding:6px 22px 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:14px 22px 30px}
-.opt{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;display:grid;gap:6px;justify-items:center;cursor:pointer;transition:border-color .12s,transform .12s}
-.opt:hover{transform:translateY(-2px);border-color:#40435a}
-.opt.on{border-color:var(--hl);box-shadow:0 0 0 1px var(--hl) inset}
-.opt svg{width:120px;height:120px}
-.opt small{color:var(--muted);font-size:11px;text-align:center}
-.swatch{width:100%;height:120px;border-radius:10px;display:grid;place-items:center}
-.swatch svg{width:96px;height:96px}
-.compare{padding:0 22px 30px}
-.compare h3{font-size:12px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.08em}
+.slot span{color:var(--muted);font-size:12px}
+.compare{padding:0 20px 30px}
+.compare h3{font-size:10.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.12em}
 .row{display:flex;gap:14px;flex-wrap:wrap}
 .cmp{display:grid;gap:6px;justify-items:center;font-size:11px;color:var(--muted)}
 .cmp .pair{display:flex;gap:6px}
-.cmp .pair div{width:110px;height:110px;border-radius:14px;display:grid;place-items:center}
-.cmp svg{width:92px;height:92px}
-.dark{background:#0b0c10;border:1px solid var(--line)}
+.cmp .pair div{width:96px;height:96px;border-radius:12px;display:grid;place-items:center}
+.cmp svg{width:80px;height:80px}
+.dark{background:#0b0c10}
 .light{background:#f2f2f6}
-input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:6px;background:none;padding:0;cursor:pointer}
-.custom{display:flex;gap:8px;align-items:center;padding:0 22px;color:var(--muted);font-size:12px}
-@media (max-width:900px){header{grid-template-columns:1fr}}
+#cur{display:none}
+@media (max-width:1250px){.app{grid-template-columns:200px 1fr}.inspector{grid-column:1/-1;position:static;max-height:none}}
+@media (max-width:760px){.app{grid-template-columns:1fr}.nav{position:static;max-height:none;flex-direction:row;flex-wrap:wrap}.stage-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header>
-  <div class="big"><h4>Curent</h4><div class="stage" id="cur"></div></div>
-  <div class="side">
-    <div class="bar">
-      <button id="undo" title="Ctrl+Z">↶ Înapoi</button>
-      <button id="random">🎲 Aleator</button>
-      <button id="reset">Reset</button>
-      <button id="svg">⬇ Iconă SVG</button>
-      <button id="png">⬇ Iconă PNG</button>
-      <button id="lsvg">⬇ Logo SVG</button>
-      <button id="lpng">⬇ Logo PNG</button>
-      <button id="copy">Copiază SVG</button>
-      <button id="link">Copiază link</button>
+<div class="top">
+  <div class="brand"><span class="dot" id="brand-dot"></span>V Studio <small>icon &amp; logo</small></div>
+  <div class="bar">
+    <button id="undo" title="Ctrl+Z">↶ Înapoi</button>
+    <button id="random">Aleator</button>
+    <button id="reset">Reset</button>
+    <button id="focus" class="on" title="Estompează celelalte elemente în galerie">Focus</button>
+    <button id="bgmode">Fundal</button>
+    <button id="copy">Copiază SVG</button>
+    <button id="link">Copiază link</button>
+    <button id="svg">Iconă SVG</button>
+    <button id="png">Iconă PNG</button>
+    <button id="lsvg" class="primary">Logo SVG</button>
+    <button id="lpng">Logo PNG</button>
+  </div>
+  <div class="saved" id="saved" title="Salvate: click pe ★ salvează, click pe iconă încarcă"></div>
+</div>
+<div class="app">
+  <nav class="card nav" id="tabs"></nav>
+  <main class="canvas">
+    <div class="stage-row">
+      <div class="stage dark" id="stage-dark"></div>
+      <div class="stage light" id="stage-light"></div>
     </div>
-    <div class="sizes" id="sizes"></div>
-    <div class="bar"><button id="focus" class="on" title="Estompează celelalte elemente în galerie">Focus pe element</button><button id="bgmode">Fundal: întunecat</button></div>
-  </div>
-  <div class="side">
-    <h4 style="margin:0;font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.08em">Salvate (click = încarcă, ★ = salvează curentul)</h4>
-    <div class="saved" id="saved"></div>
-  </div>
-</header>
-<section class="logo-stage">
-  <div class="lk dark" id="logo-dark"></div>
-  <div class="lk light" id="logo-light"></div>
-</section>
-
-<nav id="tabs"></nav>
-<div class="hint" id="hint"></div>
-<div class="custom" id="custom"></div>
-<div class="grid" id="grid"></div>
-
+    <div class="lk-row">
+      <div class="lk dark" id="logo-dark"></div>
+      <div class="lk light" id="logo-light"></div>
+    </div>
+    <div class="card sizes" id="sizes"></div>
+    <div id="cur"></div>
+  </main>
+  <aside class="card inspector">
+    <h2 id="insp-title"></h2>
+    <div class="hint" id="hint"></div>
+    <div class="custom" id="custom"></div>
+    <div class="grid" id="grid"></div>
+  </aside>
+</div>
 <section class="compare">
-  <h3>Comparație: curent · salvate — pe întunecat și deschis</h3>
+  <h3>Comparație: curent și salvate</h3>
   <div class="row" id="compare"></div>
 </section>
-<style>
-.logo-stage{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px 22px 0}
-.lk{border-radius:16px;display:grid;place-items:center;min-height:150px;padding:16px;overflow:hidden}
-.lk svg{max-width:100%;height:auto;max-height:120px}
-.grid.wide{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
-.opt .lkc{width:100%;display:grid;place-items:center;min-height:110px;background:#0b0c10;border-radius:10px;padding:8px}
-.opt .lkc svg{max-width:100%;height:auto;max-height:90px}
-.custom input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 8px;width:220px}
-@media (max-width:900px){.logo-stage{grid-template-columns:1fr}}
-</style>
 
 <script>
 // Every part shares one 256×256 coordinate system, so any variant of any part composes with any
@@ -264,12 +302,12 @@ function spark(cx, cy, r) { const k = r * .2; return `<path d="M${f(cx)} ${f(cy 
 function rays(cx, cy, w) { return [[-60, 1.6], [-20, 1.9], [20, 1.5]].map(([deg, len]) => { const a = deg * Math.PI / 180, r0 = w * 1.2, r1 = w * len * 1.3; return `<line x1="${f(cx + Math.cos(a) * r0)}" y1="${f(cy + Math.sin(a) * r0)}" x2="${f(cx + Math.cos(a) * r1)}" y2="${f(cy + Math.sin(a) * r1)}" stroke="#C" stroke-width="${f(w * .22)}" stroke-linecap="round"/>`; }).join(""); }
 
 // ── State ──────────────────────────────────────────────────────────────────────────────────
-const BASE = { container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark: 0, weight: 2, box: "#191a21", leftc: "#f4f4f7", rightc: "#eb6f92", accent: "#eb6f92", accent2: "#f6c177", gradient: true, autoLight: true,
+const BASE = { v: 2, container: 1, back: 0, left: 0, right: 5, notch: 0, caps: 0, mark: 0, weight: 2, box: "#191a21", leftc: "#f4f4f7", rightc: "#eb6f92", accent: "#eb6f92", accent2: "#f6c177", gradient: true, autoLight: true,
   a1: 8, a1p: 1, a1z: 22, a1r: 0, a1x: 0, a1y: 0, a1o: 1, a1c: "accent",
   a2: 0, a2p: 0, a2z: 18, a2r: 0, a2x: 0, a2y: 0, a2o: 1, a2c: "accent2",
   a3: 0, a3p: 2, a3z: 12, a3r: 0, a3x: 0, a3y: 0, a3o: 1, a3c: "accent2",
   a4: 0, a4p: 7, a4z: 10, a4r: 0, a4x: 0, a4y: 0, a4o: 1, a4c: "accent",
-  layout: 0, font: 0, tstyle: 3, word: "vencord custom", tag: "redistributed · improved", wordc: "#f4f4f7", wc2: "#eb6f92", tagc: "#9a9cad", tago: 1, wsz: 100, wls: 0, tsz: 100, tdy: 0, wdy: 0, gap: 0 };
+  layout: 0, font: 0, tstyle: 0, w1w: 700, w2w: 700, fl: false, flc: "#eb6f92", word: "vencord custom", tag: "redistributed · improved", wordc: "#f4f4f7", wc2: "#eb6f92", tagc: "#9a9cad", tago: 1, wsz: 100, wls: 0, tsz: 100, tdy: 0, wdy: 0, gap: 0 };
 
 // ── Logo (icon + wordmark) ─────────────────────────────────────────────────────────────────
 const FONTS = [
@@ -281,7 +319,8 @@ const FONTS = [
   ["Serif", "Georgia, 'Iowan Old Style', serif", 700, .55],
   ["Light", "system-ui, -apple-system, 'Segoe UI', sans-serif", 300, .54],
 ];
-const TSTYLES = ["minuscule", "Titlu", "MAJUSCULE RARE", "Două tonuri", "Prima literă accent", "Al doilea cuvânt subțire"];
+const TSTYLES = ["Cum e scris", "minuscule", "Fiecare Cuvânt", "MAJUSCULE RARE"];
+const WEIGHTS = [["Subțire", 300], ["Normal", 400], ["Semibold", 600], ["Bold", 700], ["Heavy", 800]];
 const LAYOUTS = ["Orizontal", "Stivuit", "Doar text", "Iconă mică + text", "Badge", "Text + iconă dreapta"];
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -299,16 +338,17 @@ function wordmark(s, x, y, size, anchor = "start") {
   const [, family, weight, ratio] = FONTS[s.font];
   size = size * (s.wsz ?? 100) / 100; y += s.wdy ?? 0;
   let text = s.word, spacing = -size * .02 + (s.wls ?? 0);
-  if (s.tstyle === 0) text = text.toLowerCase();
-  if (s.tstyle === 1) text = text.replace(/\b\w/g, c => c.toUpperCase());
-  if (s.tstyle === 2) { text = text.toUpperCase(); spacing = size * .12; }
-  const words = text.split(" ");
-  let spans;
-  if (s.tstyle === 3) spans = words.map((w, i) => `<tspan fill="${i ? s.wc2 : s.wordc}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
-  else if (s.tstyle === 4) spans = `<tspan fill="${s.wc2}">${esc(text[0])}</tspan>${esc(text.slice(1))}`;
-  else if (s.tstyle === 5) spans = words.map((w, i) => `<tspan font-weight="${i ? 300 : weight}"${i ? ` dx="${f(size * .26)}"` : ""}>${esc(w)}</tspan>`).join("");
-  else spans = esc(text);
-  const estimate = text.length * size * (s.tstyle === 2 ? ratio + .22 : ratio) * 1.08;
+  if (s.tstyle === 1) text = text.toLowerCase();
+  if (s.tstyle === 2) text = text.replace(/(^|\s)(\S)/g, (m, a, c) => a + c.toUpperCase());
+  if (s.tstyle === 3) { text = text.toUpperCase(); spacing = size * .12 + (s.wls ?? 0); }
+  // Each word has its own colour and weight: word 1 uses the first pair, every later word the second.
+  const words = text.split(/\s+/).filter(Boolean);
+  const spans = words.map((w, i) => {
+    const color = i ? s.wc2 : s.wordc, wt = i ? s.w2w : s.w1w;
+    const body = i === 0 && s.fl ? `<tspan fill="${s.flc}">${esc(w[0])}</tspan>${esc(w.slice(1))}` : esc(w);
+    return `<tspan fill="${color}" font-weight="${wt}"${i ? ` dx="${f(size * .26)}"` : ""}>${body}</tspan>`;
+  }).join("");
+  const estimate = text.length * size * (s.tstyle === 3 ? ratio + .22 : ratio) * 1.08;
   const width = measure(text, `${weight} ${size}px ${family}`, spacing) ?? estimate;
   return [`<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" font-family="${family.replace(/"/g, "'")}" font-weight="${weight}" font-size="${f(size)}" letter-spacing="${f(spacing)}" fill="${s.wordc}">${spans}</text>`, width];
 }
@@ -343,7 +383,12 @@ function lockup(s, h = 80) {
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f(W)} ${f(H)}" height="${h}" width="${f(h * W / H)}">${body}</svg>`;
 }
-const KEY = "vBrandStudio";
+// The chosen official design (Oct 2026): the default and what Reset returns to.
+for (const [k, v] of new URLSearchParams("container=0&back=0&left=4&right=6&notch=3&caps=4&mark=1&weight=3&box=%23000000&leftc=%23f4f4f7&rightc=%23eb6f92&accent=%23f5c211&accent2=%23000000&gradient=false&autoLight=true&a1=18&a1p=1&a1z=15&a1r=0&a1x=-18&a1y=-17&a1o=1&a1c=accent&a2=13&a2p=0&a2z=14&a2r=0&a2x=-48&a2y=34&a2o=1&a2c=accent2&a3=0&a3p=2&a3z=12&a3r=0&a3x=0&a3y=0&a3o=1&a3c=accent2&a4=8&a4p=7&a4z=30&a4r=15&a4x=11&a4y=6&a4o=1&a4c=accent&layout=0&font=0&tstyle=0&w1w=700&w2w=300&word=vencord+custom&tag=redistributed+%C2%B7+improved&wordc=%23ffffff&wc2=%23f5c211&tagc=%239a9cad&tago=1&wsz=78&wls=2&tsz=100&tdy=0&wdy=0&gap=0&rightZ=129&markZ=105&leftZ=106&leftY=35&leftX=1&capsZ=192&capsY=96&capsX=37&capsR=12&backY=52&backZ=126&backL=0&backF=false&rightY=-7&markY=-34&rightX=5&capsF=true&notchZ=110&capsL=0")) {
+  if (k in BASE) BASE[k] = typeof BASE[k] === "number" ? Number(v) : typeof BASE[k] === "boolean" ? v === "true" : v;
+  else BASE[k] = /F$/.test(k) ? v === "true" : Number(v);
+}
+const KEY = "vBrandStudio2";
 let S = { ...BASE, ...load("cur") };
 const fromHash = new URLSearchParams(location.hash.slice(1));
 if (fromHash.size) for (const [k, v] of fromHash) {
@@ -352,6 +397,13 @@ if (fromHash.size) for (const [k, v] of fromHash) {
   else if (/^[a-z0-9]+[XYRZL]$/.test(k)) S[k] = Number(v);
   else if (/^[a-z0-9]+F$/.test(k)) S[k] = v === "true";
 }
+if (S.tstyle > 3 || (S.tstyle === 3 && !("w1w" in Object.fromEntries(fromHash)) && S.v !== 2)) {
+  const old = S.tstyle;
+  S.tstyle = old === 0 ? 1 : old === 1 ? 2 : old === 2 ? 3 : 0;
+  if (old === 4) Object.assign(S, { fl: true, flc: S.wc2, wc2: S.wordc });
+  if (old === 5) S.w2w = 300;
+}
+S.v = 2;
 let hist = [];
 let tab = load("tab") || "left";
 let saved = load("saved") || [null, null, null, null, null];
@@ -367,7 +419,7 @@ function svg(s, size = 256, dim, light) {
   const u = "g" + (uid++);
   const w = PARTS.weight.items[s.weight][2];
   const filled = ![0, 7, 8].includes(s.container);
-  const adapt = c => light && s.autoLight && !filled && lum(c) > 200 ? "#1b1c24" : c;
+  const adapt = c => light && s.autoLight && !filled && nearWhite(c) ? "#1b1c24" : c;
   let defs = "";
   const paint = (part, c) => {
     c = adapt(c);
@@ -411,7 +463,15 @@ function draw(keepCustom) {
   $("logo-dark").innerHTML = lockup(S, 120);
   $("logo-light").innerHTML = lockup(onLight(S), 120);
   $("sizes").innerHTML = [16, 24, 32, 48, 64, 96].map(n => `<figure>${svg(S, n)}<figcaption>${n}</figcaption></figure>`).join("");
-  $("tabs").innerHTML = [...ORDER, ...ACCENTS, "all", "weight", "__colors", ...LOGO_TABS.map(t => t[0])].map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${k === "__colors" ? "Culori" : ACCENTS.includes(k) ? `✦ Accent ${ACCENTS.indexOf(k) + 1}${S[k] ? "" : " (gol)"}` : k === "all" ? "⤧ Tot logo-ul" : LOGO_TAB[k]?.[1] ?? PARTS[k].label}</button>`).join("");
+  $("stage-dark").innerHTML = `<span class="tag">Întunecat</span>` + svg(S, 256);
+  $("stage-light").innerHTML = `<span class="tag">Deschis</span>` + svg(S, 256, null, true);
+  $("brand-dot").innerHTML = svg(S, 22);
+  const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+  const label = k => k === "__colors" ? "Culori" : ACCENTS.includes(k) ? `Accent ${ACCENTS.indexOf(k) + 1}` : k === "all" ? "Tot logo-ul" : cap(LOGO_TAB[k]?.[1].replace("Logo: ", "") ?? PARTS[k].label);
+  const badge = k => ACCENTS.includes(k) ? (S[k] ? SHAPES[S[k]][0] : "gol") : k in PARTS && k !== "weight" ? PARTS[k].items[S[k]][0] : k in LOGO_TAB ? LOGO_TAB[k][2][S[k]] : "";
+  const groups = [["Iconă", [...ORDER, "weight"]], ["Accente", ACCENTS], ["Compoziție", ["all", "__colors"]], ["Logo", LOGO_TABS.map(t => t[0])]];
+  $("tabs").innerHTML = groups.map(([g, keys]) => `<div class="group">${g}</div>` + keys.map(k => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${label(k)}<em>${esc(String(badge(k) ?? ""))}</em></button>`).join("")).join("");
+  $("insp-title").textContent = label(tab);
   $("saved").innerHTML = saved.map((s, i) => `<div class="slot" data-i="${i}" title="${s ? "Încarcă" : "Salvează aici"}">${s ? svg(s, 56) + `<button class="x" data-del="${i}">✕</button>` : "<span>★</span>"}</div>`).join("");
   $("focus").classList.toggle("on", focus);
   $("bgmode").textContent = lightBg ? "Fundal: deschis" : "Fundal: întunecat";
@@ -452,10 +512,13 @@ function drawGrid(keepCustom) {
   if (tab in LOGO_TAB) {
     const [, label, list] = LOGO_TAB[tab];
     $("hint").textContent = `${label}: alege; iconița rămâne cea compusă de tine.`;
-    $("custom").innerHTML = `<label>Text <input type="text" data-text="word" value="${esc(S.word)}"></label> <label>Slogan <input type="text" data-text="tag" value="${esc(S.tag)}"></label><br>` +
-      `<b style="color:var(--text)">Culori</b> <label>Cuvânt 1 <input type="color" data-text="wordc" value="${S.wordc}"></label> <label>Cuvânt 2 / literă accent <input type="color" data-text="wc2" value="${S.wc2}"></label> <label>Slogan <input type="color" data-text="tagc" value="${S.tagc}"></label>` +
+    $("custom").innerHTML = `<b>Text</b><label>Nume <input type="text" data-text="word" value="${esc(S.word)}"></label><label>Slogan <input type="text" data-text="tag" value="${esc(S.tag)}"></label>` +
+      `<b>Cuvântul 1</b><label>Culoare <input type="color" data-text="wordc" value="${S.wordc}"></label><label>Grosime <select data-acc="w1w">${WEIGHTS.map(([n, v]) => `<option value="${v}" ${S.w1w === v ? "selected" : ""}>${n}</option>`).join("")}</select></label>` +
+      `<label>Prima literă altă culoare <input type="checkbox" data-flip="fl" ${S.fl ? "checked" : ""}></label><label>Culoare primă literă <input type="color" data-text="flc" value="${S.flc}"></label>` +
+      `<b>Cuvântul 2 și următoarele</b><label>Culoare <input type="color" data-text="wc2" value="${S.wc2}"></label><label>Grosime <select data-acc="w2w">${WEIGHTS.map(([n, v]) => `<option value="${v}" ${S.w2w === v ? "selected" : ""}>${n}</option>`).join("")}</select></label>` +
+      `<b>Slogan</b><label>Culoare <input type="color" data-text="tagc" value="${S.tagc}"></label>` +
       ` <label>Opacitate slogan <input type="range" min=".2" max="1" step=".05" data-acc="tago" value="${S.tago}"></label><br>` +
-      `<b style="color:var(--text)">Mărimi</b> <label>Text <input type="range" min="50" max="160" data-acc="wsz" value="${S.wsz}"></label> <label>Spațiere litere <input type="range" min="-6" max="20" data-acc="wls" value="${S.wls}"></label>` +
+      `<b>Mărimi și poziții</b> <label>Text <input type="range" min="50" max="160" data-acc="wsz" value="${S.wsz}"></label> <label>Spațiere litere <input type="range" min="-6" max="20" data-acc="wls" value="${S.wls}"></label>` +
       ` <label>Slogan <input type="range" min="50" max="180" data-acc="tsz" value="${S.tsz}"></label> <label>Text sus/jos <input type="range" min="-40" max="40" data-acc="wdy" value="${S.wdy}"></label>` +
       ` <label>Slogan sus/jos <input type="range" min="-30" max="40" data-acc="tdy" value="${S.tdy}"></label> <label>Distanță iconă–text <input type="range" min="-40" max="120" data-acc="gap" value="${S.gap}"></label>`;
     $("grid").innerHTML = list.map((name, i) =>
@@ -481,7 +544,7 @@ const cval = k => ({ box: S.box, left: S.leftc, right: S.rightc, accent: S.accen
 /** Sliders that move one element anywhere: position, full rotation, scale, mirror and layer. */
 function transformControls(key, layer) {
   const v = (k, d) => S[key + k] ?? d;
-  return `<b style="color:var(--text)">Poziționare</b>` +
+  return `<b>Poziționare</b>` +
     ` <label>X <input type="range" min="-128" max="128" data-acc="${key}X" value="${v("X", 0)}"></label>` +
     ` <label>Y <input type="range" min="-128" max="128" data-acc="${key}Y" value="${v("Y", 0)}"></label>` +
     ` <label>Rotație <input type="range" min="-180" max="180" data-acc="${key}R" value="${v("R", 0)}"></label>` +
@@ -490,10 +553,11 @@ function transformControls(key, layer) {
     ` <label><input type="checkbox" data-flip="${key}F" ${S[key + "F"] ? "checked" : ""}> Oglindit</label>` +
     ` <button data-reset-t="${key}">Reset poziție</button>`;
 }
-const LOGO_TABS = [["layout", "Logo: aranjare", LAYOUTS], ["font", "Logo: font", FONTS.map(x => x[0])], ["tstyle", "Logo: stil text", TSTYLES]];
+const LOGO_TABS = [["layout", "Logo: aranjare", LAYOUTS], ["font", "Logo: font", FONTS.map(x => x[0])], ["tstyle", "Logo: majuscule", TSTYLES]];
 const LOGO_TAB = Object.fromEntries(LOGO_TABS.map(t => [t[0], t]));
 /** Light-background variant: light text turns dark so the wordmark stays readable. */
-function onLight(s) { const dark = c => lum(c) > 170 ? "#16171d" : c; return { ...s, _light: true, wordc: dark(s.wordc), wc2: dark(s.wc2), tagc: lum(s.tagc) > 170 ? "#5d5f6e" : s.tagc }; }
+function nearWhite(c) { if (!/^#[0-9a-f]{6}$/i.test(c)) return false; const n = parseInt(c.slice(1), 16), ch = [n >> 16, n >> 8 & 255, n & 255]; return lum(c) > 170 && Math.max(...ch) - Math.min(...ch) < 48; }
+function onLight(s) { const dark = c => nearWhite(c) ? "#16171d" : c; return { ...s, _light: true, wordc: dark(s.wordc), wc2: dark(s.wc2), flc: dark(s.flc), tagc: lum(s.tagc) > 170 ? "#5d5f6e" : s.tagc }; }
 const colorPatch = (k, c) => ({ box: { box: c }, left: { leftc: c }, right: { rightc: c }, accent: { accent: c }, accent2: { accent2: c } })[k];
 
 // ── Events ─────────────────────────────────────────────────────────────────────────────────

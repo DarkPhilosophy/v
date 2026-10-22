@@ -44,7 +44,7 @@ There is no Vencord fork, persistent upstream checkout or committed build output
 
 A desktop app (Linux and Windows) and a matching command line, `vforge`, that do what the installer does and let you choose what goes in:
 
-- **Discord:** detects Stable, PTB, Canary and Development (native, Flatpak, Windows `%LOCALAPPDATA%`, macOS); any other folder can be added by hand.
+- **Discord:** detects Stable, PTB, Canary and Development (native, Flatpak, Windows `%LOCALAPPDATA%`; macOS paths are included but untested); any other folder can be added by hand.
 - **Plugins:** turn any custom plugin off; it is not built in.
 - **Patches:** optional patches can be turned off; required ones (updater, plugin manager) stay on.
 - **OpenAsar:** install/update, keep, or remove (the original Discord bootstrap is backed up and restored).
