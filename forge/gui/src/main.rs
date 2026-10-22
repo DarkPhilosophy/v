@@ -895,17 +895,19 @@ impl App {
 
 const SHOT_PAGES: [Page; 6] = [Page::Discord, Page::Plugins, Page::Patches, Page::OpenAsar, Page::Install, Page::About];
 
-const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 const ICON_SVG: &[u8] = include_bytes!("../assets/icon.svg");
 
+/// The window/app icon, rasterized from the one SVG logo (no PNG copy to keep in sync).
 fn icon() -> Option<egui::IconData> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(ICON_PNG));
-    decoder.set_transformations(png::Transformations::normalize_to_color8() | png::Transformations::ALPHA);
-    let mut reader = decoder.read_info().ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).ok()?;
-    buf.truncate(info.buffer_size());
-    (info.color_type == png::ColorType::Rgba).then_some(egui::IconData { rgba: buf, width: info.width, height: info.height })
+    use resvg::{tiny_skia, usvg};
+    let tree = usvg::Tree::from_data(ICON_SVG, &usvg::Options::default()).ok()?;
+    let size = 256u32;
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let scale = size as f32 / tree.size().width().max(tree.size().height());
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    // tiny-skia stores premultiplied alpha; egui expects straight RGBA.
+    let rgba = pixmap.pixels().iter().flat_map(|p| { let c = p.demultiply(); [c.red(), c.green(), c.blue(), c.alpha()] }).collect();
+    Some(egui::IconData { rgba, width: size, height: size })
 }
 
 /// Linux: register a launcher (app menu entry + icon) pointing at this executable, so Forge opens
