@@ -1,16 +1,16 @@
 #!/usr/bin/env sh
 # End-to-end test in a clean container: stock Discord (official tarball), no Node.js or git,
-# the vforge binary given as $1. Forge must find Discord, build Vencord with a selection, install
+# the vencord-forge binary given as $1. Forge must find Discord, build Vencord with a selection, install
 # OpenAsar + Vencord, and Discord must start with Vencord and the selected plugins loaded.
 #
-# Usage: forge/tests/container-e2e.sh <path-to-vforge> [podman image]
+# Usage: forge/tests/container-e2e.sh <path-to-vencord-forge> [podman image]
 set -eu
 VFORGE=$(realpath "$1")
 IMAGE=${2:-docker.io/library/ubuntu:24.04}
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 WORK="${XDG_CACHE_HOME:-$HOME/.cache}/vencord-forge-e2e"
 mkdir -p "$WORK"
-cp "$VFORGE" "$WORK/vforge"
+cp "$VFORGE" "$WORK/vencord-forge"
 cp "$ROOT/forge/tests/livecheck.mjs" "$WORK/livecheck.mjs"
 
 cat > "$WORK/run.sh" <<'IN'
@@ -29,9 +29,9 @@ xvfb-run -a /opt/Discord/discord --no-sandbox >/tmp/bootstrap.log 2>&1 &
 for i in $(seq 1 120); do ls /root/.config/discord/app-*/resources/app.asar >/dev/null 2>&1 && break; sleep 2; done
 sleep 10; pkill -f /opt/Discord || true; pkill -f '/root/.config/discord' || true; sleep 3
 echo "== bootstrapped: $(ls -d /root/.config/discord/app-* 2>/dev/null || echo none)"
-/w/vforge detect
-/w/vforge install --openasar install --disable-plugin steamRichPresence --disable-patch hide-media.patch
-/w/vforge status
+/w/vencord-forge detect
+/w/vencord-forge install --openasar install --disable-plugin steamRichPresence --disable-patch hide-media.patch
+/w/vencord-forge status
 # Discord fetches its core modules on first start; give it time, then check Vencord is live.
 xvfb-run -a -s "-screen 0 1280x800x24" /opt/Discord/discord --no-sandbox --remote-debugging-port=9223 >/tmp/discord.log 2>&1 &
 NODE=$(ls -d /root/.cache/vencord-forge/node/*/bin/node | head -n1)

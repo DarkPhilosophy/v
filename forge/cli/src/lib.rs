@@ -1,5 +1,5 @@
-//! `vforge`: everything the GUI does, scriptable, plus the root-only helpers the GUI calls
-//! through pkexec when Discord's files are system-owned.
+//! The command line of Vencord Forge (`vencord-forge <command>`): everything the window does,
+//! scriptable, plus the helpers it runs on the host or through pkexec.
 
 use anyhow::{Context, Result, bail};
 use forge_core::detect::{self, Install, Roots};
@@ -9,37 +9,39 @@ use forge_core::profile::Profile;
 use forge_core::{asar, bootstrap, paths, patch, userplugins};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "vforge — build and install a Vencord distribution into Discord
+const USAGE: &str = "vencord-forge — build and install a Vencord distribution into Discord
 
 USAGE:
-  vforge detect [--json]
-  vforge list [--source <url|dir>] [--json]
-  vforge install [--source <url|dir>] [--target <resources-dir|index>] [--openasar keep|install|remove]
-                 [--disable-plugin <name>]... [--disable-patch <name>]... [--enable-all]
-  vforge build [--source <url|dir>] --out <file.asar> [--disable-plugin <name>]... [--disable-patch <name>]...
-  vforge uninstall [--target <resources-dir|index>]
-  vforge status
+  vencord-forge detect [--json]
+  vencord-forge list [--source <url|dir>] [--json]
+  vencord-forge install [--source <url|dir>] [--target <resources-dir|index>] [--openasar keep|install|remove]
+                        [--disable-plugin <name>]... [--disable-patch <name>]... [--enable-all]
+  vencord-forge build [--source <url|dir>] --out <file.asar> [--disable-plugin <name>]... [--disable-patch <name>]...
+  vencord-forge uninstall [--target <resources-dir|index>]
+  vencord-forge status
 
 The selection is remembered in forge-profile.json next to the runtime, and honored by the
 shell installer and the in-app updater. Without --disable-*/--enable-all the saved one is used.
 
-Low-level (also used for testing):
-  vforge pack-runtime <dist-dir> <out.asar>
-  vforge apply-patch <root> <file.patch>
-  vforge seeds <userplugins-dir> <out.ts>
-  vforge inventory <userplugins-dir>
-  vforge prepare-openasar <candidate.asar> <forge.json>
-  vforge verify-chain <resources> <runtime.asar>
-  vforge privileged-bootstrap <resources> <loader.asar> <runtime.asar> <keep|install|remove> [candidate]
-  vforge privileged-uninstall <resources>";
+Without a command it opens the window.
 
-/// Entry point shared by the `vforge` binary and the app (which runs these commands when it is
-/// started with arguments, e.g. by pkexec). Returns the process exit code.
+Low-level (also used for testing):
+  vencord-forge pack-runtime <dist-dir> <out.asar>
+  vencord-forge apply-patch <root> <file.patch>
+  vencord-forge seeds <userplugins-dir> <out.ts>
+  vencord-forge inventory <userplugins-dir>
+  vencord-forge prepare-openasar <candidate.asar> <forge.json>
+  vencord-forge verify-chain <resources> <runtime.asar>
+  vencord-forge privileged-bootstrap <resources> <loader.asar> <runtime.asar> <keep|install|remove> [candidate]
+  vencord-forge privileged-uninstall <resources>";
+
+/// Entry point used when the app is started with arguments (by the user, by pkexec, or as the
+/// host helper of the Flatpak). Returns the process exit code.
 pub fn main_with(args: Vec<String>) -> i32 {
     match run(args) {
         Ok(()) => 0,
         Err(error) => {
-            eprintln!("vforge: {error:#}");
+            eprintln!("vencord-forge: {error:#}");
             1
         }
     }
@@ -92,7 +94,7 @@ fn source(args: &mut Args) -> Result<Source> {
 fn pick_target(spec: Option<String>) -> Result<Install> {
     let installs = detect::discover_host();
     match spec {
-        Some(s) if s.chars().all(|c| c.is_ascii_digit()) => installs.get(s.parse::<usize>()?).cloned().context("no installation with that index (see `vforge detect`)"),
+        Some(s) if s.chars().all(|c| c.is_ascii_digit()) => installs.get(s.parse::<usize>()?).cloned().context("no installation with that index (see `vencord-forge detect`)"),
         Some(s) => {
             let resources = detect::from_path(Path::new(&s))?;
             let canonical = std::fs::canonicalize(&resources)?;

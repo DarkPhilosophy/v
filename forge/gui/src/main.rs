@@ -954,7 +954,7 @@ fn main() -> eframe::Result<()> {
     // steps it runs through pkexec), so a single file is enough to ship.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.is_empty() {
-        std::process::exit(vforge::main_with(args));
+        std::process::exit(forge_cli::main_with(args));
     }
     register_launcher();
     let mut viewport = egui::ViewportBuilder::default().with_title("Vencord Forge").with_app_id("vencord-forge").with_decorations(false).with_resizable(true);

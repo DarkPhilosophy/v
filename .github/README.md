@@ -61,7 +61,7 @@ Patches to Vencord, applied in this order:
 
 ## Vencord Forge (app)
 
-A desktop app (Linux and Windows) and a matching command line, `vforge`, that do what the installer does and let you choose what goes in:
+A desktop app (Linux and Windows) that does what the installer does (started with arguments, `vencord-forge` is also its command line) and let you choose what goes in:
 
 - **Discord:** detects Stable, PTB, Canary and Development (native, Flatpak, Windows `%LOCALAPPDATA%`; macOS paths are included but untested); any other folder can be added by hand.
 - **Plugins:** turn any custom plugin off; it is not built in.
@@ -78,9 +78,9 @@ Forge is distribution-agnostic: what it builds is described by [`forge.json`](..
 ```sh
 cd forge && cargo build --release
 ./target/release/vencord-forge            # the app (registers itself in the app menu on Linux)
-./target/release/vforge detect            # installations found
-./target/release/vforge list --source ..  # plugins and patches
-./target/release/vforge install --source .. --disable-plugin steamRichPresence
+./target/release/vencord-forge detect            # installations found
+./target/release/vencord-forge list --source ..  # plugins and patches
+./target/release/vencord-forge install --source .. --disable-plugin steamRichPresence
 ```
 
 <!-- FORGE-START -->
@@ -190,7 +190,7 @@ v/
 │   └── shared/                       # shared manager contracts
 ├── patches/
 │   └── *.patch, series               # see the Patches table above (generated from forge.json)
-├── forge/                          # Vencord Forge: Rust engine (core), CLI (vforge), app (gui)
+├── forge/                          # Vencord Forge: Rust engine (core), command line (cli), app (gui)
 ├── forge.json                      # distribution manifest read by Forge and the updaters
 ├── site/brand/                     # icon and logo studio (GitHub Pages)
 ├── scripts/

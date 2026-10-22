@@ -1129,6 +1129,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
+name = "forge-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "forge-core",
+ "serde_json",
+]
+
+[[package]]
 name = "forge-core"
 version = "0.1.0"
 dependencies = [
@@ -3255,11 +3264,11 @@ dependencies = [
  "anyhow",
  "eframe",
  "egui",
+ "forge-cli",
  "forge-core",
  "ico",
  "png 0.17.16",
  "resvg",
- "vforge",
  "winresource",
 ]
 
@@ -3268,15 +3277,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vforge"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "forge-core",
- "serde_json",
-]
 
 [[package]]
 name = "walkdir"

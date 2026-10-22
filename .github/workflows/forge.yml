@@ -59,13 +59,13 @@ jobs:
       - name: Unit tests
         run: cargo test --locked --workspace
       - name: Build
-        run: cargo build --locked --release -p vforge -p vencord-forge
+        run: cargo build --locked --release -p vencord-forge
       - name: Smoke test
         shell: bash
         run: |
-          ./target/release/vforge${{ matrix.exe }} --help
-          ./target/release/vforge${{ matrix.exe }} detect
-          ./target/release/vforge${{ matrix.exe }} list --source ..
+          ./target/release/vencord-forge${{ matrix.exe }} --help
+          ./target/release/vencord-forge${{ matrix.exe }} detect
+          ./target/release/vencord-forge${{ matrix.exe }} list --source ..
       - name: Package (plain executables)
         shell: bash
         run: |
@@ -73,7 +73,6 @@ jobs:
           # The app is self-contained: run without arguments it opens the window, with arguments
           # it is the command line (the privileged steps it runs through pkexec included).
           cp target/release/vencord-forge${{ matrix.exe }} ../dist/vencord-forge-${{ matrix.name }}${{ matrix.exe }}
-          cp target/release/vforge${{ matrix.exe }} ../dist/vforge-${{ matrix.name }}${{ matrix.exe }}
       - name: Package (AppImage)
         if: runner.os == 'Linux'
         run: |
@@ -102,7 +101,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: forge
-      - run: cargo build --locked -p vforge
+      - run: cargo build --locked -p vencord-forge
         working-directory: forge
       - name: Rust engine matches the shell installer byte for byte
         run: sh forge/tests/equivalence.sh
@@ -167,8 +166,8 @@ jobs:
           EXISTS: ${{ steps.exists.outputs.exists }}
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASE_TOKEN secret is not set; refusing to publish as a bot"; exit 1; fi
-          cd dist && chmod +x vencord-forge-* vforge-* && sha256sum vencord-forge-* vforge-* > SHA256SUMS
-          assets=$(ls vencord-forge-* vforge-* SHA256SUMS)
+          cd dist && chmod +x vencord-forge-* && sha256sum vencord-forge-* > SHA256SUMS
+          assets=$(ls vencord-forge-* SHA256SUMS)
           if [ "$EXISTS" = true ]; then
             # Same version rebuilt: point the tag at this commit, replace every asset.
             gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/$TAG" -f sha="${{ github.sha }}" -F force=true >/dev/null
@@ -179,7 +178,7 @@ jobs:
           else
             gh release create "$TAG" $assets -R "${{ github.repository }}" --target "${{ github.sha }}" \
               --title "Vencord Forge $VERSION" --generate-notes \
-              --notes "Vencord Forge $VERSION for Linux and Windows. Download one file and run it: vencord-forge-*.AppImage or vencord-forge-linux-x86_64 on Linux (chmod +x first), vencord-forge-windows-x86_64.exe on Windows. vforge-* is the same engine as a command line."
+              --notes "Vencord Forge $VERSION for Linux and Windows. Download one file and run it: vencord-forge-*.AppImage or vencord-forge-linux-x86_64 on Linux (chmod +x first), vencord-forge-windows-x86_64.exe on Windows. Run it with arguments (vencord-forge --help) to use it from a terminal."
           fi
 
   flatpak:

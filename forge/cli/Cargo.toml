@@ -1,18 +1,14 @@
 [package]
-name = "vforge"
-description = "Vencord Forge command line: build and install a Vencord distribution into Discord."
+name = "forge-cli"
+description = "Command line of Vencord Forge (run as `vencord-forge <command>`)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "vforge"
+name = "forge_cli"
 path = "src/lib.rs"
-
-[[bin]]
-name = "vforge"
-path = "src/main.rs"
 
 [dependencies]
 forge-core.workspace = true

@@ -8,12 +8,12 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-VFORGE="$ROOT/forge/target/debug/vforge"
+VFORGE="$ROOT/forge/target/debug/vencord-forge"
 WORK="${XDG_CACHE_HOME:-$HOME/.cache}/vencord-forge-equivalence"
 rm -rf "$WORK"
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT INT TERM
-[ -x "$VFORGE" ] || { echo "build first: cargo build -p vforge" >&2; exit 1; }
+[ -x "$VFORGE" ] || { echo "build first: cargo build -p vencord-forge" >&2; exit 1; }
 
 UPSTREAM=$(tr -d '[:space:]' < "$ROOT/upstream.lock")
 echo "upstream $UPSTREAM"
@@ -27,7 +27,7 @@ git -C "$WORK/base" -c user.email=t@t -c user.name=t commit -qm base
 python3 - "$ROOT" "$WORK" "$VFORGE" <<'PY'
 import itertools, json, shutil, subprocess, sys
 from pathlib import Path
-root, work, vforge = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+root, work, forge_bin = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 manifest = json.loads((root / "forge.json").read_text())
 series = [l.split("#")[0].strip() for l in (root / "patches/series").read_text().splitlines()]
 series = [s for s in series if s]
@@ -44,7 +44,7 @@ for n in range(len(optional) + 1):
         subprocess.run(["git", "init", "-q", str(a)], check=True)
         for p in chosen:
             subprocess.run(["git", "apply", str(root / "patches" / p)], cwd=a, check=True)
-            subprocess.run([vforge, "apply-patch", str(b), str(root / "patches" / p)], check=True)
+            subprocess.run([forge_bin, "apply-patch", str(b), str(root / "patches" / p)], check=True)
         shutil.rmtree(a / ".git")
         if subprocess.run(["diff", "-r", "-q", str(a), str(b)]).returncode:
             failures += 1

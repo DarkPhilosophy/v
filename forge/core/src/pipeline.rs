@@ -389,18 +389,14 @@ pub fn verify_chain_anywhere(resources: &Path, runtime: &Path) -> Result<Bootstr
         return Resources::new(resources)?.verify_chain(runtime, None);
     }
     let output = crate::process::host_cli(&cli_path()?).arg("verify-chain").arg(resources).arg(runtime).output()?;
-    ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr).trim().trim_start_matches("vforge: "));
+    ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr).trim().trim_start_matches("vencord-forge: "));
     Ok(if String::from_utf8_lossy(&output.stdout).contains("openasar") { BootstrapKind::Openasar } else { BootstrapKind::Original })
 }
 
-/// Program that runs the privileged steps: `vforge` next to the app if present, else the app
-/// itself (it accepts the same commands). Executables inside an AppImage live on a FUSE mount
-/// root cannot read, so they are copied to the cache first.
+/// Program that runs the host and privileged steps: the app itself (with arguments it is the
+/// command line). Inside an AppImage or Flatpak it is first copied where the host can run it.
 pub fn cli_path() -> Result<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let dir = exe.parent().unwrap();
-    let sibling = dir.join(if cfg!(windows) { "vforge.exe" } else { "vforge" });
-    let program = if sibling.is_file() { sibling } else { exe.clone() };
+    let program = std::env::current_exe()?;
     // AppImage: the executable is on a FUSE mount root cannot read. Flatpak: it is under /app,
     // which does not exist on the host where pkexec runs. Either way, run a copy in the cache.
     let in_appimage = std::env::var_os("APPIMAGE").is_some() || program.starts_with("/tmp/.mount_");

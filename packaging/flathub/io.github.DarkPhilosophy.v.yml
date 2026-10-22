@@ -34,10 +34,8 @@ modules:
       - install -Dm644 ../packaging/flatpak/io.github.DarkPhilosophy.v.desktop -t /app/share/applications
       - install -Dm644 ../packaging/flatpak/io.github.DarkPhilosophy.v.metainfo.xml -t /app/share/metainfo
     sources:
-      - type: dir
-        path: ../..
-        skip:
-          - forge/target
-          - .spec
-          - renderer.js
+      - type: git
+        url: https://github.com/DarkPhilosophy/v.git
+        tag: forge-v0.1.0
+        commit: 6721ecba064a0f4f79443dfb1cad89bc4109639b
       - cargo-sources.json
