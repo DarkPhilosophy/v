@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../site/brand/v-logo.svg">
+    <source media="(prefers-color-scheme: light)" srcset="../site/brand/v-logo-light.svg">
+    <img src="../site/brand/v-logo.svg" alt="vencord custom" height="96">
+  </picture>
+</p>
+
 # v
 
 A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds against a fresh upstream checkout and installs one persistent compiled runtime: `~/.config/Vencord/app.asar`.
@@ -11,6 +19,14 @@ A source overlay for [Vencord](https://github.com/Vendicated/Vencord). It builds
 > - **No warranty, no liability.** This software is provided as is, without warranty of any kind (GPL-3.0, sections 15 and 16). The authors take no responsibility for any damage, data loss, account action or other consequence of using it.
 
 There is no Vencord fork, persistent upstream checkout or committed build output. Vencord Forge (below) is the optional app that does the same as the installer with a window.
+
+<!-- DEMO-START -->
+[![Vencord Forge installing Vencord, click to play the demo](https://darkphilosophy.github.io/v/screenshots/install.png)](https://darkphilosophy.github.io/v/screenshots/demo.webm)
+
+<p align="center"><strong>▶ <a href="https://darkphilosophy.github.io/v/screenshots/demo.webm">Watch the demo</a></strong></p>
+
+<img src="https://darkphilosophy.github.io/v/screenshots/discord.png" width="24%" alt="discord"> <img src="https://darkphilosophy.github.io/v/screenshots/plugins.png" width="24%" alt="plugins"> <img src="https://darkphilosophy.github.io/v/screenshots/themes.png" width="24%" alt="themes"> <img src="https://darkphilosophy.github.io/v/screenshots/about.png" width="24%" alt="about">
+<!-- DEMO-END -->
 
 ## Included customizations
 
@@ -92,12 +108,6 @@ cd forge && cargo build --release
 ./target/release/vencord-forge list --source ..  # plugins and patches
 ./target/release/vencord-forge install --source .. --disable-plugin steamRichPresence
 ```
-
-<!-- DEMO-START -->
-[![Vencord Forge installing Vencord, click to play the demo](https://darkphilosophy.github.io/v/screenshots/install.png)](https://darkphilosophy.github.io/v/screenshots/demo.webm)
-
-<img src="https://darkphilosophy.github.io/v/screenshots/discord.png" width="24%" alt="discord"> <img src="https://darkphilosophy.github.io/v/screenshots/plugins.png" width="24%" alt="plugins"> <img src="https://darkphilosophy.github.io/v/screenshots/themes.png" width="24%" alt="themes"> <img src="https://darkphilosophy.github.io/v/screenshots/about.png" width="24%" alt="about">
-<!-- DEMO-END -->
 
 <!-- LATEST-START -->
 <details open>

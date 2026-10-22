@@ -129,7 +129,12 @@ def block_latest(manifest: dict) -> str:
 def block_demo(manifest: dict) -> str:
     # github.com does not play external videos inline: a screenshot that opens the video.
     shots = ["discord", "plugins", "themes", "about"]
-    lines = [f"[![Vencord Forge installing Vencord, click to play the demo]({SITE}/screenshots/install.png)]({SITE}/screenshots/demo.webm)", ""]
+    lines = [
+        f"[![Vencord Forge installing Vencord, click to play the demo]({SITE}/screenshots/install.png)]({SITE}/screenshots/demo.webm)",
+        "",
+        f"<p align=\"center\"><strong>▶ <a href=\"{SITE}/screenshots/demo.webm\">Watch the demo</a></strong></p>",
+        "",
+    ]
     lines.append(" ".join(f'<img src="{SITE}/screenshots/{name}.png" width="24%" alt="{name}">' for name in shots))
     return "\n".join(lines)
 
