@@ -107,7 +107,8 @@ impl Roots {
         Self {
             root: if cfg!(windows) { PathBuf::new() } else { PathBuf::from("/") },
             config_home: crate::paths::xdg("XDG_CONFIG_HOME"),
-            data_home: crate::paths::xdg("XDG_DATA_HOME"),
+            // Inside Flatpak $XDG_DATA_HOME is the sandbox's; per-user Flatpaks live in the host's.
+            data_home: if crate::paths::in_flatpak() { crate::paths::host_xdg("XDG_DATA_HOME") } else { crate::paths::xdg("XDG_DATA_HOME") },
             local_app_data: std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
             home,
         }
@@ -153,7 +154,7 @@ fn package_version(resources: &Path) -> Option<String> {
 /// Installations as found on the host. Inside Forge's Flatpak the sandbox cannot see Discord's
 /// files, so the host copy of Forge does the scan (`detect --json`).
 pub fn discover_host() -> Vec<Install> {
-    if !crate::paths::in_flatpak() {
+    if !crate::paths::uses_host_helper() {
         return discover(&Roots::from_env());
     }
     let Ok(cli) = crate::pipeline::cli_path() else { return Vec::new() };

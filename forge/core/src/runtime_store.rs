@@ -28,7 +28,7 @@ fn host(args: &[&OsStr]) -> Result<String> {
 
 /// Put `source` in place as the runtime, keeping the current one for [`rollback`].
 pub fn place(source: &Path, runtime: &Path) -> Result<()> {
-    if paths::in_flatpak() {
+    if paths::uses_host_helper() {
         return host(&["runtime-place".as_ref(), source.as_os_str(), runtime.as_os_str()]).map(drop);
     }
     place_local(source, runtime)
@@ -47,7 +47,7 @@ pub fn place_local(source: &Path, runtime: &Path) -> Result<()> {
 
 /// The install failed: restore the previous runtime (or remove the new one if there was none).
 pub fn rollback(runtime: &Path) -> Result<()> {
-    if paths::in_flatpak() {
+    if paths::uses_host_helper() {
         return host(&["runtime-rollback".as_ref(), runtime.as_os_str()]).map(drop);
     }
     rollback_local(runtime)
@@ -65,7 +65,7 @@ pub fn rollback_local(runtime: &Path) -> Result<()> {
 
 /// The install verified: drop the kept copy.
 pub fn commit(runtime: &Path) -> Result<()> {
-    if paths::in_flatpak() {
+    if paths::uses_host_helper() {
         return host(&["runtime-commit".as_ref(), runtime.as_os_str()]).map(drop);
     }
     commit_local(runtime);
@@ -78,14 +78,14 @@ pub fn commit_local(runtime: &Path) {
 
 /// The loader requires the runtime by its canonical host path, which only the host can resolve.
 pub fn build_loader(runtime: &Path, output: &Path) -> Result<()> {
-    if paths::in_flatpak() {
+    if paths::uses_host_helper() {
         return host(&["build-loader".as_ref(), runtime.as_os_str(), output.as_os_str()]).map(drop);
     }
     bootstrap::build_loader(runtime, output)
 }
 
 pub fn save_profile(runtime_dir: &Path, profile: &Profile, scratch: &Path) -> Result<()> {
-    if !paths::in_flatpak() {
+    if !paths::uses_host_helper() {
         return profile.save(runtime_dir);
     }
     let file = scratch.join("forge-profile.json");
@@ -95,7 +95,7 @@ pub fn save_profile(runtime_dir: &Path, profile: &Profile, scratch: &Path) -> Re
 
 /// The saved selection; everything on when there is none or it cannot be read.
 pub fn load_profile(runtime_dir: &Path) -> Profile {
-    if !paths::in_flatpak() {
+    if !paths::uses_host_helper() {
         return Profile::load(runtime_dir);
     }
     host(&["profile-read".as_ref(), runtime_dir.as_os_str()]).ok().and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default()

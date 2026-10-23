@@ -109,17 +109,16 @@ cd forge && cargo build --release
 
 <!-- LATEST-START -->
 <details open>
-<summary><strong>Latest update (0.1.2 · Fewer sandbox permissions, 2026-10-22)</strong></summary>
+<summary><strong>Latest update (0.1.3 · Flathub build, 2026-10-23)</strong></summary>
 
-- The Flatpak no longer needs access to `~/.config/Vencord`: the runtime and the saved selection are written by Forge's helper on the host.
-- A failed install restores the previous runtime in every packaging, including Flatpak.
-- The host helper also starts on ARM (aarch64) systems.
+- New restricted mode for the Flathub build: no host commands, only access to Discord installed as a per-user Flatpak. Other Discord installations are reported and need the full build.
+- The Vencord runtime for that Discord lives beside Discord's own data, readable without Flatpak overrides.
 
 </details>
 <!-- LATEST-END -->
 
 <!-- FORGE-START -->
-Latest app version: **0.1.2** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.2) · [all releases](https://github.com/DarkPhilosophy/v/releases)
+Latest app version: **0.1.3** — [download for Linux and Windows](https://github.com/DarkPhilosophy/v/releases/tag/forge-v0.1.3) · [all releases](https://github.com/DarkPhilosophy/v/releases)
 <!-- FORGE-END -->
 
 Every version bump of Forge is built for Linux and Windows and published as a release automatically. [`forge/tests/equivalence.sh`](../forge/tests/equivalence.sh) proves the Rust engine produces byte-identical results to the shell installer's tools (patches, runtime ASAR, loader, embedded seeds, OpenAsar fixes).

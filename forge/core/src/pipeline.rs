@@ -305,7 +305,7 @@ fn install_themes(dist: &Distribution, profile: &Profile, target: &Install, work
     let plan = crate::themes::plan(&dist.root, &selected)?;
     let vencord = crate::themes::vencord_dir(target);
     let enable = !discord_running();
-    if !paths::in_flatpak() {
+    if !paths::uses_host_helper() {
         return crate::themes::apply(&vencord, &plan, enable).map(Some);
     }
     let plan_path = work.join("themes.json");
@@ -314,6 +314,9 @@ fn install_themes(dist: &Distribution, profile: &Profile, target: &Install, work
     ensure!(output.status.success(), "themes: {}", String::from_utf8_lossy(&output.stderr).trim());
     Ok(Some(if enable { crate::themes::Applied::Enabled } else { crate::themes::Applied::FilesOnly }))
 }
+
+/// What the restricted sandbox (the Flathub build) can and cannot install into.
+pub const RESTRICTED_HINT: &str = "This Flatpak build of Forge can only install into Discord installed as a per-user Flatpak (flatpak install --user flathub com.discordapp.Discord). System-wide Flatpak, deb/rpm and other Discord installations need the full Forge build from https://github.com/DarkPhilosophy/v/releases";
 
 /// Install a built runtime into one Discord installation.
 pub fn install(dist: &Distribution, built: &Built, target: &Install, action: OpenAsarAction, profile: &Profile, sink: Sink) -> Result<InstallReport> {
@@ -335,14 +338,14 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
     // right: then only the runtime changes and system-owned installs need no password.
     // Sandboxed, Discord's files are not readable here: let the host check whether the chain is
     // already right (then no password is needed); otherwise change it on the host.
-    let loader_current = if paths::in_flatpak() {
+    let loader_current = if paths::uses_host_helper() {
         action == OpenAsarAction::Keep && verify_chain_anywhere(&target.resources, &runtime).is_ok()
     } else {
         fs::read(target.resources.join("app.asar")).ok() == fs::read(&loader).ok()
     };
     let result = if loader_current && action == OpenAsarAction::Keep {
         verify_chain_anywhere(&target.resources, &runtime)
-    } else if target.writable && !paths::in_flatpak() {
+    } else if target.writable && !paths::uses_host_helper() {
         apply_bootstrap(&target.resources, &loader, &runtime, action, candidate.as_deref())
     } else {
         privileged_bootstrap(&target.resources, &loader, &runtime, action, candidate.as_deref(), sink)
@@ -362,9 +365,11 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
     fsutil::write_atomic(&state.join("upstream.good"), format!("{}\n", built.upstream).as_bytes(), None)?;
 
     if target.kind == InstallKind::Flatpak
+        && !paths::restricted_sandbox()
         && let Some(id) = &target.flatpak_id
     {
-        // Flatpak Discord must be allowed to read the runtime outside its sandbox.
+        // Flatpak Discord must be allowed to read the runtime outside its sandbox (the restricted
+        // sandbox keeps it inside Discord's own data instead).
         let mut command = crate::process::host_command("flatpak");
         command.args(["override", "--user", &format!("--filesystem={}", runtime_dir.display()), id]);
         let _ = command.status();
@@ -375,6 +380,7 @@ pub fn install(dist: &Distribution, built: &Built, target: &Install, action: Ope
 }
 
 fn privileged_bootstrap(resources: &Path, loader: &Path, runtime: &Path, action: OpenAsarAction, candidate: Option<&Path>, sink: Sink) -> Result<BootstrapKind> {
+    ensure!(!paths::restricted_sandbox(), "{}", RESTRICTED_HINT);
     if !cfg!(target_os = "linux") {
         bail!("Discord's files at {} are not writable; run Forge as administrator", resources.display());
     }
@@ -407,7 +413,7 @@ fn host_writer(resources: &Path, cli: &Path, sink: Sink) -> std::process::Comman
 /// Verify Discord's bootstrap chain, on the host when Forge runs sandboxed (it cannot read
 /// Discord's files from inside the Flatpak).
 pub fn verify_chain_anywhere(resources: &Path, runtime: &Path) -> Result<BootstrapKind> {
-    if !paths::in_flatpak() {
+    if !paths::uses_host_helper() {
         return Resources::new(resources)?.verify_chain(runtime, None);
     }
     let output = crate::process::host_cli(&cli_path()?).arg("verify-chain").arg(resources).arg(runtime).output()?;
@@ -439,9 +445,10 @@ pub fn cli_path() -> Result<PathBuf> {
 /// Restore stock Discord in one installation (the runtime stays for other installations).
 pub fn uninstall(target: &Install, sink: Sink) -> Result<()> {
     sink(Event::Step(format!("Restoring stock {}", target.title())));
-    if target.writable && !paths::in_flatpak() {
+    if target.writable && !paths::uses_host_helper() {
         return Resources::new(&target.resources)?.uninstall();
     }
+    ensure!(!paths::restricted_sandbox(), "{}", RESTRICTED_HINT);
     ensure!(cfg!(target_os = "linux"), "run Forge as administrator to modify {}", target.resources.display());
     let status = host_writer(&target.resources, &cli_path()?, sink).arg("privileged-uninstall").arg(&target.resources).status()?;
     ensure!(status.success(), "privileged uninstall failed or was refused");
@@ -453,6 +460,10 @@ pub fn discord_running() -> bool {
     if cfg!(windows) {
         let out = std::process::Command::new("tasklist").args(["/FO", "CSV", "/NH"]).output();
         return out.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("\"discord"));
+    }
+    if paths::restricted_sandbox() {
+        // Its own process namespace and no host access: cannot tell.
+        return false;
     }
     if paths::in_flatpak() {
         // The sandbox has its own process namespace; ask the host.

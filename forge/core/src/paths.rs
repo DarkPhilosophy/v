@@ -11,6 +11,26 @@ pub fn in_flatpak() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
 }
 
+/// Flatpak id of the only Discord the restricted sandbox supports (its manifest grants this one).
+pub const SANDBOX_DISCORD: &str = "com.discordapp.Discord";
+
+/// Forge's restricted Flatpak (the Flathub build): no host commands, only the filesystem
+/// permissions of its manifest, which cover Discord installed as a per-user Flatpak. Selected
+/// explicitly by the manifest (`--env=FORGE_SANDBOX_MODE=filesystem`), never guessed.
+pub fn restricted_sandbox() -> bool {
+    in_flatpak() && std::env::var_os("FORGE_SANDBOX_MODE").is_some_and(|m| m == "filesystem")
+}
+
+/// Forge's full Flatpak: Discord's files are reached through Forge's own copy on the host.
+pub fn uses_host_helper() -> bool {
+    in_flatpak() && !restricted_sandbox()
+}
+
+/// A host XDG directory inside Flatpak ($HOST_XDG_*); None when the host uses the default.
+pub fn host_xdg(name: &str) -> Option<PathBuf> {
+    std::env::var_os(format!("HOST_{name}")).filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
 /// XDG directories as the host sees them. Inside Flatpak, $XDG_* point into the sandbox
 /// (~/.var/app/<id>/...), but Discord, the runtime and the updaters live in the host's ones.
 fn env_dir(name: &str) -> Option<PathBuf> {
@@ -30,6 +50,10 @@ pub fn xdg(name: &str) -> Option<PathBuf> {
 /// installer); Windows: `%APPDATA%\Vencord\runtime`, beside Vencord's own settings directory.
 /// The in-app updater follows wherever the runtime is, so this only matters at install time.
 pub fn runtime_dir() -> PathBuf {
+    // Restricted sandbox: beside Discord's own data, the only place its sandbox can read.
+    if restricted_sandbox() {
+        return home().join(".var/app").join(SANDBOX_DISCORD).join("config/Vencord");
+    }
     if cfg!(windows) {
         return env_dir("APPDATA").unwrap_or_else(|| home().join("AppData/Roaming")).join("Vencord").join("runtime");
     }

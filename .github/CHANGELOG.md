@@ -3,6 +3,11 @@
 Vencord Forge releases. `scripts/gen-docs.py` copies the section of the current version
 (`forge/Cargo.toml`) into the README, the app's metainfo and the GitHub release notes.
 
+## 0.1.3 (2026-10-23) - FLATHUB BUILD
+
+- New restricted mode for the Flathub build: no host commands, only access to Discord installed as a per-user Flatpak. Other Discord installations are reported and need the full build.
+- The Vencord runtime for that Discord lives beside Discord's own data, readable without Flatpak overrides.
+
 ## 0.1.2 (2026-10-22) - FEWER SANDBOX PERMISSIONS
 
 - The Flatpak no longer needs access to `~/.config/Vencord`: the runtime and the saved selection are written by Forge's helper on the host.

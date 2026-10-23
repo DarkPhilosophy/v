@@ -325,6 +325,9 @@ fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response {
 impl App {
     fn page_discord(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Discord installation", "Forge found these installations. Stable, PTB, Canary and Development are all supported.");
+        if forge_core::paths::restricted_sandbox() {
+            wrapped(ui, RichText::new(forge_core::pipeline::RESTRICTED_HINT).color(Color32::from_rgb(0xf5, 0xe1, 0xa0)));
+        }
         if self.installs.is_empty() {
             if detect::bootstrap_only(&Roots::from_env()).is_empty() {
                 ui.colored_label(BAD, "No Discord installation found. Install Discord, or point Forge to its folder below.");
