@@ -7,21 +7,23 @@
 import "./styles.css";
 
 import { addGlobalContextMenuPatch, type GlobalContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
+import * as DataStore from "@api/DataStore";
 import type { MessageObject, SendMessageOptions, SendMessageProps } from "@api/MessageEvents";
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Switch } from "@components/Switch";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
-import type { CloudUpload, RenderModalProps } from "@vencord/discord-types";
+import type { Channel, CloudUpload, RenderModalProps } from "@vencord/discord-types";
 import { DraftType } from "@vencord/discord-types/enums";
 import { findByProps, findByPropsLazy } from "@webpack";
-import { ChannelStore, closeModal, ComponentDispatch, ContextMenuApi, FluxDispatcher, Forms, Menu, MessageActions, Modal, openModal, PermissionsBits, PermissionStore, SelectedChannelStore, showToast, TextInput, useEffect, useState } from "@webpack/common";
+import { ChannelStore, closeModal, ComponentDispatch, ContextMenuApi, FluxDispatcher, Forms, Menu, MessageActions, Modal, openModal, PermissionsBits, PermissionStore, SelectedChannelStore, showToast, TextInput, useEffect, useRef, UserStore, useState } from "@webpack/common";
 import type * as NativeModule from "./native";
-import { composeUploadMessages, formatBlockedUploadLinks, formatUploadLinks, isAttachmentPlusClassName, type PinnedUploadRoute, type PooWangUploadFile, type PooWangUploadResult, randomizeUploadName, secureRandomIndex, selectUploadRoute, shouldInterceptBlockedUpload } from "./shared";
+import { composeUploadMessages, formatBlockedUploadLinks, formatUploadLinks, isAttachmentPlusClassName, type PinnedUploadRoute, type PooWangUploadFile, type PooWangUploadResult, type PromptRouteChoice, randomizeUploadName, resolvePromptChoice, secureRandomIndex, selectUploadRoute, shouldInterceptBlockedUpload } from "./shared";
 
 const Native = VencordNative.pluginHelpers.PooWangUploader as PluginNative<typeof NativeModule>;
 const logger = new Logger("PooWangUploader");
+const Premium = findByPropsLazy("getUserMaxFileSize", "isPremiumExactly");
 const DraftManager = findByPropsLazy("clearDraft", "saveDraft") as {
     clearDraft(channelId: string, draftType: DraftType): void;
 };
@@ -29,6 +31,10 @@ let tokenConfigured = false;
 let attachmentMenuRequestedAt = 0;
 let attachmentMenuNavId: string | undefined;
 let attachmentMenuInjectionTimer: number | undefined;
+
+const LAST_ROUTE_KEY = "PooWangUploader_lastPromptRoute";
+/** Last explicit pick in the "Ask each time" chooser; preselected next time. */
+let lastPromptRoute: PromptRouteChoice | undefined;
 
 
 function AccessTokenSetting() {
@@ -139,7 +145,7 @@ function openQuickSettings() {
                     <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 16 }}>
                         <div>
                             <Forms.FormTitle>Reroute oversized files</Forms.FormTitle>
-                            <Forms.FormText>Use poo.wang automatically at the configured size limit.</Forms.FormText>
+                            <Forms.FormText>Override Always Discord when a file reaches your threshold or Discord rejects its size. Ask each time still asks.</Forms.FormText>
                         </div>
                         <Switch checked={largeFiles} onChange={value => {
                             settings.store.autoRerouteLargeFiles = value;
@@ -213,6 +219,8 @@ function scheduleAttachmentMenuInjection(existingMenus: Set<Element>, attempt = 
 interface UploadRouteOptions {
     /** Discord cannot carry these files at all (e.g. missing ATTACH_FILES), so offering it would be a lie. */
     discordUnavailable?: boolean;
+    discordSizeExceeded?: boolean;
+    discordNeedsNitro?: boolean;
 }
 
 function UploadRouteModal(props: {
@@ -225,39 +233,39 @@ function UploadRouteModal(props: {
     const [remember, setRemember] = useState(false);
     const totalMb = props.files.reduce((total, file) => total + file.size, 0) / 1024 / 1024;
     const close = (value: boolean | undefined) => {
-        // Remember only an explicit choice; cancelling never pins anything.
-        if (remember && value !== undefined) settings.store.uploadRoute = value ? "poo-wang" : "discord";
+        if (value !== undefined) {
+            // The last pick becomes the next preselection; cancelling changes nothing.
+            lastPromptRoute = value ? "poo-wang" : "discord";
+            void DataStore.set(LAST_ROUTE_KEY, lastPromptRoute)
+                .catch(error => logger.error("Could not save last upload route", error));
+            // "Remember" still pins the route permanently and skips the chooser.
+            if (remember) settings.store.uploadRoute = value ? "poo-wang" : "discord";
+        }
         props.resolve(value);
         props.rootProps.onClose();
     };
 
-    // What Enter picks: Discord, unless Discord cannot take these files (no ATTACH_FILES) or
-    // they are oversized while "auto reroute large files" is on. poo.wang needs a token.
+    // Remember a destination without bypassing the chooser or unavailable-route safeguards.
     const oversized = props.files.some(file => file.size >= settings.store.largeFileThresholdMb * 1024 * 1024);
-    const defaultPooWang = props.tokenConfigured
-        && (!!props.options.discordUnavailable || (oversized && settings.store.autoRerouteLargeFiles));
-    const enterChoice: boolean | undefined = defaultPooWang ? true
-        : props.options.discordUnavailable ? undefined : false;
-
-    useEffect(() => {
-        if (enterChoice === undefined) return;
-        const onKey = (event: KeyboardEvent) => {
-            if (event.key !== "Enter" || event.repeat || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
-            // The modal's focus lock may start on Cancel or the switch; Enter must still pick the
-            // default, not whatever control happened to receive focus.
-            event.preventDefault();
-            event.stopPropagation();
-            close(enterChoice);
-        };
-        window.addEventListener("keydown", onKey, true);
-        return () => window.removeEventListener("keydown", onKey, true);
+    const enterChoice = resolvePromptChoice({
+        tokenConfigured: props.tokenConfigured,
+        discordUnavailable: props.options.discordUnavailable,
+        oversizedAutoReroute: !!props.options.discordSizeExceeded || (oversized && settings.store.autoRerouteLargeFiles),
+        lastChoice: lastPromptRoute,
     });
+    const initialButton = useRef<HTMLButtonElement>(null);
+    useEffect(() => {
+        // Let the modal's focus lock mount before applying the saved preselection.
+        const frame = requestAnimationFrame(() => initialButton.current?.focus());
+        return () => cancelAnimationFrame(frame);
+    }, []);
 
     return (
         <Modal {...props.rootProps} onClose={() => { props.resolve(undefined); props.rootProps.onClose(); }} title="Choose upload destination">
             <Forms.FormText>
                 {props.files.length} file(s), {totalMb.toFixed(1)} MB total.
                 {props.options.discordUnavailable && " Discord does not allow attachments in this channel, so these can only go to poo.wang."}
+                {props.options.discordSizeExceeded && " These files exceed Discord's current upload limit. poo.wang is recommended; choosing Discord will show its size-limit notice."}
             </Forms.FormText>
             {!props.tokenConfigured && (
                 <div style={{ marginTop: 12 }}>
@@ -267,14 +275,17 @@ function UploadRouteModal(props: {
             )}
             <label className="vc-poo-wang-route-remember">
                 <Switch checked={remember} onChange={setRemember} />
-                Remember this choice
+                Always use this destination (skip this chooser)
             </label>
             <div className="vc-poo-wang-route-buttons">
-                <Button size="small" variant="secondary" onClick={() => { props.resolve(undefined); props.rootProps.onClose(); }}>Cancel</Button>
-                {!props.options.discordUnavailable && (
-                    <Button size="small" variant={enterChoice === false ? "primary" : "secondary"} className={enterChoice === false ? "vc-poo-wang-route-default" : undefined} onClick={() => close(false)}>Discord</Button>
-                )}
-                <Button size="small" variant={enterChoice === true ? "primary" : "secondary"} className={enterChoice === true ? "vc-poo-wang-route-default" : undefined} onClick={() => close(true)} disabled={!props.tokenConfigured}>poo.wang</Button>
+                <Button size="small" variant="secondary" ref={enterChoice === undefined ? initialButton : undefined} onClick={() => close(undefined)}>Cancel</Button>
+                <div className="vc-poo-wang-route-destinations" role="group" aria-label="Upload via">
+                    <span className="vc-poo-wang-route-label" aria-hidden="true">Upload via</span>
+                    {!props.options.discordUnavailable && (
+                        <Button size="small" variant="secondary" ref={enterChoice === "discord" ? initialButton : undefined} onClick={() => close(false)}>{props.options.discordNeedsNitro ? "Discord Nitro" : "Discord"}</Button>
+                    )}
+                    <Button size="small" variant="secondary" className={props.options.discordSizeExceeded && props.tokenConfigured ? "vc-poo-wang-recommended" : undefined} aria-label={props.options.discordSizeExceeded ? "poo.wang (recommended)" : "poo.wang"} ref={enterChoice === "poo-wang" ? initialButton : undefined} onClick={() => close(true)} disabled={!props.tokenConfigured}>poo.wang</Button>
+                </div>
             </div>
         </Modal>
     );
@@ -358,7 +369,7 @@ const settings = definePluginSettings({
     },
     uploadRoute: {
         type: OptionType.SELECT,
-        description: "Where chat attachments go. \"Ask each time\" shows the chooser; the other two skip it. Oversized files still go to poo.wang automatically when that option is on.",
+        description: "Ask each time always shows the chooser. Always Discord and Always poo.wang skip it; oversized rerouting can override Always Discord.",
         options: [
             { label: "Ask each time", value: "prompt", default: true },
             { label: "Always Discord", value: "discord" },
@@ -367,12 +378,12 @@ const settings = definePluginSettings({
     },
     autoRerouteLargeFiles: {
         type: OptionType.BOOLEAN,
-        description: "Automatically use poo.wang before Discord rejects a file at or above the configured size",
+        description: "Override Always Discord for files at your threshold or over Discord's actual limit. Ask each time still asks.",
         default: true
     },
     largeFileThresholdMb: {
         type: OptionType.NUMBER,
-        description: "Automatically reroute files at or above this size in MB",
+        description: "Reroute Always Discord uploads at or above this size in MB; Discord's own lower limit also triggers rerouting",
         default: 25,
         isValid: (value: number) => Number.isFinite(value) && value >= 1 && value <= 90 || "Enter a value from 1 to 90 MB (the current poo.wang API maximum).",
         disabled() { return !this.store.autoRerouteLargeFiles; }
@@ -480,9 +491,12 @@ function isComposerTarget(target: EventTarget | null): boolean {
     return target instanceof Element && target.closest('[class*="channelTextArea"], [role="textbox"][data-slate-editor="true"]') != null;
 }
 
-async function routeBlockedUpload(files: File[]): Promise<void> {
-    const channelId = SelectedChannelStore.getChannelId();
-    if (!channelId) return;
+async function routeBlockedUpload(
+    files: File[],
+    channelId = SelectedChannelStore.getChannelId(),
+    options: UploadRouteOptions = { discordUnavailable: true }
+): Promise<boolean> {
+    if (!channelId) return false;
 
     const route = selectUploadRoute({
         enabled: settings.store.enabled,
@@ -491,20 +505,20 @@ async function routeBlockedUpload(files: File[]): Promise<void> {
         fileSizes: files.map(file => file.size),
         pinnedRoute: settings.store.uploadRoute as PinnedUploadRoute,
         autoRerouteLargeFiles: settings.store.autoRerouteLargeFiles,
-        largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024
+        largeFileThresholdBytes: settings.store.largeFileThresholdMb * 1024 * 1024,
+        discordSizeExceeded: options.discordSizeExceeded
     });
-    // Discord cannot take this file at all, so the Discord option does not exist here:
-    // only an explicit poo.wang pin or a "yes" in the modal may send it anywhere.
+    if (route === "discord" && options.discordSizeExceeded) return false;
+    // Permission-blocked uploads cannot use Discord; size-blocked uploads can
+    // explicitly return to Discord's own size-limit/Nitro notice.
     if (route !== "poo-wang") {
-        const reroute = await askUploadRoute(files, tokenConfigured, { discordUnavailable: true });
-        if (!reroute) {
-            logger.info("Blocked upload dismissed by user", { channelId, files: files.length });
-            return;
-        }
+        const reroute = await askUploadRoute(files, tokenConfigured, options);
+        if (reroute === undefined) return true;
+        if (!reroute) return !options.discordSizeExceeded;
     }
 
     const uploaded = await plugin.uploadExternally(files);
-    if (!uploaded) return;
+    if (!uploaded) return true;
 
     const channel = ChannelStore.getChannel(channelId);
     const canEmbed = channel == null || channel.isPrivate() || PermissionStore.can(PermissionsBits.EMBED_LINKS, channel);
@@ -521,6 +535,7 @@ async function routeBlockedUpload(files: File[]): Promise<void> {
         logger.error("Could not send poo.wang links for blocked upload", error);
         showToast({ text: "The files uploaded to poo.wang, but Discord could not send their links.", variant: "critical" });
     }
+    return true;
 }
 
 /** Blocked upload = Discord would reject it, so nothing but poo.wang can carry it. */
@@ -584,11 +599,34 @@ const plugin = definePlugin({
     tags: ["Privacy", "Utility"],
     settings,
 
+    patches: [{
+        find: "Unexpected mismatch between files and file metadata",
+        replacement: {
+            // Intercept only after Discord's own compression/size validation rejects
+            // an attachment. Picker, paste and drop share this path; normal drafts do not change.
+            match: /(if\(\(0,\i\.\i\)\(\{files:(\i),guildId:\i\}\)\))return void (\i)\((\i),\2\);/,
+            replace: "$1{if(await $self.handleOversizedUpload($2,$4,arguments[2],arguments[3]?.isThumbnail))return;return void $3($4,$2);}"
+        }
+    }],
+
+    async handleOversizedUpload(files: File[], channel: Channel, draftType: DraftType, isThumbnail = false): Promise<boolean> {
+        if (!settings.store.enabled || !tokenConfigured || isThumbnail || draftType !== DraftType.ChannelMessage) return false;
+        return routeBlockedUpload(files, channel.id, {
+            discordSizeExceeded: true,
+            discordNeedsNitro: !Premium.isPremiumExactly(UserStore.getCurrentUser(), 2)
+        });
+    },
+
     plusContextListener: undefined as ((event: MouseEvent) => void) | undefined,
 
     start() {
         if (!IS_DISCORD_DESKTOP) return;
         migrateLegacyRouteSetting();
+        void DataStore.get<string>(LAST_ROUTE_KEY)
+            .then(value => {
+                if (lastPromptRoute === undefined && (value === "discord" || value === "poo-wang")) lastPromptRoute = value;
+            })
+            .catch(error => logger.error("Could not read last upload route", error));
         void Native.hasAccessToken()
             .then(value => {
                 tokenConfigured = value;

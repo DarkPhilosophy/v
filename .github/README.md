@@ -57,16 +57,20 @@ Patches to Vencord, applied in this order:
 | **HideMedia auto-hide** (`hide-media.patch`) | Media is not loaded until you click it. | optional |
 | **Performance attribution** (`perf-attribution.patch`) | Times plugin renders and event handlers for PerfMonitor. | optional |
 | **Fast startup patching** (`webpack-fast-patching.patch`) | Skips modules no plugin patches and compiles each patched module once. | optional |
+| **Shiki grammar registration** (`shiki-grammar-cache.patch`) | Keeps languages referenced by earlier code blocks available for syntax highlighting. | optional |
 <!-- PATCHES-END -->
 
 ### PooWangUploader
 
-**PooWangUploader** hooks normal chat attachments from the file picker, paste, and drag-and-drop. Its per-upload dialog provides a **Reroute upload through poo.wang** checkbox; selected files are sent through `POST https://poo.wang/api/upload` and replaced with the returned `/f/{id}` links without changing existing message text.
+**PooWangUploader** keeps Discord's normal attachment previews for file-picker, paste, and drag-and-drop uploads, then asks where to send them. The chooser places **Cancel** on the left and **Upload via [Discord] [poo.wang]** on the right. Choosing poo.wang sends the files to that service and posts the returned links.
 
 - Configure a registered-account machine access token from **Settings → Plugins → PooWangUploader**. Anonymous uploads are intentionally not used. The token is encrypted with Electron `safeStorage`; it is never written to Vencord settings or Settings Sync.
-- The plus attachment button is hooked at runtime: left click opens the native poo.wang file picker; right click remains Discord's original upload menu. A separate poo.wang upload icon is also added to the chat bar. Without a configured token, either poo.wang action opens the in-chat token configuration modal.
-- Drag-and-drop, paste, and other file-picker paths still show the per-upload reroute checkbox. Choose whether it starts enabled, or disable the dialog and select a default destination.
-- Oversized files can bypass Discord automatically at a configurable MB threshold and use poo.wang before Discord rejects them.
+- **Tab** and **Shift+Tab** move between controls; **Enter** activates the focused button. The highlight follows actual keyboard focus. The last confirmed destination is saved locally and preselected next time, including after restarting Discord.
+- **Cancel**, Escape, or the close button leave the message text and attachments in the composer and do not change the remembered destination.
+- **Always use this destination (skip this chooser)** is separate from preselection: enable it to stop being asked. Return to **Ask each time** in the plugin's settings or the quick settings added to the attachment menu.
+- Without a configured poo.wang token, attachments stay on Discord. Channels that prohibit attachments do not offer the Discord destination.
+- **Ask each time** also asks for oversized files, before Discord opens its size-limit notice. The chooser labels Discord as **Discord Nitro** when the account lacks full Nitro and highlights poo.wang as recommended. Choosing Discord explicitly continues to its native notice.
+- **Always Discord** respects the oversized-rerouting switch: on, files at the configured threshold or rejected by Discord's actual size checks go through poo.wang; off, Discord handles them normally. The native checks account for subscription, server limits, and aggregate upload size; no fixed free-account limit is assumed.
 - Select burn-after-read, 1 hour, 24 hours, 7 days (default), 30 days, or permanent retention where the poo.wang account policy permits it.
 - Optional random filenames preserve the original extension while using a configurable length and safe ASCII character set.
 - A byte-progress modal shows the active filename, file number, and percentage. If an external upload fails, successful links remain and the failed plus remaining files are restored to the Discord composer for retry; they are not sent automatically.

@@ -94,6 +94,21 @@ export function composeUploadMessages(content: string, links: readonly string[])
     return [existing, media].filter(Boolean);
 }
 
+
+export type PromptRouteChoice = "discord" | "poo-wang";
+
+/** Initial focus only; Enter activates the focused native control, never a hidden default. */
+export function resolvePromptChoice(input: {
+    tokenConfigured: boolean;
+    discordUnavailable?: boolean;
+    oversizedAutoReroute: boolean;
+    lastChoice: string | undefined;
+}): PromptRouteChoice | undefined {
+    if (!input.tokenConfigured) return input.discordUnavailable ? undefined : "discord";
+    if (input.discordUnavailable || input.oversizedAutoReroute) return "poo-wang";
+    return input.lastChoice === "poo-wang" ? "poo-wang" : "discord";
+}
+
 export type PinnedUploadRoute = "prompt" | "discord" | "poo-wang";
 
 export function selectUploadRoute(input: {
@@ -104,13 +119,15 @@ export function selectUploadRoute(input: {
     pinnedRoute: PinnedUploadRoute;
     autoRerouteLargeFiles: boolean;
     largeFileThresholdBytes: number;
+    discordSizeExceeded?: boolean;
 }): UploadRoute {
     if (!input.enabled || input.isThumbnail || input.fileSizes.length === 0) return "discord";
     // poo.wang cannot be chosen without a token, so asking is pointless: Discord it is.
     if (!input.tokenConfigured) return "discord";
-    // Discord rejects oversized files outright, so a pinned "discord" must not win over this.
+    // Asking stays explicit even for oversized files; automatic rerouting only overrides a pin.
+    if (input.pinnedRoute === "prompt") return "prompt";
     const oversized = input.autoRerouteLargeFiles
-        && input.fileSizes.some(size => size >= input.largeFileThresholdBytes);
+        && (input.discordSizeExceeded || input.fileSizes.some(size => size >= input.largeFileThresholdBytes));
     if (oversized || input.pinnedRoute === "poo-wang") return "poo-wang";
     return input.pinnedRoute === "discord" ? "discord" : "prompt";
 }

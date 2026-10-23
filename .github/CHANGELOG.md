@@ -3,6 +3,13 @@
 Vencord Forge releases. `scripts/gen-docs.py` copies the section of the current version
 (`forge/Cargo.toml`) into the README, the app's metainfo and the GitHub release notes.
 
+## Unreleased
+
+- PooWangUploader: Tab and Shift+Tab navigate the chooser normally; Enter activates the focused control instead of an unrelated default. The highlight now follows native focus.
+- PooWangUploader: remember the last confirmed destination across restarts without skipping the chooser; cancellation preserves both the draft and the saved destination. Unavailable destinations and oversized-file rerouting still take precedence.
+- PooWangUploader: separate Cancel on the left from a single “Upload via” label and the Discord/poo.wang buttons on the right; clarify the independent option to always use a destination.
+- PooWangUploader: catch oversized attachments at Discord's shared picker/paste/drop validation, before the automatic Nitro notice. Ask each time keeps the chooser; Always Discord only reroutes when enabled. Show the Nitro destination label and a reduced-motion-aware poo.wang recommendation, using Discord's actual rejection instead of a hardcoded size.
+
 ## 0.1.3 (2026-10-23) - FLATHUB BUILD
 
 - New restricted mode for the Flathub build: no host commands, only access to Discord installed as a per-user Flatpak. Other Discord installations are reported and need the full build.

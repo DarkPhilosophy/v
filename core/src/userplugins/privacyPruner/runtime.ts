@@ -208,6 +208,8 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
     const state = readSyncedState();
     const record = state.channels[channelId];
     if (pausedChannels.has(channelId) || !record?.confirmedAt) return;
+    // Not logged in yet (startup, reconnect, account switch): nothing to do until Discord has a user.
+    if (!UserStore.getCurrentUser()) return;
     const guildEnabled = record.guildId ? state.guilds[record.guildId]?.enabled === true : false;
     if (!isPruningActive({
         guildEnabled,
@@ -287,7 +289,8 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
         if (controller.signal.aborted || !historyDue) return;
 
         const currentUser = UserStore.getCurrentUser();
-        if (!currentUser) throw new Error("Discord user is unavailable.");
+        // Logged out during the scan: stop quietly; the scheduler waits for the user again.
+        if (!currentUser) return;
         const window = computeWindow(record.policy, now);
         const scan = await collectEligibleMessages(discordPruningApi, {
             channelId,
@@ -378,6 +381,10 @@ export async function runChannelPruning(channelId: string, now = Date.now()): Pr
  * scans spreads the same work out; nothing is skipped, only delayed.
  */
 const SCAN_GAP_MS = 3_000;
+/** How often a channel checks again for a logged-in user before scanning. */
+const USER_WAIT_MS = 30_000;
+/** Channels already reported as waiting for the user (the wait is logged once). */
+const waitingForUser = new Set<string>();
 let scanQueue: Promise<void> = Promise.resolve();
 
 let schedulerGeneration = 0;
@@ -402,6 +409,19 @@ function scheduleChannel(channelId: string, runImmediately = false): void {
 
     const record = readSyncedState().channels[channelId];
     if (!record?.confirmedAt || !record.policy.enabled) return;
+    // Without a logged-in user a scan cannot run; scheduling it from a past deadline would retry
+    // at once, in a loop. Check again later and keep the original intent (runImmediately).
+    if (!UserStore.getCurrentUser()) {
+        if (!waitingForUser.has(channelId))
+            logger.info(`Channel ${channelId}: waiting for the Discord user before scanning.`);
+        waitingForUser.add(channelId);
+        channelTimers.set(channelId, window.setTimeout(() => {
+            channelTimers.delete(channelId);
+            scheduleChannel(channelId, runImmediately);
+        }, USER_WAIT_MS));
+        return;
+    }
+    waitingForUser.delete(channelId);
     const previous = progress[channelId];
     const notBefore = previous?.nextAttemptAt ?? 0;
     const historyDeadline = Math.max(

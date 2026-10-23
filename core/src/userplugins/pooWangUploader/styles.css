@@ -2,9 +2,28 @@
 .vc-poo-wang-route-buttons {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 20px;
+}
+
+.vc-poo-wang-route-buttons > button:first-child {
+    margin-inline-end: auto;
+}
+
+.vc-poo-wang-route-destinations {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.vc-poo-wang-route-label {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-inline-end: 4px;
 }
 
 .vc-poo-wang-route-remember {
@@ -23,12 +42,15 @@
     inherits: false;
 }
 
-.vc-poo-wang-route-default {
+.vc-poo-wang-route-buttons button:focus {
     position: relative;
     isolation: isolate;
+    background-color: var(--control-primary-background-default);
+    border-color: var(--control-primary-border-default);
+    color: var(--control-primary-text-default);
 }
 
-.vc-poo-wang-route-default::before {
+.vc-poo-wang-route-buttons button:focus::before {
     content: "";
     position: absolute;
     inset: -2px;
@@ -47,8 +69,21 @@
     to { --vc-poo-wang-angle: 360deg; }
 }
 
+.vc-poo-wang-route-buttons .vc-poo-wang-recommended {
+    animation: vc-poo-wang-recommendation 2.4s ease-in-out infinite;
+}
+
+@keyframes vc-poo-wang-recommendation {
+    0%, 100% { box-shadow: 0 0 0 1px var(--brand-360, #c9b8ff); }
+    50% { box-shadow: 0 0 0 2px var(--brand-360, #c9b8ff), 0 0 12px 0 var(--brand-500, #5865f2); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .vc-poo-wang-route-default::before {
+    .vc-poo-wang-route-buttons .vc-poo-wang-recommended {
+        animation: none;
+        box-shadow: 0 0 0 1px var(--brand-360, #c9b8ff);
+    }
+    .vc-poo-wang-route-buttons button:focus::before {
         animation: none;
         background: var(--brand-360, #c9b8ff);
     }

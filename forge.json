@@ -84,6 +84,10 @@
             "title": "Performance attribution",
             "description": "Times plugin renders and event handlers for PerfMonitor."
         },
+        "shiki-grammar-cache.patch": {
+            "title": "Shiki grammar registration",
+            "description": "Keeps languages referenced by earlier code blocks available for syntax highlighting."
+        },
         "webpack-fast-patching.patch": {
             "title": "Fast startup patching",
             "description": "Skips modules no plugin patches and compiles each patched module once."
